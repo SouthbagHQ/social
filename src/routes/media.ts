@@ -11,7 +11,7 @@ import type { AppEnv, Ctx } from '../env';
 import { body, fail, requireUser, str } from '../lib/http';
 import { newId } from '../lib/ids';
 import {
-  CHUNK_SIZE, allowedTypes, deleteMedia, getMedia, limits, mediaJson, reserveShard, shardDb, type MediaRow,
+  CHUNK_SIZE, allowedTypes, deleteMedia, getMedia, limits, mediaInUse, mediaJson, reserveShard, shardDb, type MediaRow,
 } from '../lib/media';
 
 const media = new Hono<AppEnv>();
@@ -89,11 +89,7 @@ media.get('/:id', async c => {
 
 media.delete('/:id', async c => {
   const row = await ownUpload(c, c.req.param('id'));
-  const used = await c.env.DB.prepare(`SELECT
-      EXISTS (SELECT 1 FROM post_media WHERE media_id = ?1) OR EXISTS (SELECT 1 FROM stories WHERE media_id = ?1)
-      OR EXISTS (SELECT 1 FROM users WHERE avatar_media_id = ?1 OR banner_media_id = ?1) AS used`)
-    .bind(row.id).first<{ used: number }>();
-  if (used?.used) fail(409, 'That file is in use. Delete the post instead.');
+  if (await mediaInUse(c.env, row.id)) fail(409, 'That file is in use.');
   await deleteMedia(c.env, [row.id]);
   return c.json({ ok: true });
 });

@@ -21,7 +21,7 @@ import { Hono } from 'hono';
 import type { AppEnv, Ctx, Env, SessionUser } from '../env';
 import { body, cursor, fail, limit, page, placeholders, requireUser, str } from '../lib/http';
 import { newId } from '../lib/ids';
-import { deleteMedia, getMedia } from '../lib/media';
+import { deleteUnusedMedia, getMedia } from '../lib/media';
 import { notifyStatement } from '../lib/notify';
 import { hydrate, visibleTo, type PostRow } from '../lib/posts';
 import { userByHandle, userCard, userCardColumns, type UserRow } from '../lib/users';
@@ -92,15 +92,7 @@ async function pictureId(env: Env, userId: string, value: unknown): Promise<stri
 
 /** Deletes files that nothing else refers to any more (old avatars and banners, a deleted group's photos). */
 async function dropUnused(env: Env, ids: (string | null)[]): Promise<void> {
-  const unique = [...new Set(ids.filter((x): x is string => Boolean(x)))];
-  if (!unique.length) return;
-  const { results } = await env.DB.prepare(`SELECT m.id FROM media m WHERE m.id IN (${placeholders(unique.length)})
-      AND NOT EXISTS (SELECT 1 FROM post_media pm WHERE pm.media_id = m.id)
-      AND NOT EXISTS (SELECT 1 FROM stories s WHERE s.media_id = m.id)
-      AND NOT EXISTS (SELECT 1 FROM users u WHERE u.avatar_media_id = m.id OR u.banner_media_id = m.id)
-      AND NOT EXISTS (SELECT 1 FROM groups g WHERE g.avatar_media_id = m.id OR g.banner_media_id = m.id)`)
-    .bind(...unique).all<{ id: string }>();
-  await deleteMedia(env, results.map(r => r.id));
+  await deleteUnusedMedia(env, ids);
 }
 
 function validName(value: unknown): string {

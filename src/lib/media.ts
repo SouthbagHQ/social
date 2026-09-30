@@ -188,3 +188,40 @@ export async function serveMedia(request: Request, env: Env, ctx: { waitUntil(pr
   });
   return new Response(stream, { headers });
 }
+
+/**
+ * SQL condition (for a `media m` alias) that is true while anything still refers to the file.
+ * Every table that stores a media id must be listed here, or its files can be deleted from under it.
+ */
+export const MEDIA_IN_USE = `(
+  EXISTS (SELECT 1 FROM post_media pm JOIN posts p ON p.id = pm.post_id WHERE pm.media_id = m.id AND p.deleted_at IS NULL)
+  OR EXISTS (SELECT 1 FROM media v WHERE v.poster_id = m.id)
+  OR EXISTS (SELECT 1 FROM stories WHERE media_id = m.id)
+  OR EXISTS (SELECT 1 FROM messages WHERE media_id = m.id)
+  OR EXISTS (SELECT 1 FROM users WHERE avatar_media_id = m.id OR banner_media_id = m.id)
+  OR EXISTS (SELECT 1 FROM groups WHERE avatar_media_id = m.id OR banner_media_id = m.id)
+  OR EXISTS (SELECT 1 FROM communities WHERE icon_media_id = m.id OR banner_media_id = m.id)
+  OR EXISTS (SELECT 1 FROM threads WHERE media_id = m.id AND deleted_at IS NULL)
+  OR EXISTS (SELECT 1 FROM events WHERE cover_media_id = m.id)
+  OR EXISTS (SELECT 1 FROM shows WHERE cover_media_id = m.id)
+  OR EXISTS (SELECT 1 FROM tracks WHERE media_id = m.id OR cover_media_id = m.id)
+  OR EXISTS (SELECT 1 FROM servers WHERE icon_media_id = m.id)
+  OR EXISTS (SELECT 1 FROM channel_messages WHERE media_id = m.id AND deleted_at IS NULL)
+  OR EXISTS (SELECT 1 FROM companies WHERE logo_media_id = m.id)
+)`;
+
+/** True while anything still refers to the file. */
+export async function mediaInUse(env: Env, id: string): Promise<boolean> {
+  const row = await env.DB.prepare(`SELECT ${MEDIA_IN_USE} AS used FROM media m WHERE m.id = ?`).bind(id).first<{ used: number }>();
+  return Boolean(row?.used);
+}
+
+/** Deletes the files among `ids` that nothing refers to any more (replaced covers, deleted threads…). */
+export async function deleteUnusedMedia(env: Env, ids: (string | null | undefined)[]): Promise<void> {
+  const unique = [...new Set(ids.filter((x): x is string => Boolean(x)))];
+  if (!unique.length) return;
+  const { results } = await env.DB.prepare(
+    `SELECT m.id FROM media m WHERE m.id IN (${unique.map(() => '?').join(', ')}) AND NOT ${MEDIA_IN_USE}`,
+  ).bind(...unique).all<{ id: string }>();
+  await deleteMedia(env, results.map(r => r.id));
+}

@@ -110,6 +110,9 @@ async function janitor(env: Env): Promise<void> {
   await env.DB.batch([
     env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(now),
     env.DB.prepare('DELETE FROM oauth_states WHERE expires_at < ?').bind(now),
+    // Servers: typing indicators and presence older than a day are only noise.
+    env.DB.prepare('DELETE FROM channel_typing WHERE until < ?').bind(now - 60000),
+    env.DB.prepare('DELETE FROM server_presence WHERE last_seen_at < ?').bind(now - 86400000),
   ]);
 }
 

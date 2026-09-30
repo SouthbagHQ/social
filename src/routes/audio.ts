@@ -56,7 +56,7 @@ import { Hono } from 'hono';
 import type { AppEnv, Ctx, Env } from '../env';
 import { body, cursor, fail, limit, requireUser, str } from '../lib/http';
 import { newId } from '../lib/ids';
-import { deleteMedia, ownedReadyMedia, type MediaRow } from '../lib/media';
+import { deleteUnusedMedia, ownedReadyMedia, type MediaRow } from '../lib/media';
 import { createPost, deletePost } from '../lib/posts';
 import { userCard } from '../lib/users';
 
@@ -255,15 +255,7 @@ async function ownedFile(env: Env, userId: string, id: unknown, kind: 'image' | 
 
 /** Deletes files nothing else uses any more (covers can be shared between a show and its tracks). */
 async function deleteUnused(env: Env, ids: (string | null | undefined)[]): Promise<void> {
-  const unique = [...new Set(ids.filter((x): x is string => Boolean(x)))];
-  if (!unique.length) return;
-  const { results } = await env.DB.prepare(`SELECT m.id FROM media m WHERE m.id IN (${unique.map(() => '?').join(', ')})
-      AND NOT EXISTS (SELECT 1 FROM shows WHERE cover_media_id = m.id)
-      AND NOT EXISTS (SELECT 1 FROM tracks WHERE cover_media_id = m.id OR media_id = m.id)
-      AND NOT EXISTS (SELECT 1 FROM post_media pm JOIN posts p ON p.id = pm.post_id WHERE pm.media_id = m.id AND p.deleted_at IS NULL)
-      AND NOT EXISTS (SELECT 1 FROM users WHERE avatar_media_id = m.id OR banner_media_id = m.id)`)
-    .bind(...unique).all<{ id: string }>();
-  await deleteMedia(env, results.map(r => r.id));
+  await deleteUnusedMedia(env, ids);
 }
 
 async function ownShow(c: Ctx, id: string): Promise<Row> {

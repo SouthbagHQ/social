@@ -93,3 +93,13 @@ test('visibility: followers-only posts stay hidden from strangers', async () => 
   assert.equal((await carol.get(`posts/${post.id}`)).status, 404);
   assert.equal((await alice.get(`posts/${post.id}`)).status, 200);
 });
+
+test('media: files still used by other features cannot be deleted', async () => {
+  const bytes = new Uint8Array(500);
+  const { body: m } = await alice.post('media', { kind: 'image', content_type: 'image/png', size: bytes.length, width: 10, height: 10 });
+  await alice.put(`media/${m.id}/chunks/0`, bytes);
+  await alice.post(`media/${m.id}/complete`);
+  const { body: created } = await alice.post('events', { title: 'Cover test', starts_at: Date.now() + 86400000, timezone: 'Australia/Melbourne', cover_media_id: m.id, privacy: 'public', online_url: 'https://southbag.cc' });
+  assert.ok(created.event, JSON.stringify(created));
+  assert.equal((await alice.del(`media/${m.id}`)).status, 409, 'an event cover is in use');
+});

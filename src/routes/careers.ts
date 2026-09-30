@@ -57,7 +57,7 @@ import { Hono } from 'hono';
 import type { AppEnv, Ctx, Env, SessionUser } from '../env';
 import { body, cursor, fail, limit, page, placeholders, requireUser, str } from '../lib/http';
 import { newId } from '../lib/ids';
-import { deleteMedia, getMedia } from '../lib/media';
+import { deleteUnusedMedia, getMedia } from '../lib/media';
 import { notify, notifyStatement } from '../lib/notify';
 import { userCard, userCardColumns, type UserRow } from '../lib/users';
 
@@ -631,14 +631,7 @@ async function logoId(env: Env, userId: string, value: unknown): Promise<string 
 
 /** Deletes an old logo if nothing else uses the file. */
 async function dropLogo(env: Env, id: string | null): Promise<void> {
-  if (!id) return;
-  const row = await env.DB.prepare(`SELECT m.id FROM media m WHERE m.id = ?1
-      AND NOT EXISTS (SELECT 1 FROM post_media pm WHERE pm.media_id = m.id)
-      AND NOT EXISTS (SELECT 1 FROM stories s WHERE s.media_id = m.id)
-      AND NOT EXISTS (SELECT 1 FROM users u WHERE u.avatar_media_id = m.id OR u.banner_media_id = m.id)
-      AND NOT EXISTS (SELECT 1 FROM groups g WHERE g.avatar_media_id = m.id OR g.banner_media_id = m.id)
-      AND NOT EXISTS (SELECT 1 FROM companies c WHERE c.logo_media_id = m.id)`).bind(id).first<{ id: string }>();
-  if (row) await deleteMedia(env, [row.id]);
+  await deleteUnusedMedia(env, [id]);
 }
 
 function companyFields(input: Record<string, unknown>, partial: boolean) {

@@ -18,7 +18,7 @@ import { Hono } from 'hono';
 import type { AppEnv, Ctx, Env } from '../env';
 import { body, fail, requireUser, str } from '../lib/http';
 import { newId } from '../lib/ids';
-import { deleteMedia, mediaJson, ownedReadyMedia, type MediaRow } from '../lib/media';
+import { deleteUnusedMedia, mediaJson, ownedReadyMedia, type MediaRow } from '../lib/media';
 import { userByHandle, userCard, userCardColumns, userCards, type UserRow } from '../lib/users';
 
 const stories = new Hono<AppEnv>();
@@ -180,9 +180,7 @@ stories.delete('/:id', async c => {
   const user = requireUser(c);
   const story = await ownStory(c, user.id, true);
   await c.env.DB.prepare('DELETE FROM stories WHERE id = ?').bind(story.id).run();
-  const shared = await c.env.DB.prepare(`SELECT EXISTS (SELECT 1 FROM post_media WHERE media_id = ?1)
-      OR EXISTS (SELECT 1 FROM stories WHERE media_id = ?1) AS used`).bind(story.media_id).first<{ used: number }>();
-  if (!shared?.used) await deleteMedia(c.env, [story.media_id]);
+  await deleteUnusedMedia(c.env, [story.media_id]);
   return c.json({ ok: true });
 });
 

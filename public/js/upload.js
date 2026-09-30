@@ -4,7 +4,7 @@
 
 import { api } from './api.js';
 
-export const LIMITS = { image: 10 * 1048576, video: 60 * 1048576, audio: 20 * 1048576 };
+export const LIMITS = { image: 10 * 1048576, video: 60 * 1048576, audio: 60 * 1048576 };
 const MAX_EDGE = 2048;
 
 export const kindOf = file =>
