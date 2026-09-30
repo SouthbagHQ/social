@@ -67,6 +67,10 @@ async function run(scroll) {
   const controller = new AbortController();
   const cleanups = [];
   current = { cleanups, controller };
+  // Workers Assets canonicalises /@handle to /%40handle on a hard load; put the @ back.
+  if (location.pathname.includes('%40')) {
+    history.replaceState(history.state, '', location.pathname.replaceAll('%40', '@') + location.search + location.hash);
+  }
   const found = match(location.pathname) || match('/404');
   const ctx = {
     params: found?.params || {},
