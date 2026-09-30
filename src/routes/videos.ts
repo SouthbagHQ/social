@@ -2,14 +2,14 @@
 // kind video / short / photo, created with POST /api/posts; this router only lists them.
 //
 //   GET /api/videos/feed?kind=video|short|photo&sort=recent|popular&cursor&limit
-//        → { items: PostJson[], next }      recent pages by id, popular by offset
+//        -> { items: PostJson[], next }      recent pages by id, popular by offset
 //   GET /api/videos/shorts?cursor&limit
-//        → { items, next }                  "For you": a hot score (engagement over age) with a
+//        -> { items, next }                  "For you": a hot score (engagement over age) with a
 //                                            frozen clock in the cursor so pages stay stable
 //   GET /api/videos/:id/related?limit
-//        → { items }                        same kind; the same channel first, then popular
+//        -> { items }                        same kind; the same channel first, then popular
 //   GET /api/videos/channel/:handle?kind=video|short|photo&cursor&limit
-//        → { channel, items, next }         channel = UserCard + bio, counts and is_following
+//        -> { channel, items, next }         channel = UserCard + bio, counts and is_following
 //
 // Everything is top-level (no replies), not deleted, and filtered with visibleTo(). Every handler
 // runs a handful of D1 queries plus hydrate()'s fixed batch.
@@ -82,7 +82,7 @@ videos.get('/channel/:handle', async c => {
   const size = limit(c, 24, 50);
   const after = cursor(c);
   const user = await userByHandle(c.env, c.req.param('handle'));
-  if (!user) fail(404, 'No such channel. It may be on Floor 3.');
+  if (!user) fail(404, 'Channel not found.');
   const viewer = c.get('user');
   const b = base(c, kind);
   const [{ results }, following] = await Promise.all([
@@ -113,7 +113,7 @@ videos.get('/channel/:handle', async c => {
 videos.get('/:id/related', async c => {
   const viewer = c.get('user');
   const post = await loadVisiblePost(c.env, viewer?.id ?? null, c.req.param('id'));
-  if (!post || post.deleted_at) fail(404, 'Kevin has closed this video.');
+  if (!post || post.deleted_at) fail(404, 'Video not found.');
   const size = limit(c, 12, 30);
   const kind = surfaceKinds.includes(post.kind) ? post.kind : 'video';
   const b = base(c, kind);
