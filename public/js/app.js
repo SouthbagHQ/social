@@ -9,6 +9,7 @@ import { navigate, route, startRouter } from './router.js';
 import { login, store } from './store.js';
 import { errorBox, loading, menu } from './ui.js';
 import { sidebar, footer } from './components/sidebar.js';
+import { audioPlayer } from './components/player.js';
 
 // ── Routes ──────────────────────────────────────────────────────────────
 // Feed & discovery (Twitter / Facebook)
@@ -39,6 +40,20 @@ route('/groups', () => import('./views/groups.js'));
 route('/groups/new', () => import('./views/group-new.js'));
 route('/g/:slug', () => import('./views/group.js'));
 route('/g/:slug/:tab', () => import('./views/group.js'));
+// Communities (Reddit), servers (Discord), events, audio (podcasts and music), jobs (LinkedIn)
+route('/c', () => import('./views/communities.js'));
+route('/c/:name', () => import('./views/communities.js'));
+route('/c/:name/:threadId', () => import('./views/communities.js'));
+route('/servers', () => import('./views/servers.js'));
+route('/servers/:serverId', () => import('./views/servers.js'));
+route('/servers/:serverId/:channelId', () => import('./views/servers.js'));
+route('/events', () => import('./views/events.js'));
+route('/events/:eventId', () => import('./views/events.js'));
+route('/audio', () => import('./views/audio.js'));
+route('/audio/:section', () => import('./views/audio.js'));
+route('/audio/:section/:id', () => import('./views/audio.js'));
+route('/jobs', () => import('./views/jobs.js'));
+route('/jobs/:jobId', () => import('./views/jobs.js'));
 // Messages
 route('/messages', () => import('./views/messages.js'));
 route('/messages/:id', () => import('./views/messages.js'));
@@ -56,6 +71,11 @@ const sections = [
   { href: '/videos', label: 'Videos' },
   { href: '/shorts', label: 'Shorts' },
   { href: '/groups', label: 'Groups' },
+  { href: '/c', label: 'Communities' },
+  { href: '/servers', label: 'Servers' },
+  { href: '/events', label: 'Events' },
+  { href: '/audio', label: 'Podcasts and music' },
+  { href: '/jobs', label: 'Jobs' },
   { href: '/messages', label: 'Messages', badge: 'messages', auth: true },
   { href: '/notifications', label: 'Notifications', badge: 'notifications', auth: true },
   { href: '/friends', label: 'Friends', badge: 'friend_requests', auth: true },
@@ -71,6 +91,8 @@ const shell = {
   main: h('main', { id: 'main', tabIndex: -1 }),
   aside: h('aside'),
   footer: h('div'),
+  // The audio player lives outside the page so playback survives navigation.
+  player: h('div#player'),
 };
 shell.layout = h('div.layout', shell.nav, shell.main, shell.aside);
 
@@ -162,7 +184,8 @@ async function boot() {
   mount(app, loading());
   await store.refresh();
   mount(shell.promo, promoStrip());
-  mount(app, shell.promo, shell.header, shell.layout, shell.footer);
+  mount(shell.player, audioPlayer());
+  mount(app, shell.promo, shell.header, shell.layout, shell.footer, shell.player);
   const params = new URLSearchParams(location.search);
   if (params.get('login_error') || params.get('signed_out')) {
     const { toast } = await import('./ui.js');

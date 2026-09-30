@@ -14,9 +14,11 @@ import { composerCard } from '../components/composer.js';
 import { videoThumb } from '../components/media.js';
 import { postCard, richText } from '../components/post.js';
 import { avatar, followButton, userRow, verifiedBadge } from '../components/user.js';
+import { pinnedPost } from '../components/pinned.js';
+import { careerTab, profileHeadline } from '../components/career.js';
 
 const POST_TABS = [
-  ['posts', 'Posts'], ['replies', 'Replies'], ['photos', 'Photos'], ['videos', 'Videos'],
+  ['posts', 'Posts'], ['career', 'Career'], ['replies', 'Replies'], ['photos', 'Photos'], ['videos', 'Videos'],
   ['shorts', 'Shorts'], ['wall', 'Wall'], ['likes', 'Likes'],
 ];
 const PEOPLE_TABS = [['followers', 'Followers'], ['following', 'Following'], ['friends', 'Friends']];
@@ -120,6 +122,7 @@ function header(user, viewer) {
       h('h1', user.name),
       h('div.handle', `@${user.handle}`, user.verified ? [' ', verifiedBadge()] : null),
       chips),
+    profileHeadline(user),
     user.bio ? h('p.profile-bio', richText(user.bio)) : null,
     meta,
     counts,
@@ -234,6 +237,7 @@ const EMPTY = {
 };
 
 function postsTab(ctx, user, viewer, tab) {
+  if (tab === 'career') return careerTab(ctx, user, viewer);
   const load = cursor => api.get(`users/${user.handle}/posts`, { tab, cursor }, { signal: ctx.signal });
   const emptyNode = empty({ title: EMPTY[tab] });
 
@@ -290,7 +294,7 @@ function postsTab(ctx, user, viewer, tab) {
   } else if (tab === 'wall' && store.me) {
     top = h('div.notice', `Only friends of ${user.name} can write on this wall.`);
   }
-  return h('div', top, list);
+  return h('div', top, tab === 'posts' ? pinnedPost(ctx, user, viewer) : null, list);
 }
 
 function relativeDate(ms) {

@@ -18,6 +18,13 @@ import search from './routes/search';
 import stories from './routes/stories';
 import users from './routes/users';
 import videos from './routes/videos';
+import polls from './routes/polls';
+import pins from './routes/pins';
+import communities from './routes/communities';
+import events from './routes/events';
+import audio from './routes/audio';
+import servers from './routes/servers';
+import careers from './routes/careers';
 
 const app = new Hono<AppEnv>();
 
@@ -80,6 +87,13 @@ app.route('/api/stories', stories);
 app.route('/api/groups', groups);
 app.route('/api/messages', messages);
 app.route('/api/search', search);
+app.route('/api/polls', polls);
+app.route('/api/pins', pins);
+app.route('/api/communities', communities);
+app.route('/api/events', events);
+app.route('/api/audio', audio);
+app.route('/api/servers', servers);
+app.route('/api/careers', careers);
 
 /** Hourly: expire stories, drop abandoned uploads and dead sessions. */
 async function janitor(env: Env): Promise<void> {
