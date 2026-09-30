@@ -12,8 +12,9 @@ export const SHARD_SOFT_LIMIT = 450 * 1024 * 1024; // leave headroom under the 5
 
 export const limits = {
   image: 10 * 1024 * 1024,
-  audio: 20 * 1024 * 1024,
   // Unranged requests stream every chunk in one invocation; free Workers get 50 D1 queries each.
+  // 60 MB is 40 chunks, which leaves room for the metadata query. (Audio: an hour-long podcast.)
+  audio: 60 * 1024 * 1024,
   video: 60 * 1024 * 1024,
 } as const;
 
