@@ -1,8 +1,8 @@
 /* Southbag Social — house style.
-   Follows the other Southbag products (Identity, Office, Branch Locator): Times New Roman,
-   a shadow on everything, grey outset buttons, inset inputs that lean slightly, ridge-bordered
+   Follows the other Southbag products (Identity, Office, Branch Locator): a shadow on everything, grey outset buttons, inset inputs that lean slightly, ridge-bordered
    panels, a left sidebar of plain underlined links, a stretched logo, slow transitions.
    No icons, no emoji, no colour except the occasional Southbag blue.
+   The font is the browser default.
    Media is never cropped or letterboxed: it is stretched to whatever box it is given. */
 
 :root {
@@ -24,8 +24,6 @@
   --sb-halo-soft: 0 3px 12px rgba(0, 0, 0, 0.14);
   --sb-lift: 0 10px 20px rgba(0, 0, 0, 0.25), 0 15px 40px rgba(0, 0, 0, 0.2), inset 0 -2px 5px rgba(0, 0, 0, 0.15), inset 0 2px 5px rgba(255, 255, 255, 0.5);
   --sb-text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.27), 2px 2px 4px rgba(0, 0, 0, 0.12);
-  --font: 'Times New Roman', Times, serif;
-  --font-mono: 'Courier New', Courier, monospace;
   --main-width: 640px;
   --aside-width: 280px;
   --nav-width: 220px;
@@ -63,8 +61,6 @@
   --sb-btn-shadow: var(--sb-lift);
   --sb-heading-shadow: var(--sb-text-shadow);
   --sb-pad: clamp(8px, 2vw, 16px);
-  --font-heading: var(--font);
-  --font-body: var(--font);
   color-scheme: light;
 }
 
@@ -119,7 +115,7 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; }
-* { font-family: var(--font); text-shadow: var(--sb-text-shadow); }
+* { text-shadow: var(--sb-text-shadow); }
 html { font-size: 16px; -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
@@ -156,8 +152,7 @@ label { display: inline-block; transform: skew(5deg) scale(1.02); transform-orig
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .muted { color: var(--sb-muted); }
 .faint { color: var(--sb-faint); }
-.mono { font-family: var(--font-mono); }
-.eyebrow { font: 700 0.6rem/1.3 var(--font-mono); letter-spacing: 2px; text-transform: uppercase; color: var(--sb-muted); }
+.eyebrow { font-weight: 700; font-size: 0.6rem; line-height: 1.3; letter-spacing: 2px; text-transform: uppercase; color: var(--sb-muted); }
 .fine, .tiny { font-size: 0.78rem; color: var(--sb-muted); overflow-wrap: anywhere; }
 .row { display: flex; align-items: center; gap: 8px; }
 .row.wrap { flex-wrap: wrap; }
@@ -214,7 +209,7 @@ button:disabled, .btn:disabled, .btn-small:disabled, .btn-large:disabled { color
 .textarea, textarea { resize: vertical; min-height: 5rem; }
 .boxed { }
 .checkbox { display: flex; gap: 8px; align-items: flex-start; margin: 8px 0; cursor: pointer; }
-.counter { font-family: var(--font-mono); font-size: 0.75rem; color: var(--sb-muted); }
+.counter { font-size: 0.75rem; color: var(--sb-muted); }
 .counter.over { color: var(--sb-ink); font-weight: 700; text-decoration: underline; }
 
 /* ── Promotional strip ──────────────────────────────────────────────── */
@@ -352,7 +347,7 @@ aside .sticky { position: sticky; top: 96px; box-shadow: none; }
 .post-actions .spacer { flex: 1; box-shadow: none; }
 .post .deleted { color: var(--sb-muted); font-style: italic; }
 .post.compact { padding: 0.6rem; }
-.post .sponsored-tag { font: 0.7rem var(--font-mono); border: 1px solid #999; padding: 0 4px; }
+.post .sponsored-tag { font-size: 0.7rem; border: 1px solid #999; padding: 0 4px; }
 .quote { border: 2px inset var(--sb-bevel); padding: 8px 10px; margin-top: 10px; background: var(--sb-paper); cursor: pointer; }
 .reaction-summary { font-size: 0.8rem; color: var(--sb-muted); box-shadow: none; }
 .reaction-picker { position: absolute; z-index: 40; bottom: calc(100% + 4px); left: 0; display: flex; gap: 2px; padding: 4px; background: #fff; border: 3px ridge #ccc; }
@@ -373,14 +368,14 @@ aside .sticky { position: sticky; top: 96px; box-shadow: none; }
 .carousel .track > * { flex: 0 0 100%; width: 100%; height: 100% !important; scroll-snap-align: center; }
 .carousel .nav-btn { position: absolute; top: 50%; transform: translateY(-50%); font-size: 0.75rem; }
 .carousel .nav-btn.prev { left: 8px; } .carousel .nav-btn.next { right: 8px; }
-.carousel .dots { position: absolute; bottom: 6px; left: 0; right: 0; text-align: center; color: #fff; font: 0.75rem var(--font-mono); pointer-events: none; }
+.carousel .dots { position: absolute; bottom: 6px; left: 0; right: 0; text-align: center; color: #fff; font-size: 0.75rem; pointer-events: none; }
 .video-wrap { position: relative; background: #000; aspect-ratio: 16 / 9; }
 .video-wrap video { display: block; width: 100%; height: 100%; }
 .video-thumb { position: relative; display: block; background: #000; aspect-ratio: 16 / 9; overflow: hidden; }
 .video-thumb:hover { background: #000; }
 .video-thumb img, .video-thumb video { width: 100%; height: 100%; display: block; }
 .video-thumb.vertical { aspect-ratio: 9 / 16; }
-.video-thumb .duration { position: absolute; right: 4px; bottom: 4px; background: #fff; color: #000; font: 0.75rem var(--font-mono); padding: 0 4px; }
+.video-thumb .duration { position: absolute; right: 4px; bottom: 4px; background: #fff; color: #000; font-size: 0.75rem; padding: 0 4px; }
 .video-thumb .play { position: absolute; left: 4px; bottom: 4px; background: #fff; color: #000; font-size: 0.75rem; padding: 0 4px; }
 
 /* ── Composer ───────────────────────────────────────────────────────── */
@@ -405,9 +400,9 @@ aside .sticky { position: sticky; top: 96px; box-shadow: none; }
 .tabs a[aria-current='page'], .tabs button[aria-selected='true'] { background: #dcdbd6; font-weight: 700; color: var(--sb-blue); }
 
 /* ── States ─────────────────────────────────────────────────────────── */
-.empty { padding: 36px 16px; text-align: center; font: 0.8rem var(--font-mono); color: var(--sb-muted); }
+.empty { padding: 36px 16px; text-align: center; font-size: 0.8rem; color: var(--sb-muted); }
 .empty p { margin: 4px 0; }
-.loading { padding: 24px; text-align: center; font: 0.8rem var(--font-mono); color: var(--sb-muted); animation: quiet-blink 2.4s linear infinite; box-shadow: none; }
+.loading { padding: 24px; text-align: center; font-size: 0.8rem; color: var(--sb-muted); animation: quiet-blink 2.4s linear infinite; box-shadow: none; }
 .spinner { display: none; }
 .error-box { border: 4px double #111; background: #eee; padding: 10px 12px; margin: 0 0 14px; }
 :root[data-theme='dark'] .error-box { background: #2a2a27; border-color: #999; }

@@ -17,7 +17,8 @@ It is presented as a real, ordinary service. The interface is janky; the words a
   outset border, square corners and a large shadow (defined once in `southbag.css`). Feature CSS
   must not give buttons their own background, colour or radius. Sizes may differ (`.btn-large`,
   `.btn-small`, and the 3px `.btn-tiny` that grows on hover).
-- **Type.** Times New Roman everywhere, with a text shadow. Big, bold, slightly rotated page titles.
+- **Type.** The browser's default font. Never set `font-family`. Text has a shadow. Big, bold,
+  slightly rotated page titles.
 - **Furniture.** Ridge-bordered panels (`.south-card`), dashed black dividers, inset skewed inputs,
   labels that lean, a halo shadow on every block, slow linear transitions, dialogs that take over a
   second to scale in, cards a fraction of a degree off straight. Square corners (only `.avatar.round`
