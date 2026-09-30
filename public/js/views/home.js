@@ -1,6 +1,6 @@
 // The home feed (/). Signed-in only: app.js shows the landing page to signed-out visitors.
-//   stories bar → composer → Following / For you tabs → infinite list of posts (+ the odd sponsored card)
-//   GET /api/feed?tab=following|foryou&cursor → { items, next, tab, fallback? }
+//   stories bar -> composer -> Following / For you tabs -> infinite list of posts (+ the odd sponsored card)
+//   GET /api/feed?tab=following|foryou&cursor -> { items, next, tab, fallback? }
 
 import { api } from '../api.js';
 import { h, mount } from '../dom.js';
@@ -41,15 +41,13 @@ export default async function home(ctx) {
       onPage: (items, data) => {
         if (data.fallback && !notice.firstChild) {
           mount(notice, h('div.notice.feed-notice',
-            h('strong', 'You are not following anyone. '),
-            'Kevin follows you. That will have to do. Until you add someone to The Pile, this is what Southbag has selected for you. ',
+            h('strong', 'You are not following anyone yet.'), ' Showing popular posts instead. ',
             h('a', { href: '/explore' }, 'Find people to follow')));
         }
       },
       empty: empty({
-        icon: 'home',
-        title: 'Your feed is empty. This is being reviewed.',
-        text: tab === 'following' ? 'Add people to The Pile and their posts will appear here.' : 'Nobody has posted anything. Suspiciously quiet.',
+        title: 'No posts yet.',
+        text: tab === 'following' ? 'Posts from people you follow appear here.' : null,
         action: h('a.btn-small', { href: '/explore' }, 'Explore'),
       }),
     });

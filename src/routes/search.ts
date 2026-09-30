@@ -1,14 +1,14 @@
 // Search and discovery. Mounted at /api/search.
 //
 //   GET /api/search?q=&type=top|posts|people|tags|groups|videos&cursor&limit
-//       posts/videos → { items: PostJson[], next }           newest first, keyset by id
-//       people       → { items: [UserCard + { bio, is_following, follower_count }], next }   offset cursor
-//       tags         → { items: [{ tag, count }], next }      offset cursor
-//       groups       → { items: [{ id, slug, name, description, member_count, avatar_url, privacy, is_member }], next }
-//       top          → { people: [...≤5], tags: [...≤5], posts: { items, next } }
-//   GET /api/search/trending          → { tags: [{ tag, count }] }   top 10, last 7 days (all time as a fallback)
-//   GET /api/search/tag/:tag?cursor   → { tag, count, items, next }
-//   GET /api/search/explore           → { tags, posts, photos, people }
+//       posts/videos -> { items: PostJson[], next }           newest first, keyset by id
+//       people       -> { items: [UserCard + { bio, is_following, follower_count }], next }   offset cursor
+//       tags         -> { items: [{ tag, count }], next }      offset cursor
+//       groups       -> { items: [{ id, slug, name, description, member_count, avatar_url, privacy, is_member }], next }
+//       top          -> { people: [up to 5], tags: [up to 5], posts: { items, next } }
+//   GET /api/search/trending          -> { tags: [{ tag, count }] }   top 10, last 7 days (all time as a fallback)
+//   GET /api/search/tag/:tag?cursor   -> { tag, count, items, next }
+//   GET /api/search/explore           -> { tags, posts, photos, people }
 
 import { Hono } from 'hono';
 import type { AppEnv, Ctx } from '../env';
@@ -23,7 +23,7 @@ const DAY = 86400000;
 const types = ['top', 'posts', 'people', 'tags', 'groups', 'videos'] as const;
 type SearchType = (typeof types)[number];
 
-/** `%term%` for LIKE … ESCAPE '\', with the wildcards in the term escaped. */
+/** `%term%` for LIKE ... ESCAPE '\', with the wildcards in the term escaped. */
 const like = (term: string) => `%${term.replace(/[\\%_]/g, m => '\\' + m)}%`;
 
 const offsetOf = (value: string | null): number => {
@@ -42,7 +42,7 @@ const person = (r: PersonRow) => ({
   is_following: Boolean(r.is_following),
 });
 
-// ── Queries ────────────────────────────────────────────────────────────────
+// -- Queries ----------------------------------------------------------------
 
 async function searchPosts(c: Ctx, q: string, size: number, after: string | null, videosOnly = false) {
   const viewer = c.get('user');
@@ -115,7 +115,7 @@ async function trending(c: Ctx, n = 10): Promise<{ tag: string; count: number }[
   return (await run(0)).results;
 }
 
-// ── Routes ─────────────────────────────────────────────────────────────────
+// -- Routes -----------------------------------------------------------------
 
 search.get('/', async c => {
   const q = (c.req.query('q') || '').trim().slice(0, 100);
@@ -147,7 +147,7 @@ search.get('/trending', async c => c.json({ tags: await trending(c) }));
 
 search.get('/tag/:tag', async c => {
   const tag = c.req.param('tag').replace(/^#/, '').toLowerCase();
-  if (!/^\w{1,50}$/u.test(tag)) fail(404, 'That is not a tag. Kevin checked.');
+  if (!/^\w{1,50}$/u.test(tag)) fail(404, 'Tag not found.');
   const viewer = c.get('user');
   const size = limit(c);
   const after = cursor(c);
@@ -175,7 +175,7 @@ search.get('/explore', async c => {
         WHERE p.kind = 'photo' AND p.reply_to_id IS NULL AND p.deleted_at IS NULL AND p.group_id IS NULL
           AND EXISTS (SELECT 1 FROM post_media pm WHERE pm.post_id = p.id) AND ${v.sql}
         ORDER BY p.id DESC LIMIT 12`).bind(...v.params).all<PostRow>(),
-    // People to follow: the most followed, then the newest; not you, not people already in your Pile.
+    // People to follow: the most followed, then the newest; not you, not people you already follow.
     c.env.DB.prepare(`SELECT ${uCols('u')}, u.bio, u.follower_count, 0 AS is_following FROM users u
         WHERE u.id != ?1 AND NOT EXISTS (SELECT 1 FROM follows f WHERE f.follower_id = ?1 AND f.followee_id = u.id)
           AND NOT EXISTS (SELECT 1 FROM blocks b WHERE (b.blocker_id = u.id AND b.blocked_id = ?1) OR (b.blocker_id = ?1 AND b.blocked_id = u.id))

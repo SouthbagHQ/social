@@ -1,5 +1,5 @@
 // Tag page (/tag/:tag): heading, post count, a composer prefilled with the tag, and every post using it.
-//   GET /api/search/tag/:tag?cursor → { tag, count, items, next }
+//   GET /api/search/tag/:tag?cursor -> { tag, count, items, next }
 
 import { api } from '../api.js';
 import { h } from '../dom.js';
@@ -12,10 +12,10 @@ import { pageHead, withSponsored } from './feed-kit.js';
 export default async function tagView(ctx) {
   const tag = String(ctx.params.tag || '').replace(/^#/, '').toLowerCase();
   ctx.title(`#${tag}`);
-  const countLine = h('span', 'Counting...');
+  const countLine = h('span', 'Loading');
 
   const form = composer({
-    placeholder: `Post about #${tag}. Kevin already has.`,
+    placeholder: `Post about #${tag}`,
     onPosted: post => {
       // Only posts that still carry the tag belong on this page.
       if (new RegExp(`(^|[^\\w&])#${tag}(?!\\w)`, 'iu').test(`${post.title || ''} ${post.body}`)) {
@@ -31,8 +31,8 @@ export default async function tagView(ctx) {
     signal: ctx.signal,
     load: cursor => api.get(`search/tag/${encodeURIComponent(tag)}`, { cursor }, { signal: ctx.signal }),
     render: withSponsored(post => postCard(post)),
-    onPage: (_, data) => { if (data.count != null) countLine.textContent = `${plural(data.count, 'post')} · retained permanently`; },
-    empty: empty({ icon: 'hash', title: `Nobody has used #${tag} yet.`, text: 'Kevin has, privately. Be the first on the record.' }),
+    onPage: (_, data) => { if (data.count != null) countLine.textContent = plural(data.count, 'post'); },
+    empty: empty({ title: 'No posts yet.' }),
   });
 
   return h('div.tag-page',

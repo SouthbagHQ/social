@@ -1,5 +1,5 @@
 // Bookmarks (/bookmarks): your saved posts, newest bookmark first. Signed-in only.
-//   GET /api/feed/bookmarks?cursor → { items, next }
+//   GET /api/feed/bookmarks?cursor -> { items, next }
 
 import { api } from '../api.js';
 import { h } from '../dom.js';
@@ -15,13 +15,12 @@ export default async function bookmarks(ctx) {
     load: cursor => api.get('feed/bookmarks', { cursor }, { signal: ctx.signal }),
     render: post => postCard(post),
     empty: empty({
-      icon: 'bookmark',
-      title: 'No bookmarks.',
-      text: 'Southbag has bookmarked everything on your behalf anyway. Use the bookmark button on a post to keep your own copy.',
-      action: h('a.btn-small', { href: '/explore' }, 'Find something to keep'),
+      title: 'No bookmarks yet.',
+      text: 'Posts you save appear here.',
+      action: h('a.btn-small', { href: '/explore' }, 'Explore'),
     }),
   });
   return h('div.bookmarks-page',
-    pageHead('Bookmarks', { back: true, sub: 'Only you can see these. And Kevin.' }),
+    pageHead('Bookmarks', { back: true, sub: 'Only you can see these.' }),
     list);
 }

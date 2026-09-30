@@ -1,8 +1,8 @@
 // Search (/search?q=&type=top|posts|people|tags|groups|videos).
-//   GET /api/search?q&type&cursor — see src/routes/search.ts for the shapes.
+//   GET /api/search?q&type&cursor - see src/routes/search.ts for the shapes.
 
 import { api } from '../api.js';
-import { h, icon, mount } from '../dom.js';
+import { h, mount } from '../dom.js';
 import { navigate } from '../router.js';
 import { empty, infiniteList, tabs } from '../ui.js';
 import { postCard } from '../components/post.js';
@@ -13,7 +13,7 @@ const TYPES = [
   ['top', 'Top'], ['posts', 'Posts'], ['people', 'People'], ['tags', 'Tags'], ['groups', 'Groups'], ['videos', 'Videos'],
 ];
 
-const noResults = () => empty({ icon: 'search', title: 'No results.', text: 'The ones you wanted are on Floor 3.' });
+const noResults = () => empty({ title: 'No results.' });
 
 export default async function searchView(ctx) {
   const q = (ctx.query.get('q') || '').trim();
@@ -21,7 +21,7 @@ export default async function searchView(ctx) {
   ctx.title(q ? `Search: ${q}` : 'Search');
   const signal = ctx.signal;
 
-  const input = h('input.input.boxed', { type: 'search', name: 'q', value: q, placeholder: 'Search posts, people, #tags and groups', 'aria-label': 'Search', autofocus: !q });
+  const input = h('input.input.boxed', { type: 'search', name: 'q', value: q, placeholder: 'Search posts, people, tags and groups', 'aria-label': 'Search', autofocus: !q });
   const form = h('form.explore-search', {
     role: 'search',
     onsubmit: e => {
@@ -29,16 +29,16 @@ export default async function searchView(ctx) {
       const next = input.value.trim();
       if (next) navigate(`/search?q=${encodeURIComponent(next)}${type !== 'top' ? `&type=${type}` : ''}`);
     },
-  }, icon('search'), input, h('button.btn', { type: 'submit' }, 'Search'));
+  }, input, h('button.btn', { type: 'submit' }, 'Search'));
 
-  const head = [pageHead('Search', { sub: 'Every query is retained. Results are not guaranteed.' }), form];
+  const head = [pageHead('Search'), form];
 
   if (!q) {
-    const suggestions = h('div', { class: 'announcement-grid trending-grid' }, h('h2', 'Try a trending tag'), h('p.muted', { style: 'grid-column:1/-1;margin:0' }, 'Loading...'));
+    const suggestions = h('div', { class: 'announcement-grid trending-grid' }, h('h2', 'Trending'), h('p.muted', { style: 'grid-column:1/-1;margin:0' }, 'Loading'));
     api.get('search/trending', null, { signal }).then(({ tags }) => {
-      mount(suggestions, h('h2', 'Try a trending tag'), tags.length
+      mount(suggestions, h('h2', 'Trending'), tags.length
         ? tags.map((t, i) => tagCard(t, i + 1))
-        : h('p.muted', { style: 'grid-column:1/-1;margin:0' }, 'Nothing is trending. This is being reviewed.'));
+        : h('p.muted', { style: 'grid-column:1/-1;margin:0' }, 'Nothing is trending.'));
     }).catch(() => suggestions.remove());
     return h('div.search-page', head, suggestions);
   }
@@ -66,7 +66,7 @@ export default async function searchView(ctx) {
           data.posts.items.length && (data.people.length || data.tags.length) ? h('h2.results-title', 'Posts') : null);
         // "No results" only when nothing at all matched; otherwise a quieter note.
         mount(emptyHost, data.people.length || data.tags.length
-          ? h('p.muted', 'No posts matched. The people and tags above will have to do.')
+          ? h('p.muted.no-posts', 'No posts found.')
           : noResults());
         return data.posts;
       },
