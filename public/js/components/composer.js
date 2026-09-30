@@ -1,14 +1,17 @@
-// The composer: text, up to 10 photos or one video, visibility. Uploads start as soon as a file
-// is attached, so "Post" is quick. Used for feed posts, replies, quotes, wall posts and group posts.
+// The composer: text, up to 10 photos or one video, or a poll, and visibility. Uploads start as soon
+// as a file is attached, so "Post" is quick. Used for feed posts, replies, quotes, wall posts and
+// group posts.
 //
 //   composer({ placeholder, replyTo, quoteOf, groupId, wallUserId, onPosted(post), autofocus, compact,
-//              submitLabel, allowMedia = true, allowVideo = true, visibility = true })
+//              submitLabel, allowMedia = true, allowVideo = true, allowPoll = !replyTo && !quoteOf,
+//              visibility = true })
 
 import { api } from '../api.js';
 import { h } from '../dom.js';
 import { login, store } from '../store.js';
 import { shake, toast, toastError } from '../ui.js';
 import { kindOf, pickFiles, uploadFile } from '../upload.js';
+import { pollEditor } from './poll.js';
 import { celebrateFirstPost } from './post.js';
 import { avatar } from './user.js';
 
@@ -20,7 +23,7 @@ const MAX_PHOTOS = 10;
 export function composer(options = {}) {
   const {
     replyTo = null, quoteOf = null, groupId = null, wallUserId = null, onPosted, autofocus = false, compact = false,
-    allowMedia = true, allowVideo = true, visibility: showVisibility = !replyTo && !groupId,
+    allowMedia = true, allowVideo = true, allowPoll = !replyTo && !quoteOf, visibility: showVisibility = !replyTo && !groupId,
   } = options;
   const placeholder = options.placeholder || (replyTo ? 'Write a reply' : 'What are you doing?');
   const submitLabel = options.submitLabel || (replyTo ? 'Reply' : 'Post');
@@ -41,6 +44,28 @@ export function composer(options = {}) {
     h('option', { value: 'friends' }, 'Friends'));
   const submit = h('button.btn', { type: 'submit' }, submitLabel);
 
+  // Poll: the text is the question; photos and videos are off while it is open.
+  let pollOn = false;
+  const poll = allowPoll ? pollEditor({ onChange: () => update() }) : null;
+  poll?.classList.add('hidden');
+  const mediaBtn = allowMedia ? h('button.icon-btn', {
+    type: 'button',
+    onclick: async () => addFiles(await pickFiles({ accept: allowVideo ? 'image/*,video/*' : 'image/*', multiple: true })),
+  }, allowVideo ? 'Add photo or video' : 'Add photo') : null;
+  const pollBtn = allowPoll ? h('button.icon-btn', { type: 'button', onclick: () => setPoll(!pollOn) }, 'Poll') : null;
+  function setPoll(on, { focus = true } = {}) {
+    if (on && attachments.length) { toast('Remove the attachments to add a poll.', { error: true }); return; }
+    pollOn = on;
+    poll.classList.toggle('hidden', !on);
+    pollBtn.textContent = on ? 'Remove poll' : 'Poll';
+    pollBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    mediaBtn?.classList.toggle('hidden', on);
+    textarea.placeholder = on ? 'Ask a question' : placeholder;
+    if (on) poll.reset();
+    if (focus) (on ? poll.focusFirst() : textarea.focus());
+    update();
+  }
+
   const limit = () => (attachments.length ? CAPTION_LIMIT : TEXT_LIMIT);
   const update = () => {
     const n = [...textarea.value].length;
@@ -48,7 +73,9 @@ export function composer(options = {}) {
     counter.textContent = n ? String(left) : '';
     counter.classList.toggle('over', left < 0);
     const uploading = attachments.some(a => !a.media && !a.error);
-    submit.disabled = left < 0 || uploading || (!n && !attachments.some(a => a.media) && !quoteOf);
+    pollBtn?.classList.toggle('hidden', attachments.length > 0);
+    submit.disabled = left < 0 || uploading || (!n && !attachments.some(a => a.media) && !quoteOf)
+      || (pollOn && (!textarea.value.trim() || poll.value().options.length < 2));
     submit.textContent = uploading ? 'Uploading' : submitLabel;
     textarea.style.height = 'auto';
     textarea.style.height = `${Math.min(textarea.scrollHeight, 320)}px`;
@@ -61,6 +88,7 @@ export function composer(options = {}) {
   });
 
   function addFiles(files) {
+    if (pollOn && files.length) { toast('Polls cannot have photos or videos.', { error: true }); return; }
     for (const file of files) {
       const kind = kindOf(file);
       if (kind !== 'image' && !(kind === 'video' && allowVideo)) { toast('Only photos and videos can be attached.', { error: true }); continue; }
@@ -101,10 +129,8 @@ export function composer(options = {}) {
   }
 
   const tools = h('div.tools',
-    allowMedia ? h('button.icon-btn', {
-      type: 'button',
-      onclick: async () => addFiles(await pickFiles({ accept: allowVideo ? 'image/*,video/*' : 'image/*', multiple: true })),
-    }, allowVideo ? 'Add photo or video' : 'Add photo') : null,
+    mediaBtn,
+    pollBtn,
     showVisibility ? visibility : null,
     h('span.spacer'),
     counter,
@@ -132,8 +158,10 @@ export function composer(options = {}) {
         kind, title, body: textarea.value, media_ids: media.map(m => m.id),
         reply_to_id: replyTo?.id, repost_of_id: quoteOf?.id, group_id: groupId, wall_user_id: wallUserId,
         visibility: showVisibility ? visibility.value : undefined,
+        poll: pollOn ? poll.value() : undefined,
       });
       textarea.value = '';
+      if (pollOn) setPoll(false, { focus: false });
       attachments.splice(0).forEach(a => { URL.revokeObjectURL(a.preview); a.el.remove(); });
       update();
       if (!replyTo) celebrateFirstPost();
@@ -146,7 +174,7 @@ export function composer(options = {}) {
     update();
   } },
     compact ? null : avatar(store.me, { link: false }),
-    h('div.grow', textarea, attachmentsEl, tools));
+    h('div.grow', textarea, attachmentsEl, poll, tools));
 
   // Drag and drop onto the composer.
   if (allowMedia) {
