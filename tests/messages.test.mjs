@@ -25,7 +25,7 @@ test('messages: 1:1 is reused, unread counts, read receipts', async () => {
 
 test('messages: Southbag Support answers every message', async () => {
   const { body: { conversation } } = await carol.post('messages/support');
-  const sent = await carol.post(`messages/${conversation.id}`, { body: 'Where is Kevin?' });
+  const sent = await carol.post(`messages/${conversation.id}`, { body: 'How do I change my handle?' });
   assert.equal(sent.status, 201);
   assert.equal(sent.body.reply.sender, null);
   assert.ok(sent.body.reply.body.length > 0);
