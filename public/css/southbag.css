@@ -456,3 +456,34 @@ aside .site-footer .inner { display: flex; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ── Polls and pinned posts (components/poll.js, components/pinned.js) ── */
+.poll { margin: 10px 0 0; padding: 8px 10px; border: 2px inset var(--sb-bevel); background: var(--sb-paper); cursor: default; }
+.poll.busy { opacity: 0.6; }
+.poll-choices, .poll-results { display: flex; flex-direction: column; gap: 8px; box-shadow: none; }
+.poll-choice { display: block; width: 100%; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.poll-check { margin: 0; }
+.poll-submit { margin-top: 8px; box-shadow: none; }
+.poll-result { box-shadow: none; }
+.poll-result-head { display: flex; justify-content: space-between; gap: 10px; box-shadow: none; }
+.poll-label { overflow-wrap: anywhere; }
+.poll-result.leading .poll-label { font-weight: 700; }
+.poll-yours { color: var(--sb-muted); font-size: 0.85rem; }
+.poll-pct { font-weight: 700; flex-shrink: 0; }
+.poll-track { height: 12px; margin: 3px 0 2px; border: 1px inset #ccc; background: #e4e2db; box-shadow: none; }
+:root[data-theme='dark'] .poll-track { background: #33332f; border-color: #555; }
+.poll-fill { height: 100%; background: var(--sb-blue); box-shadow: none; transition: width 1.2s linear; }
+.poll-count { font-size: 0.78rem; color: var(--sb-muted); box-shadow: none; }
+.poll-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 8px; font-size: 0.8rem; color: var(--sb-muted); box-shadow: none; }
+.poll-summary { margin-top: 6px; }
+.poll-editor { margin-top: 8px; padding: 8px 10px; border: 1px dashed #999; box-shadow: none; }
+.poll-editor-options { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; box-shadow: none; }
+.poll-editor-option { display: flex; gap: 6px; align-items: center; box-shadow: none; }
+.poll-editor-option input { flex: 1; min-width: 0; }
+.poll-editor-settings { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-top: 8px; box-shadow: none; }
+.poll-editor-length { display: flex; align-items: center; gap: 6px; }
+.poll-editor-length select { width: auto; }
+.poll-editor .checkbox { margin: 0; align-items: center; }
+.pinned-slot { box-shadow: none; }
+.pinned-post { margin: 0 0 1rem; box-shadow: none; }
+.pinned-label { margin: 0 0 6px; padding: 2px 4px; font-size: 0.8rem; font-weight: 700; color: var(--sb-muted); box-shadow: none; }

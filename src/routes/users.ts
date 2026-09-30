@@ -39,6 +39,7 @@ interface ProfileRow extends UserRow {
   follower_count: number;
   following_count: number;
   post_count: number;
+  pinned_post_id: string | null;
 }
 
 type ListRow = UserRow & { bio: string; is_following: number; sort_at: number; rid: number };
@@ -205,6 +206,7 @@ users.get('/:handle', async c => {
       following_count: them.following_count,
       post_count: them.post_count,
       friend_count: extra?.friend_count ?? 0,
+      pinned_post_id: them.pinned_post_id ?? null,
     },
     viewer: {
       is_me: viewer?.id === them.id,

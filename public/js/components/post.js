@@ -3,7 +3,8 @@
 //   postCard(post, { compact, onDeleted, onReply, link = true })
 //
 // Handles reposts ("x reposted"), quotes, reactions (click = like, hover/long-press = picker),
-// comments, reposting/quoting, sharing, saving, editing and deleting. Plain text only: no icons.
+// comments, reposting/quoting, sharing, saving, editing, deleting, polls (components/poll.js) and
+// pinning to your profile. Plain text only: no icons.
 
 import { api } from '../api.js';
 import { h, mount } from '../dom.js';
@@ -12,6 +13,7 @@ import { navigate } from '../router.js';
 import { login, store } from '../store.js';
 import { confirm, dialog, menu, share, shake, toast, toastError } from '../ui.js';
 import { postMedia } from './media.js';
+import { pollSummary, pollView } from './poll.js';
 import { avatar, userName } from './user.js';
 
 // Reactions are words. `emoji` is kept as an alias of the label for older call sites.
@@ -73,12 +75,42 @@ function header(post, { onDeleted, onEdited }) {
     more);
 }
 
+// The viewer's pinned post id once they pin or unpin in this session (undefined until then), so
+// menus on other cards don't go by a stale `viewer.pinned`.
+let myPin;
+const isPinned = post => (myPin !== undefined ? myPin === post.id : Boolean(post.viewer?.pinned));
+const canPin = post => post.viewer?.can_edit && !post.reply_to && !post.group && !(post.repost_of && !post.body);
+
+async function togglePin(post) {
+  const pinned = isPinned(post);
+  try {
+    if (pinned) await api.del('pins');
+    else await api.put('pins', { post_id: post.id });
+    myPin = pinned ? null : post.id;
+    post.viewer.pinned = !pinned;
+    toast(pinned ? 'Unpinned.' : 'Pinned to your profile.');
+    window.dispatchEvent(new CustomEvent('southbag:pin', { detail: { post_id: myPin } }));
+  } catch (err) { toastError(err); }
+}
+
+async function endPoll(post) {
+  if (!(await confirm('No one will be able to vote after this.', { title: 'End poll', ok: 'End poll' }))) return;
+  try {
+    const { post: fresh } = await api.post(`polls/${post.id}/close`);
+    post.poll = fresh.poll;
+    document.querySelectorAll(`.poll[data-poll-id="${post.id}"]`).forEach(el => el.replaceWith(pollView(post)));
+    toast('Poll ended.');
+  } catch (err) { toastError(err); }
+}
+
 function postMenu(anchor, post, { onDeleted, onEdited }) {
   const mine = post.viewer?.can_edit;
   menu(anchor, [
     { label: 'Copy link', onClick: () => share(postUrl(post)) },
     store.me ? { label: 'Send in a message', href: `/messages?share=${post.id}` } : null,
     { label: post.viewer?.bookmarked ? 'Unsave' : 'Save', onClick: () => toggleBookmark(post) },
+    canPin(post) ? { label: isPinned(post) ? 'Unpin from profile' : 'Pin to profile', onClick: () => togglePin(post) } : null,
+    mine && post.poll && !post.poll.closed ? { label: 'End poll', onClick: () => endPoll(post) } : null,
     mine ? { label: 'Edit', onClick: () => amend(post, onEdited) } : null,
     mine || post.viewer?.can_delete ? { label: 'Delete', onClick: () => remove(post, onDeleted) } : null,
     !mine ? { label: 'Report', onClick: () => toast('Reported.') } : null,
@@ -252,6 +284,7 @@ function embeddedPost(post) {
     h('div.row', avatar(post.author, { size: 'xs', link: false }), userName(post.author), h('span.muted', timeAgo(post.created_at))),
     post.title ? h('div.post-title', post.title) : null,
     post.body ? h('div.post-body', richText(post.body)) : null,
+    pollSummary(post),
     post.media?.length ? h('div.post-media', postMedia(post)) : null);
 }
 
@@ -285,6 +318,7 @@ export function postCard(input, options = {}) {
   el.append(header(post, { onDeleted, onEdited }));
   if (post.title) el.append(h('h3.post-title', link ? h('a', { href: postUrl(post), style: 'color:inherit' }, post.title) : post.title));
   if (post.body) el.append(h('div.post-body', richText(post.body)));
+  if (post.poll) el.append(pollView(post));
   const media = postMedia(post);
   if (media) el.append(h('div.post-media', media));
   if (post.repost_of && post.body) el.append(h('div.quote', embeddedPost(post.repost_of)));
@@ -311,7 +345,7 @@ export function postCard(input, options = {}) {
   if (link) {
     el.style.cursor = 'pointer';
     el.addEventListener('click', e => {
-      if (e.target.closest('a, button, video, audio, input, textarea, .carousel, .media-grid, .reaction-picker') || getSelection()?.toString()) return;
+      if (e.target.closest('a, button, video, audio, input, textarea, label, .poll, .carousel, .media-grid, .reaction-picker') || getSelection()?.toString()) return;
       navigate(postUrl(post));
     });
   }

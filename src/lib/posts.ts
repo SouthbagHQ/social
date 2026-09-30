@@ -18,6 +18,21 @@ export const MAX_BODY = 2200; // captions and video descriptions
 export const MAX_TEXT = 280; // text posts and comments
 export const MAX_TITLE = 120;
 export const MAX_IMAGES = 10;
+export const POLL_MIN_OPTIONS = 2;
+export const POLL_MAX_OPTIONS = 4;
+export const POLL_OPTION_MAX = 25;
+export const POLL_MAX_HOURS = 168;
+
+export interface PollJson {
+  options: { id: string; label: string; votes: number }[];
+  /** People who voted (for multiple-answer polls, percentages are out of this). */
+  total: number;
+  closes_at: number;
+  closed: boolean;
+  multiple: boolean;
+  /** Option ids the viewer picked (empty if they have not voted or are signed out). */
+  viewer_votes: string[];
+}
 
 export interface PostRow {
   id: string;
@@ -56,13 +71,14 @@ export interface PostJson {
   counts: { reactions: number; replies: number; reposts: number; views: number };
   /** Breakdown by type, most popular first, e.g. [["like", 4], ["haha", 1]]. */
   reactions: [ReactionType, number][];
-  viewer: { reaction: ReactionType | null; reposted: boolean; bookmarked: boolean; can_edit: boolean };
+  viewer: { reaction: ReactionType | null; reposted: boolean; bookmarked: boolean; can_edit: boolean; pinned: boolean };
   reply_to: { id: string; author: UserCard | null } | null;
   root_id: string | null;
   /** The original, for reposts (no body) and quotes (with body). */
   repost_of: PostJson | null;
   group: { id: string; slug: string; name: string } | null;
   wall_user: UserCard | null;
+  poll: PollJson | null;
 }
 
 /**
@@ -100,6 +116,9 @@ export async function loadVisiblePost(env: Env, viewerId: string | null, id: str
   return env.DB.prepare(`SELECT p.* FROM posts p WHERE p.id = ? AND ${v.sql}`).bind(id, ...v.params).first<PostRow>();
 }
 
+interface ViewerStateRow { id: string; reaction: ReactionType | null; reposted: number; bookmarked: number; pinned: number }
+interface PollOptionRow { post_id: string; id: string; label: string; vote_count: number; closes_at: number; multiple: number; voter_count: number }
+
 /** Turns post rows into API JSON, batching every lookup. Order is preserved. */
 export async function hydrate(env: Env, viewer: SessionUser | null, rows: PostRow[], depth = 0): Promise<PostJson[]> {
   if (!rows.length) return [];
@@ -119,8 +138,10 @@ export async function hydrate(env: Env, viewer: SessionUser | null, rows: PostRo
 
   const replyTargetIds = [...new Set(rows.map(r => r.reply_to_id).filter((x): x is string => Boolean(x)))];
   const groupIds = [...new Set(rows.map(r => r.group_id).filter((x): x is string => Boolean(x)))];
+  // Only live text posts can carry a poll.
+  const pollIds = rows.filter(r => r.kind === 'text' && !r.deleted_at).map(r => r.id);
 
-  const [mediaRes, reactionRes, viewerRes, replyTargets, groupsRes, originals] = await Promise.all([
+  const [mediaRes, reactionRes, viewerRes, replyTargets, groupsRes, originals, pollRes, pollVoteRes] = await Promise.all([
     env.DB.prepare(`SELECT pm.post_id, m.* FROM post_media pm JOIN media m ON m.id = pm.media_id
       WHERE pm.post_id IN (${inIds}) ORDER BY pm.post_id, pm.position`).bind(...ids).all<MediaRow & { post_id: string }>(),
     env.DB.prepare(`SELECT post_id, type, COUNT(*) AS n FROM reactions WHERE post_id IN (${inIds})
@@ -129,10 +150,11 @@ export async function hydrate(env: Env, viewer: SessionUser | null, rows: PostRo
       ? env.DB.prepare(`SELECT p.id,
           (SELECT type FROM reactions r WHERE r.post_id = p.id AND r.user_id = ?) AS reaction,
           EXISTS (SELECT 1 FROM posts rp WHERE rp.repost_of_id = p.id AND rp.author_id = ? AND rp.body = '' AND rp.deleted_at IS NULL) AS reposted,
-          EXISTS (SELECT 1 FROM bookmarks b WHERE b.post_id = p.id AND b.user_id = ?) AS bookmarked
-          FROM posts p WHERE p.id IN (${inIds})`).bind(viewer.id, viewer.id, viewer.id, ...ids)
-          .all<{ id: string; reaction: ReactionType | null; reposted: number; bookmarked: number }>()
-      : Promise.resolve({ results: [] as { id: string; reaction: ReactionType | null; reposted: number; bookmarked: number }[] }),
+          EXISTS (SELECT 1 FROM bookmarks b WHERE b.post_id = p.id AND b.user_id = ?) AS bookmarked,
+          (p.author_id = ? AND p.id = (SELECT pinned_post_id FROM users WHERE id = ?)) AS pinned
+          FROM posts p WHERE p.id IN (${inIds})`).bind(viewer.id, viewer.id, viewer.id, viewer.id, viewer.id, ...ids)
+          .all<ViewerStateRow>()
+      : Promise.resolve({ results: [] as ViewerStateRow[] }),
     replyTargetIds.length
       ? env.DB.prepare(`SELECT id, author_id FROM posts WHERE id IN (${placeholders(replyTargetIds.length)})`)
           .bind(...replyTargetIds).all<{ id: string; author_id: string }>()
@@ -142,6 +164,16 @@ export async function hydrate(env: Env, viewer: SessionUser | null, rows: PostRo
           .bind(...groupIds).all<{ id: string; slug: string; name: string }>()
       : Promise.resolve({ results: [] as { id: string; slug: string; name: string }[] }),
     originalsPromise,
+    pollIds.length
+      ? env.DB.prepare(`SELECT o.post_id, o.id, o.label, o.vote_count, pl.closes_at, pl.multiple, pl.voter_count
+          FROM poll_options o JOIN polls pl ON pl.post_id = o.post_id
+          WHERE o.post_id IN (${placeholders(pollIds.length)}) ORDER BY o.post_id, o.position`)
+          .bind(...pollIds).all<PollOptionRow>()
+      : Promise.resolve({ results: [] as PollOptionRow[] }),
+    viewer && pollIds.length
+      ? env.DB.prepare(`SELECT post_id, option_id FROM poll_votes WHERE user_id = ? AND post_id IN (${placeholders(pollIds.length)})`)
+          .bind(viewer.id, ...pollIds).all<{ post_id: string; option_id: string }>()
+      : Promise.resolve({ results: [] as { post_id: string; option_id: string }[] }),
   ]);
 
   const replyAuthor = new Map(replyTargets.results.map(r => [r.id, r.author_id]));
@@ -162,6 +194,17 @@ export async function hydrate(env: Env, viewer: SessionUser | null, rows: PostRo
   }
   const viewerState = new Map(viewerRes.results.map(v => [v.id, v]));
   const groups = new Map(groupsRes.results.map(g => [g.id, g]));
+  const now = Date.now();
+  const polls = new Map<string, PollJson>();
+  for (const o of pollRes.results) {
+    let poll = polls.get(o.post_id);
+    if (!poll) {
+      poll = { options: [], total: o.voter_count, closes_at: o.closes_at, closed: o.closes_at <= now, multiple: Boolean(o.multiple), viewer_votes: [] };
+      polls.set(o.post_id, poll);
+    }
+    poll.options.push({ id: o.id, label: o.label, votes: o.vote_count });
+  }
+  for (const v of pollVoteRes.results) polls.get(v.post_id)?.viewer_votes.push(v.option_id);
 
   return rows.map(r => {
     const deleted = Boolean(r.deleted_at);
@@ -185,6 +228,7 @@ export async function hydrate(env: Env, viewer: SessionUser | null, rows: PostRo
         reposted: Boolean(v?.reposted),
         bookmarked: Boolean(v?.bookmarked),
         can_edit: viewer?.id === r.author_id && !deleted,
+        pinned: Boolean(v?.pinned),
       },
       reply_to: r.reply_to_id
         ? { id: r.reply_to_id, author: users.get(replyAuthor.get(r.reply_to_id) || '') ?? null }
@@ -193,6 +237,7 @@ export async function hydrate(env: Env, viewer: SessionUser | null, rows: PostRo
       repost_of: r.repost_of_id ? originals.get(r.repost_of_id) ?? null : null,
       group: r.group_id ? groups.get(r.group_id) ?? null : null,
       wall_user: r.wall_user_id ? users.get(r.wall_user_id) ?? null : null,
+      poll: deleted ? null : polls.get(r.id) ?? null,
     };
   });
 }
@@ -222,6 +267,25 @@ export interface CreatePostInput {
   group_id?: string;
   wall_user_id?: string;
   visibility?: Visibility;
+  /** A poll on a text post; the body is the question. */
+  poll?: { options?: unknown; duration_hours?: unknown; multiple?: unknown } | null;
+}
+
+interface PollInput { options: string[]; closesAt: number; multiple: boolean }
+
+/** Validates `input.poll` (throws 422s). Returns null when there is no poll. */
+function parsePoll(raw: CreatePostInput['poll'], now: number): PollInput | null {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== 'object' || !Array.isArray(raw.options)) fail(422, 'A poll needs options.');
+  const options = raw.options.map(o => (typeof o === 'string' ? o.trim() : ''));
+  if (options.length < POLL_MIN_OPTIONS || options.length > POLL_MAX_OPTIONS)
+    fail(422, `A poll needs ${POLL_MIN_OPTIONS} to ${POLL_MAX_OPTIONS} options.`);
+  if (options.some(o => !o)) fail(422, 'Poll options cannot be empty.');
+  if (options.some(o => [...o].length > POLL_OPTION_MAX)) fail(422, `Poll options are limited to ${POLL_OPTION_MAX} characters.`);
+  if (new Set(options.map(o => o.toLowerCase())).size !== options.length) fail(422, 'Poll options must be different.');
+  const hours = Number(raw.duration_hours ?? 24);
+  if (!Number.isInteger(hours) || hours < 1 || hours > POLL_MAX_HOURS) fail(422, 'Polls run for 1 hour to 7 days.');
+  return { options, closesAt: now + hours * 3600000, multiple: raw.multiple === true };
 }
 
 /**
@@ -238,6 +302,12 @@ export async function createPost(env: Env, user: SessionUser, input: CreatePostI
     ? input.visibility as Visibility : 'public';
   const mediaIds = Array.isArray(input.media_ids) ? input.media_ids.filter(x => typeof x === 'string').slice(0, MAX_IMAGES) : [];
   let kind: PostKind = ['text', 'photo', 'video', 'short'].includes(input.kind as string) ? input.kind as PostKind : 'text';
+  const poll = parsePoll(input.poll, now);
+  if (poll) {
+    if (kind !== 'text' || mediaIds.length) fail(422, 'Polls cannot have photos or videos.');
+    if (input.repost_of_id) fail(422, 'Quotes cannot have polls.');
+    if (!body) fail(422, 'Ask a question first.');
+  }
 
   let mediaRows: MediaRow[];
   try {
@@ -313,6 +383,12 @@ export async function createPost(env: Env, user: SessionUser, input: CreatePostI
     ...extractTags(`${title} ${body}`).map(tag => env.DB.prepare('INSERT OR IGNORE INTO post_tags (tag, post_id, created_at) VALUES (?, ?, ?)')
       .bind(tag, id, now)),
   ];
+  if (poll) {
+    statements.push(env.DB.prepare('INSERT INTO polls (post_id, closes_at, multiple) VALUES (?, ?, ?)')
+      .bind(id, poll.closesAt, poll.multiple ? 1 : 0));
+    poll.options.forEach((label, position) => statements.push(
+      env.DB.prepare('INSERT INTO poll_options (id, post_id, position, label) VALUES (?, ?, ?, ?)').bind(newId(now), id, position, label)));
+  }
   if (!replyTo) statements.push(env.DB.prepare('UPDATE users SET post_count = post_count + 1 WHERE id = ?').bind(user.id));
   if (replyTo) statements.push(env.DB.prepare('UPDATE posts SET reply_count = reply_count + 1 WHERE id = ?').bind(replyTo.id));
   if (repostOf) statements.push(env.DB.prepare('UPDATE posts SET repost_count = repost_count + 1 WHERE id = ?').bind(repostOf.id));
@@ -357,6 +433,8 @@ export async function deletePost(env: Env, user: SessionUser, id: string): Promi
     statements.push(env.DB.prepare('DELETE FROM post_tags WHERE post_id = ?').bind(id));
   }
   if (!post.reply_to_id) statements.push(env.DB.prepare('UPDATE users SET post_count = MAX(0, post_count - 1) WHERE id = ?').bind(post.author_id));
+  // A deleted post stops being pinned.
+  statements.push(env.DB.prepare('UPDATE users SET pinned_post_id = NULL WHERE id = ? AND pinned_post_id = ?').bind(post.author_id, id));
   if (post.reply_to_id) statements.push(env.DB.prepare('UPDATE posts SET reply_count = MAX(0, reply_count - 1) WHERE id = ?').bind(post.reply_to_id));
   if (post.repost_of_id) statements.push(env.DB.prepare('UPDATE posts SET repost_count = MAX(0, repost_count - 1) WHERE id = ?').bind(post.repost_of_id));
   if (post.group_id && !post.reply_to_id) statements.push(env.DB.prepare('UPDATE groups SET post_count = MAX(0, post_count - 1) WHERE id = ?').bind(post.group_id));
