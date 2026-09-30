@@ -49,7 +49,7 @@ export function composer(options = {}) {
     counter.classList.toggle('over', left < 0);
     const uploading = attachments.some(a => !a.media && !a.error);
     submit.disabled = left < 0 || uploading || (!n && !attachments.some(a => a.media) && !quoteOf);
-    submit.textContent = uploading ? 'Uploading…' : submitLabel;
+    submit.textContent = uploading ? 'Uploading' : submitLabel;
     textarea.style.height = 'auto';
     textarea.style.height = `${Math.min(textarea.scrollHeight, 320)}px`;
   };

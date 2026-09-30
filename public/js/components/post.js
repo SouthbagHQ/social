@@ -56,10 +56,9 @@ function header(post, { onDeleted, onEdited }) {
   const a = post.author;
   const sub = h('div.sub',
     h('span.handle', `@${a.handle}`),
-    h('span', '·'),
     h('a', { href: postUrl(post), title: fullDate(post.created_at) }, h('time', { datetime: new Date(post.created_at).toISOString() }, timeAgo(post.created_at))),
-    post.edited_at ? h('span', { title: `Edited ${fullDate(post.edited_at)}` }, '· edited') : null,
-    visibilityLabel(post.visibility) ? h('span', `· ${visibilityLabel(post.visibility)}`) : null,
+    post.edited_at ? h('span', { title: `Edited ${fullDate(post.edited_at)}` }, 'edited') : null,
+    visibilityLabel(post.visibility) ? h('span', visibilityLabel(post.visibility)) : null,
     post.sponsored ? h('span.sponsored-tag', 'Sponsored') : null,
   );
   const more = h('button.icon-btn', { type: 'button' }, 'More');
@@ -250,7 +249,7 @@ export async function quote(post) {
 function embeddedPost(post) {
   if (!post) return h('p.deleted', 'This post is unavailable.');
   return h('div', { onclick: e => { if (!e.target.closest('a, button, video')) navigate(postUrl(post)); } },
-    h('div.row', avatar(post.author, { size: 'xs', link: false }), userName(post.author), h('span.muted', `· ${timeAgo(post.created_at)}`)),
+    h('div.row', avatar(post.author, { size: 'xs', link: false }), userName(post.author), h('span.muted', timeAgo(post.created_at))),
     post.title ? h('div.post-title', post.title) : null,
     post.body ? h('div.post-body', richText(post.body)) : null,
     post.media?.length ? h('div.post-media', postMedia(post)) : null);

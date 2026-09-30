@@ -32,7 +32,7 @@ export function sidebar() {
 export function footer() {
   return h('footer.site-footer',
     h('div.inner',
-      h('span', `© ${new Date().getFullYear()} Southbag`),
+      h('span', `Southbag ${new Date().getFullYear()}`),
       h('a', { href: '/terms' }, 'Terms'),
       h('a', { href: 'https://identity.southbag.cc/home' }, 'Southbag Identity'),
       h('a', { href: '/messages/support' }, 'Help'),
