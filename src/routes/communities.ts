@@ -746,7 +746,7 @@ communities.post('/:name/threads/:id/comments', async c => {
   ];
   const recipient = parent ? parent.author_id : thread.author_id;
   const note = recipient && notifyStatement(c.env, {
-    userId: recipient, actorId: user.id, type: 'reply', postId: null, body: `/c/${thread.c_name}/${thread.id} ${snippet(text)}`,
+    userId: recipient, actorId: user.id, type: 'reply', postId: null, body: snippet(text), link: `/c/${thread.c_name}/${thread.id}`,
   }, now);
   if (note) statements.push(note);
   await c.env.DB.batch(statements);

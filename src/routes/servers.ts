@@ -1132,13 +1132,13 @@ servers.post('/:id/channels/:cid/messages', async c => {
   ];
   if (everyone) {
     // One statement for the whole server instead of a notify() per member (capped; D1 free-plan writes).
-    statements.push(c.env.DB.prepare(`INSERT INTO notifications (id, user_id, actor_id, type, post_id, group_id, body, created_at)
-        SELECT substr(?1, 1, 9) || substr(lower(hex(randomblob(4))), 1, 7), sm.user_id, ?2, 'mention', NULL, NULL, ?3, ?4
+    statements.push(c.env.DB.prepare(`INSERT INTO notifications (id, user_id, actor_id, type, post_id, group_id, body, link, created_at)
+        SELECT substr(?1, 1, 9) || substr(lower(hex(randomblob(4))), 1, 7), sm.user_id, ?2, 'mention', NULL, NULL, ?3, ?6, ?4
         FROM server_members sm WHERE sm.server_id = ?5 AND sm.user_id != ?2 ORDER BY sm.joined_at DESC LIMIT ${MAX_EVERYONE_NOTIFY}`)
-      .bind(id, user.id, note, now, a.server.id));
+      .bind(id, user.id, note, now, a.server.id, `/servers/${a.server.id}/${ch.id}`));
   } else {
     for (const m of mentioned) {
-      const s = notifyStatement(c.env, { userId: m.id, actorId: user.id, type: 'mention', postId: null, body: note }, now);
+      const s = notifyStatement(c.env, { userId: m.id, actorId: user.id, type: 'mention', postId: null, body: note, link: `/servers/${a.server.id}/${ch.id}` }, now);
       if (s) statements.push(s);
     }
   }

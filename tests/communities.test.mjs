@@ -233,10 +233,10 @@ test('communities: nested comments, sorting, edits and notifications', async () 
 
   // Counts and notifications: alice is told about top-level comments, bob about alice's reply.
   assert.equal((await anon.get(`communities/${c.name}/threads/${thread.id}`)).body.thread.comment_count, 7);
-  const aliceNotes = (await alice.get('notifications')).body.items.filter(n => n.type === 'reply' && n.body?.startsWith(`/c/${c.name}/${thread.id} Top level`));
+  const aliceNotes = (await alice.get('notifications')).body.items.filter(n => n.type === 'reply' && n.link === `/c/${c.name}/${thread.id}` && n.body?.startsWith('Top level'));
   assert.equal(aliceNotes.length, 2);
   assert.equal(aliceNotes[0].post, null);
-  const bobNotes = (await bob.get('notifications')).body.items.filter(n => n.type === 'reply' && n.body === `/c/${c.name}/${thread.id} Reply to bob`);
+  const bobNotes = (await bob.get('notifications')).body.items.filter(n => n.type === 'reply' && n.link === `/c/${c.name}/${thread.id}` && n.body === 'Reply to bob');
   assert.equal(bobNotes.length, 1);
 
   // Edit and delete.

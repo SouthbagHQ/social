@@ -23,6 +23,7 @@ interface NotificationRow {
   post_id: string | null;
   group_id: string | null;
   body: string | null;
+  link?: string | null;
   read_at: number | null;
   created_at: number;
 }
@@ -80,6 +81,7 @@ notifications.get('/', async c => {
       post: r.post_id ? posts.get(r.post_id) ?? null : null,
       group: r.group_id ? groups.get(r.group_id) ?? null : null,
       body: r.body,
+      link: r.link ?? null,
       read: Boolean(r.read_at),
       created_at: r.created_at,
     })),

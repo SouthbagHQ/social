@@ -420,7 +420,7 @@ events.post('/', async c => {
   for (const cohost of cohosts) {
     statements.push(c.env.DB.prepare('INSERT OR IGNORE INTO event_hosts (event_id, user_id, created_at) VALUES (?, ?, ?)').bind(id, cohost, now));
     const note = notifyStatement(c.env, { userId: cohost, actorId: user.id, type: 'event_host' as NotificationType,
-      body: `${user.name} added you as a host of "${fields.title}".` }, now);
+      body: `${user.name} added you as a host of "${fields.title}".`, link: `/events/${id}` }, now);
     if (note) statements.push(note);
   }
   await c.env.DB.batch(statements);
@@ -522,7 +522,7 @@ events.patch('/:id', async c => {
       if (had.has(id)) continue;
       statements.push(c.env.DB.prepare('INSERT OR IGNORE INTO event_hosts (event_id, user_id, created_at) VALUES (?, ?, ?)').bind(event.id, id, now));
       const note = notifyStatement(c.env, { userId: id, actorId: user.id, type: 'event_host' as NotificationType,
-        body: `${user.name} added you as a host of "${event.title}".` }, now);
+        body: `${user.name} added you as a host of "${event.title}".`, link: `/events/${event.id}` }, now);
       if (note) statements.push(note);
     }
   }
@@ -552,7 +552,7 @@ events.delete('/:id', async c => {
     ];
     for (const p of people) {
       const note = notifyStatement(c.env, { userId: p.user_id, actorId: user.id, type: 'event_cancelled' as NotificationType,
-        body: `${user.name} cancelled "${event.title}".` }, now);
+        body: `${user.name} cancelled "${event.title}".`, link: `/events/${event.id}` }, now);
       if (note) statements.push(note);
     }
     await c.env.DB.batch(statements);
@@ -656,7 +656,7 @@ events.post('/:id/invite', async c => {
     statements.push(c.env.DB.prepare('INSERT OR IGNORE INTO event_invites (event_id, user_id, invited_by, created_at) VALUES (?, ?, ?, ?)')
       .bind(event.id, r.id, user.id, now));
     const note = notifyStatement(c.env, { userId: r.id, actorId: user.id, type: 'event_invite' as NotificationType,
-      body: `${user.name} invited you to "${event.title}".` }, now);
+      body: `${user.name} invited you to "${event.title}".`, link: `/events/${event.id}` }, now);
     if (note) statements.push(note);
   }
   if (statements.length) await c.env.DB.batch(statements);
@@ -704,7 +704,7 @@ events.post('/:id/comments', async c => {
     c.env.DB.prepare('UPDATE events SET comment_count = comment_count + 1 WHERE id = ?').bind(event.id),
   ];
   const note = notifyStatement(c.env, { userId: event.host_id, actorId: user.id, type: 'event_comment' as NotificationType,
-    body: `${user.name} commented on "${event.title}".` }, now);
+    body: `${user.name} commented on "${event.title}".`, link: `/events/${event.id}` }, now);
   if (note) statements.push(note);
   await c.env.DB.batch(statements);
   const row: CommentRow = { id, event_id: event.id, author_id: user.id, body: bodyText, created_at: now, deleted_at: null };
@@ -827,8 +827,8 @@ export async function sendEventReminders(env: Env, now = Date.now()): Promise<nu
   // Notification ids are "<time part of newId><random>", so they sort with the others.
   const idPrefix = newId(now).slice(0, 9);
   const [inserted] = await env.DB.batch([
-    env.DB.prepare(`INSERT INTO notifications (id, user_id, actor_id, type, post_id, group_id, body, created_at)
-        SELECT ? || substr(lower(hex(randomblob(4))), 1, 7), r.user_id, NULL, 'event_reminder', NULL, NULL, ${bodyCase}, ?
+    env.DB.prepare(`INSERT INTO notifications (id, user_id, actor_id, type, post_id, group_id, body, link, created_at)
+        SELECT ? || substr(lower(hex(randomblob(4))), 1, 7), r.user_id, NULL, 'event_reminder', NULL, NULL, ${bodyCase}, '/events/' || r.event_id, ?
         FROM event_rsvps r WHERE r.status = 'going' AND r.event_id IN (${placeholders(ids.length)}) AND ${notSent}`)
       .bind(idPrefix, ...bodyParams, now, ...ids),
     env.DB.prepare(`INSERT OR IGNORE INTO event_reminders_sent (event_id, user_id, created_at)

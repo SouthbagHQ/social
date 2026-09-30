@@ -48,6 +48,7 @@ function describe(n, actors) {
 }
 
 function target(n) {
+  if (n.link && n.link.startsWith('/') && !n.link.startsWith('//')) return n.link;
   if (n.type === 'friend_request') return '/friends';
   if (n.type === 'story_view' && store.me) return `/stories/${store.me.handle}`;
   if (n.post) return postUrl(n.post);

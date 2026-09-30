@@ -472,9 +472,9 @@ async function endorse(c: Ctx, on: boolean) {
       c.env.DB.prepare('INSERT OR IGNORE INTO endorsements (user_id, skill, endorser_id, created_at) VALUES (?, ?, ?, ?)')
         .bind(them.id, skill.name, me.id, now),
       // Only the first time, so toggling does not spam.
-      c.env.DB.prepare(`INSERT INTO notifications (id, user_id, actor_id, type, body, created_at)
-        SELECT ?, ?, ?, 'system', ?, ? WHERE changes() > 0`)
-        .bind(newId(now), them.id, me.id, `${me.name} endorsed you for ${skill.name}.`, now),
+      c.env.DB.prepare(`INSERT INTO notifications (id, user_id, actor_id, type, body, link, created_at)
+        SELECT ?, ?, ?, 'system', ?, ?, ? WHERE changes() > 0`)
+        .bind(newId(now), them.id, me.id, `${me.name} endorsed you for ${skill.name}.`, `/@${them.handle}/career`, now),
       recount,
     ]);
   } else {
@@ -519,9 +519,9 @@ careers.post('/recommendations/requests/:handle', async c => {
   await c.env.DB.batch([
     c.env.DB.prepare('INSERT OR IGNORE INTO recommendation_requests (user_id, author_id, message, created_at) VALUES (?, ?, ?, ?)')
       .bind(me.id, them.id, message, now),
-    c.env.DB.prepare(`INSERT INTO notifications (id, user_id, actor_id, type, body, created_at)
-      SELECT ?, ?, ?, 'system', ?, ? WHERE changes() > 0`)
-      .bind(newId(now), them.id, me.id, `${me.name} asked you for a recommendation.`, now),
+    c.env.DB.prepare(`INSERT INTO notifications (id, user_id, actor_id, type, body, link, created_at)
+      SELECT ?, ?, ?, 'system', ?, ?, ? WHERE changes() > 0`)
+      .bind(newId(now), them.id, me.id, `${me.name} asked you for a recommendation.`, `/@${me.handle}/career`, now),
   ]);
   return c.json({ requested: true });
 });
@@ -549,7 +549,7 @@ careers.put('/recommendations/:handle', async c => {
       .bind(newId(now), them.id, me.id, relationship, text, now, now),
     c.env.DB.prepare('DELETE FROM recommendation_requests WHERE user_id = ? AND author_id = ?').bind(them.id, me.id),
     notifyStatement(c.env, { userId: them.id, actorId: me.id, type: 'system',
-      body: `${me.name} wrote you a recommendation. Review it on your Career tab.` }, now)!,
+      body: `${me.name} wrote you a recommendation. Review it on your Career tab.`, link: `/@${them.handle}/career` }, now)!,
   ]);
   const row = await c.env.DB.prepare(`${recommendationSelect} WHERE r.user_id = ? AND r.author_id = ?`).bind(them.id, me.id).first<RecommendationRow>();
   return c.json({ recommendation: recommendationJson(row!) });
@@ -809,9 +809,9 @@ careers.put('/companies/:slug/admins/:handle', async c => {
   const now = Date.now();
   await c.env.DB.batch([
     c.env.DB.prepare('INSERT OR IGNORE INTO company_admins (company_id, user_id, created_at) VALUES (?, ?, ?)').bind(co.id, them.id, now),
-    c.env.DB.prepare(`INSERT INTO notifications (id, user_id, actor_id, type, body, created_at)
-      SELECT ?, ?, ?, 'system', ?, ? WHERE changes() > 0 AND ? != ?`)
-      .bind(newId(now), them.id, me.id, `${me.name} made you an admin of ${co.name}.`, now, them.id, me.id),
+    c.env.DB.prepare(`INSERT INTO notifications (id, user_id, actor_id, type, body, link, created_at)
+      SELECT ?, ?, ?, 'system', ?, ?, ? WHERE changes() > 0 AND ? != ?`)
+      .bind(newId(now), them.id, me.id, `${me.name} made you an admin of ${co.name}.`, `/jobs?company=${co.slug}`, now, them.id, me.id),
   ]);
   return c.json({ admins: await adminList(c.env, co.id) });
 });
@@ -1039,9 +1039,9 @@ careers.post('/jobs/:id/apply', async c => {
     c.env.DB.prepare(`INSERT OR IGNORE INTO job_applications (id, job_id, user_id, note, status, created_at, updated_at)
       VALUES (?, ?, ?, ?, 'submitted', ?, ?)`).bind(id, job.id, me.id, note, now, now),
     c.env.DB.prepare('UPDATE jobs SET applicant_count = applicant_count + 1 WHERE id = ? AND changes() > 0').bind(job.id),
-    c.env.DB.prepare(`INSERT INTO notifications (id, user_id, actor_id, type, body, created_at)
-      SELECT ?, ?, ?, 'system', ?, ? WHERE changes() > 0 AND ? IS NOT NULL AND ? != ?`)
-      .bind(newId(now), job.poster_id, me.id, `${me.name} applied for ${job.title}.`, now, job.poster_id, job.poster_id, me.id),
+    c.env.DB.prepare(`INSERT INTO notifications (id, user_id, actor_id, type, body, link, created_at)
+      SELECT ?, ?, ?, 'system', ?, ?, ? WHERE changes() > 0 AND ? IS NOT NULL AND ? != ?`)
+      .bind(newId(now), job.poster_id, me.id, `${me.name} applied for ${job.title}.`, `/jobs/${job.id}`, now, job.poster_id, job.poster_id, me.id),
   ]);
   if (!inserted.meta.changes) fail(409, 'You have already applied for this job.');
   const row = await c.env.DB.prepare('SELECT * FROM job_applications WHERE id = ?').bind(id).first<ApplicationRow>();
@@ -1104,7 +1104,7 @@ careers.patch('/applications/:id', async c => {
   if (status !== app.status) {
     const now = Date.now();
     await c.env.DB.prepare('UPDATE job_applications SET status = ?, updated_at = ? WHERE id = ?').bind(status, now, app.id).run();
-    await notify(c.env, { userId: app.user_id, actorId: null, type: 'system', body: STATUS_MESSAGES[status](job.title, job.c_name) });
+    await notify(c.env, { userId: app.user_id, actorId: null, type: 'system', body: STATUS_MESSAGES[status](job.title, job.c_name), link: `/jobs/${job.id}` });
     app.status = status;
     app.updated_at = now;
   }
