@@ -1,1 +1,223 @@
-/* servers styles */
+/* Servers (Discord style). Four ridge-bordered panels in a row: your servers, the open server's
+   channels, the open channel, its members. Plain text and greyscale; Southbag blue only marks unread
+   channels, mention counts and messages that mention you. Buttons, inputs and fonts come from
+   southbag.css and are not restyled here. Everything is scoped under .sv (and .sv-settings, .sv-pins,
+   .sv-invite, .sv-checks for dialogs). */
+
+.sv {
+  display: grid; grid-template-columns: 170px 200px minmax(0, 1fr); gap: 0.75rem; align-items: stretch;
+  height: calc(100dvh - var(--sv-top, 220px) - 20px); min-height: 520px; box-shadow: none;
+}
+.sv.show-members { grid-template-columns: 170px 200px minmax(0, 1fr) 180px; }
+.sv:not(.has-server) { grid-template-columns: 170px 200px minmax(0, 1fr); }
+.sv:not(.show-members) .sv-members { display: none; }
+
+.sv-col {
+  display: flex; flex-direction: column; min-height: 0; min-width: 0;
+  border: 2px ridge var(--sb-ridge); background: var(--sb-panel);
+}
+.sv-pad { padding: 10px 12px; }
+.sv-pad-x { padding: 0 12px; }
+
+/* Wrappers that only arrange things don't get the halo. */
+.sv-col-head, .sv-col-scroll, .sv-col-foot, .sv-server-list, .sv-server, .sv-server-link, .sv-channel-list, .sv-channel,
+.sv-category, .sv-category-head, .sv-server-title, .sv-pad, .sv-member-group, .sv-member-list, .sv-member, .sv-member-main,
+.sv-member-sub, .sv-channel-pane, .sv-chat-head, .sv-chat-title, .sv-chat-actions, .sv-scroll-wrap, .sv-scroll, .sv-msgs,
+.sv-msg, .sv-msg-main, .sv-msg-av, .sv-msg-body, .sv-msg-head, .sv-text, .sv-reply, .sv-reactions, .sv-status, .sv-older,
+.sv-sentinel, .sv-day, .sv-empty, .sv-typing, .sv-composer, .sv-composer-row, .sv-input-wrap, .sv-replying, .sv-composer-note,
+.sv-placeholder, .sv-editing, .sv-editing .row, .sv-me, .sv-settings, .sv-settings-body, .sv-set-list, .sv-set-row,
+.sv-set-group, .sv-set-cat, .sv-role-editor, .sv-checks, .sv-pins, .sv-pin .row, .sv-attachment .grow, .sv-icon-edit,
+.sv-server-desc, .sv-dialog-actions, .sv-invite .row, .sv-invite .grow { box-shadow: none; }
+
+/* -- Column heads and feet -- */
+.sv-col-head { display: flex; align-items: center; gap: 8px; padding: 0.6rem 0.7rem 0.45rem; border-bottom: 2px dashed #000; flex-shrink: 0; }
+.sv-col-head h2 { margin: 0; font-size: 1.3rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-col-head .fine { flex-shrink: 0; }
+.sv-col-scroll { flex: 1; overflow-y: auto; min-height: 0; padding: 4px 0 8px; }
+.sv-col-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0.5rem 0.6rem; border-top: 2px dashed #000; flex-shrink: 0; }
+:root[data-theme='dark'] :is(.sv-col-head, .sv-col-foot, .sv-chat-head, .sv-composer) { border-color: #666; }
+.sv-back { display: none; flex-shrink: 0; }
+
+/* -- Server icons: a fixed square, the picture stretched into it -- */
+.sv-icon { --size: 36px; width: var(--size); height: var(--size); flex-shrink: 0; display: inline-flex; border: 1px solid #111; background: #ddd; overflow: hidden; }
+.sv-icon img { width: 100%; height: 100%; display: block; box-shadow: none; }
+.sv-icon.sm { --size: 28px; }
+.sv-icon.lg { --size: 72px; }
+.sv-initials { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; color: #111; font-weight: 700; font-size: calc(var(--size) * 0.4); box-shadow: none; }
+
+/* -- Column 1: servers -- */
+.sv-server-list, .sv-channel-list, .sv-member-list, .sv-set-list { list-style: none; margin: 0; padding: 0; }
+.sv-server { display: flex; align-items: center; gap: 6px; padding: 4px 0.6rem; }
+.sv-server + .sv-server { border-top: 1px dashed #999; }
+.sv-server.active { background: #e4e2db; }
+:root[data-theme='dark'] :is(.sv-server.active, .sv-channel.active) { background: #33332f; }
+.sv-server-link { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; color: var(--sb-ink); padding: 2px 0; }
+.sv-server-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-shadow: none; }
+.sv-server.active .sv-server-name, .sv-server.unread .sv-server-name { font-weight: 700; }
+.sv-unread { font-size: 0.7rem; font-weight: 700; color: var(--sb-blue); flex-shrink: 0; box-shadow: none; }
+.sv .badge { flex-shrink: 0; font-size: 0.8rem; box-shadow: none; }
+
+/* -- Column 2: channels -- */
+.sv-server-head { flex-wrap: wrap; }
+/* The server name gets the whole first line; "Server settings" sits under it. */
+.sv-server-title { display: flex; align-items: center; gap: 8px; flex: 1 1 calc(100% - 80px); min-width: 0; }
+.sv-server-head .btn-small { flex-shrink: 0; }
+.sv-server-desc { margin: 0; padding: 6px 0.7rem; font-size: 0.8rem; color: var(--sb-muted); border-bottom: 1px dashed #999; overflow-wrap: anywhere; }
+.sv-category { margin-top: 10px; }
+.sv-category-head { display: flex; align-items: center; gap: 6px; padding: 0 0.7rem 2px; }
+.sv-category-head .eyebrow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-channel { display: flex; align-items: center; gap: 6px; padding: 3px 0.7rem; }
+.sv-channel-link { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sb-muted); }
+.sv-channel.unread .sv-channel-link, .sv-channel.active .sv-channel-link { color: var(--sb-ink); font-weight: 700; }
+.sv-channel.active { background: #e4e2db; }
+.sv-channel .sv-edit { flex-shrink: 0; }
+.sv-me { flex-wrap: nowrap; }
+.sv-me-name { font-size: 0.85rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* -- Column 3: the channel -- */
+.sv-chat { overflow: hidden; }
+.sv-placeholder { flex: 1; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 8px; padding: 24px; }
+.sv-placeholder p { color: var(--sb-muted); margin: 0 0 6px; max-width: 46ch; }
+.sv-channel-pane { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.sv-chat-head { display: flex; align-items: center; gap: 10px; min-height: 58px; padding: 0.55rem 0.75rem; border-bottom: 2px dashed #000; flex-shrink: 0; }
+.sv-chat-title { flex: 1; min-width: 0; }
+.sv-chat-title h2 { margin: 0; font-size: 1.3rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-topic { margin: 2px 0 0; font-size: 0.8rem; color: var(--sb-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-chat-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+.sv-scroll-wrap { flex: 1; min-height: 0; position: relative; display: flex; }
+.sv-scroll { flex: 1; overflow-y: auto; padding: 6px 0 10px; overscroll-behavior: contain; }
+.sv-scroll:focus-visible { outline-offset: -3px; }
+.sv-sentinel { height: 1px; }
+.sv-older { text-align: center; font-size: 0.78rem; color: var(--sb-muted); }
+.sv-older p { margin: 8px 0; }
+.sv-older .loading { padding: 8px; }
+.sv-msgs { display: flex; flex-direction: column; }
+.sv-day { display: flex; align-items: center; gap: 10px; margin: 14px 12px 4px; color: var(--sb-muted); font-size: 0.75rem; }
+.sv-day::before, .sv-day::after { content: ''; flex: 1; border-top: 2px dashed #000; }
+:root[data-theme='dark'] .sv-day::before, :root[data-theme='dark'] .sv-day::after { border-top-color: #666; }
+.sv-empty { text-align: center; color: var(--sb-muted); padding: 40px 16px; }
+.sv-empty p { margin: 4px 0; }
+
+.sv-msg { position: relative; padding: 8px 12px 2px 14px; border-left: 3px solid transparent; transition: background-color 1.2s linear; }
+.sv-msg.continued { padding-top: 1px; }
+.sv-msg:hover, .sv-msg:focus-within { background: rgba(0, 0, 0, 0.04); }
+:root[data-theme='dark'] .sv-msg:hover, :root[data-theme='dark'] .sv-msg:focus-within { background: rgba(255, 255, 255, 0.04); }
+.sv-msg.mention { border-left-color: var(--sb-blue); }
+.sv-msg.flash { outline: 2px dotted var(--sb-blue); outline-offset: -2px; }
+.sv-msg.pending { opacity: 0.6; }
+.sv-msg.failed .sv-text { text-decoration: line-through dashed; }
+.sv-msg-main { display: flex; align-items: flex-start; gap: 10px; }
+.sv-msg-av { width: 36px; flex-shrink: 0; }
+.sv-msg-av .avatar { --size: 36px; }
+.sv-msg.continued .sv-msg-av .sv-time { display: block; visibility: hidden; font-size: 0.62rem; padding-top: 3px; text-align: right; white-space: nowrap; }
+.sv-msg.continued:hover .sv-msg-av .sv-time, .sv-msg.continued:focus-within .sv-msg-av .sv-time { visibility: visible; }
+.sv-msg-body { flex: 1; min-width: 0; }
+.sv-msg-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.sv-author { font-weight: 700; color: var(--sb-ink); text-decoration: none; }
+a.sv-author:hover { text-decoration: underline; }
+.sv-time { font-size: 0.72rem; color: var(--sb-muted); box-shadow: none; }
+.sv-pinned { font-size: 0.7rem; color: var(--sb-muted); border: 1px solid #999; padding: 0 4px; box-shadow: none; }
+.sv-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.4; }
+.sv-text a { color: var(--sb-blue); }
+.sv-text .sv-at, .sv-text .sv-at-me { color: var(--sb-blue); font-weight: 700; }
+.sv-edited { font-size: 0.72rem; color: var(--sb-muted); box-shadow: none; }
+.sv-more { position: absolute; top: 4px; right: 10px; opacity: 0; }
+.sv-msg:hover .sv-more, .sv-msg:focus-within .sv-more, .sv-more:focus-visible { opacity: 1; }
+@media (hover: none) { .sv-more { position: static; opacity: 1; align-self: flex-start; } }
+.sv-reply { display: block; margin: 0 0 2px 46px; padding: 0 0 0 8px; border-left: 2px dashed #999; font-size: 0.8rem; cursor: pointer; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
+.sv-reply > * { box-shadow: none; }
+.sv-reply-text { color: var(--sb-muted); }
+.sv-reactions { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 2px; }
+.sv-reaction[aria-pressed='true'] { border-style: inset; }
+.sv-status { font-size: 0.78rem; color: var(--sb-muted); margin: 2px 0; }
+
+/* Photos sit in a box of a fixed shape and are stretched to fill it. */
+.sv-img { display: block; width: max-content; max-width: 100%; margin-top: 4px; border: 1px solid #111; background: #000; cursor: zoom-in; }
+.sv-img:hover { background: #000; }
+.sv-img img { display: block; width: 280px; max-width: 100%; height: 190px; }
+
+.sv-editing { margin: 2px 0 4px; }
+.sv-edit-input { resize: vertical; min-height: 3rem; }
+.sv-editing .row { margin-top: 4px; gap: 6px; }
+
+.sv-jump { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); }
+.sv-typing { min-height: 1.4em; padding: 0 14px; font-size: 0.78rem; font-style: italic; color: var(--sb-muted); flex-shrink: 0; }
+
+/* -- Composer -- */
+.sv-composer { flex-shrink: 0; padding: 0.4rem 0.75rem 0.7rem; border-top: 2px dashed #000; }
+.sv-composer-row { display: flex; align-items: flex-end; gap: 8px; }
+.sv-input-wrap { flex: 1; min-width: 0; }
+.sv-input { resize: none; min-height: 2.6rem; max-height: 180px; line-height: 1.4; }
+.sv-input:disabled { opacity: 0.6; }
+.sv-attach, .sv-send { flex-shrink: 0; }
+.sv-replying { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; margin: 2px 0 6px; padding-left: 8px; border-left: 2px dashed #999; }
+.sv-composer-note { font-size: 0.8rem; color: var(--sb-muted); margin: 0 0 6px; }
+.sv-attachment { display: flex; align-items: center; gap: 10px; padding: 6px; margin-bottom: 8px; border: 2px inset var(--sb-bevel); background: var(--sb-paper); }
+.sv-attachment-thumb { width: 80px; height: 60px; background: #000; flex-shrink: 0; }
+.sv-attachment-thumb img { width: 100%; height: 100%; display: block; }
+.sv-attachment-name { font-size: 0.85rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-shadow: none; }
+.sv-attachment .fine { margin: 0; box-shadow: none; }
+
+/* -- Column 4: members -- */
+.sv-member-group { padding: 6px 0.6rem 0; }
+.sv-member-group .eyebrow { margin: 4px 0; }
+.sv-member { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.sv-member.offline { opacity: 0.55; }
+.sv-member-main { flex: 1; min-width: 0; }
+.sv-member-top { display: flex; align-items: center; gap: 4px; min-width: 0; box-shadow: none; }
+.sv-member-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.85rem; font-weight: 700; color: var(--sb-ink); }
+.sv-member-more { flex-shrink: 0; }
+.sv-member-sub { display: flex; flex-wrap: wrap; gap: 0 6px; font-size: 0.72rem; color: var(--sb-muted); }
+.sv-member-sub span { box-shadow: none; }
+
+/* -- Dialogs -- */
+.sv-dialog-actions { justify-content: flex-end; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.sv-settings .tabs { margin-bottom: 10px; }
+.sv-settings-body { min-height: 220px; }
+.sv-settings-body .stack { gap: 8px; }
+.sv-settings-body .divider { width: 100%; }
+.sv-set-group { margin: 0 0 12px; }
+.sv-set-cat { padding: 4px 0; border-bottom: 1px dashed #999; }
+.sv-set-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px 0; }
+.sv-set-row + .sv-set-row { border-top: 1px dashed #999; }
+.sv-set-row .grow { min-width: 140px; overflow-wrap: anywhere; }
+.sv-role-editor { border: 2px inset var(--sb-bevel); background: var(--sb-paper); padding: 10px; margin: 0 0 12px; }
+.sv-role-editor h3 { margin-bottom: 8px; }
+.sv-checks { display: flex; flex-direction: column; gap: 2px; margin: 4px 0 10px; }
+.sv-checks .checkbox { transform: none; }
+.sv-pin { padding: 8px 0; }
+.sv-pin + .sv-pin { border-top: 1px dashed #999; }
+.sv-pin .row { gap: 6px; }
+.sv-pin .sv-text { margin-top: 4px; }
+.sv-invite .row { gap: 14px; align-items: center; margin-bottom: 10px; }
+.sv-invite h2 { margin: 2px 0; }
+
+/* -- Narrower screens: the member list replaces the channel when shown -- */
+@media (max-width: 1100px) {
+  .sv.show-members { grid-template-columns: 160px 190px minmax(0, 1fr); }
+  .sv.show-members .sv-chat { display: none; }
+  .sv.show-members .sv-members .sv-back { display: inline-block; }
+}
+
+/* -- Phones: one column at a time; the channel takes the whole screen -- */
+@media (max-width: 640px) {
+  .sv, .sv.show-members, .sv:not(.has-server) { display: block; height: auto; min-height: 0; padding: 10px; }
+  .sv > .sv-col { display: none; }
+  .sv[data-level='servers'] > .sv-servers, .sv[data-level='channels'] > .sv-channels { display: flex; min-height: 60vh; }
+  .sv[data-level='chat'] > .sv-chat, .sv[data-level='members'] > .sv-members {
+    display: flex; position: fixed; left: 0; right: 0; top: var(--sv-vvt, 0px); height: var(--sv-vvh, 100dvh); z-index: 70;
+    background: var(--sb-bg); border: 0;
+  }
+  .sv-back, .sv.show-members .sv-members .sv-back { display: inline-block; }
+  .sv-col-scroll { overflow: visible; }
+  .sv-chat .sv-col-scroll, .sv-members .sv-col-scroll { overflow-y: auto; }
+  .sv-chat-head { padding: 8px 10px; padding-top: max(8px, env(safe-area-inset-top)); gap: 8px; min-height: 0; }
+  .sv-chat-title h2 { font-size: 1.15rem; }
+  .sv-msg { padding-left: 8px; padding-right: 8px; }
+  .sv-reply { margin-left: 42px; }
+  .sv-img img { width: 240px; height: 160px; }
+  .sv-composer { padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); }
+  .sv-members .sv-col-head { padding-top: max(8px, env(safe-area-inset-top)); }
+  html.sv-lock, html.sv-lock body { overflow: hidden; }
+}
