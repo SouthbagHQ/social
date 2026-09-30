@@ -135,7 +135,7 @@ function paintChrome(path) {
   renderWelcome(path);
 }
 
-store.on(() => { renderNav(location.pathname); });
+store.on(() => { renderHeader(); renderNav(location.pathname); });
 
 // ── Rendering a route ───────────────────────────────────────────────────
 async function render(ctx, matched, controller, scroll) {
