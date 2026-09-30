@@ -77,6 +77,7 @@ function postMenu(anchor, post, { onDeleted, onEdited }) {
   const mine = post.viewer?.can_edit;
   menu(anchor, [
     { label: 'Copy link', icon: 'link', onClick: () => share(postUrl(post)) },
+    store.me ? { label: 'Send in a message', icon: 'send', href: `/messages?share=${post.id}` } : null,
     { label: post.viewer?.bookmarked ? 'Remove bookmark' : 'Bookmark', icon: 'bookmark', onClick: () => toggleBookmark(post) },
     mine ? { label: 'Amend', icon: 'edit', onClick: () => amend(post, onEdited) } : null,
     mine || post.viewer?.can_delete ? { label: 'Request deletion', icon: 'trash', danger: true, onClick: () => remove(post, onDeleted) } : null,

@@ -58,7 +58,7 @@ export function footer() {
         h('a', { href: 'https://southbag.cc' }, 'Southbag'),
         h('a', { href: 'https://identity.southbag.cc/home' }, 'Identity'),
         h('a', { href: 'https://banking.southbag.cc' }, 'Online Banking'),
-        h('a', { href: 'https://support.southbag.cc/ai' }, 'Chat with a Human'),
+        h('a', { href: '/messages/support' }, 'Chat with a Human'),
         h('a', { href: 'https://branch-locator.southbag.cc' }, 'Branch Locator'),
         h('a', { href: 'https://lore.southbag.cc' }, 'Lore'),
         h('a', { href: '/terms' }, 'Terms of Posting')),

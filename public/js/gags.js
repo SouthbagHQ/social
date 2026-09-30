@@ -18,7 +18,7 @@ const sponsored = [
   ['Southbag Code. Write code only slightly slower than Kevin.', 'https://southbag.cc'],
   ['Lost? Give up and find a branch.', 'https://branch-locator.southbag.cc'],
   ['Southbag Rewards. Points have no cash value and expire at Southbag’s discretion.', 'https://southbag.cc/financial'],
-  ['Chat with a Human. Response times are not guaranteed.', 'https://support.southbag.cc/ai'],
+  ['Chat with a Human. Response times are not guaranteed.', '/messages/support'],
 ];
 
 /** The yellow "Promotional banner" strip from optimise.js. Rotates sponsors; closeable per session. */
@@ -27,8 +27,15 @@ export function promoStrip() {
   try { closed = sessionStorage.getItem('sb_promo_closed') === '1'; } catch {}
   if (closed) return null;
   let i = Math.floor(Math.random() * sponsored.length);
-  const link = h('a', { target: '_blank', rel: 'noopener', dataset: { external: '' } });
-  const paint = () => { link.textContent = sponsored[i][0]; link.href = sponsored[i][1]; };
+  const link = h('a', { rel: 'noopener' });
+  const paint = () => {
+    const [text, href] = sponsored[i];
+    const external = !href.startsWith('/');
+    link.textContent = text;
+    link.href = href;
+    link.target = external ? '_blank' : '';
+    if (external) link.dataset.external = ''; else delete link.dataset.external;
+  };
   paint();
   const strip = h('div.promo-strip', { role: 'complementary', 'aria-label': 'Promotional banner' },
     h('span', 'Promotional banner: '), link,
