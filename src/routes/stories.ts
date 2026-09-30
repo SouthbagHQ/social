@@ -1,13 +1,13 @@
-// Stories (Instagram): photos and short videos that expire after 24 hours. The hourly janitor in
+// Stories: photos and short videos that expire after 24 hours. The hourly janitor in
 // index.ts deletes expired stories and their files. Stories are public, like a public Instagram
 // account: anyone can watch them, except people the author has blocked.
 //
-//   POST   /api/stories               { media_id, caption?, background? } → { story }
-//   GET    /api/stories               the tray → { items: [{ user, stories_count, latest_at, seen, following }] }
+//   POST   /api/stories               { media_id, caption?, background? } -> { story }
+//   GET    /api/stories               the tray -> { items: [{ user, stories_count, latest_at, seen, following }] }
 //                                     (yours first, then people you follow, then everyone else; unseen first)
-//   GET    /api/stories/:handle       → { user, items: [StoryJson] } oldest first
-//   POST   /api/stories/:id/view      records a view (idempotent) → { ok, seen }
-//   GET    /api/stories/:id/viewers   owner only → { items: [{ user, created_at }], count }
+//   GET    /api/stories/:handle       -> { user, items: [StoryJson] } oldest first
+//   POST   /api/stories/:id/view      records a view (idempotent) -> { ok, seen }
+//   GET    /api/stories/:id/viewers   owner only -> { items: [{ user, created_at }], count }
 //   DELETE /api/stories/:id           owner only; deletes the story and its file
 //
 // StoryJson: { id, media: MediaJson, caption, background, created_at, expires_at, seen, view_count? }
@@ -27,8 +27,8 @@ export const STORY_TTL = 24 * 3600 * 1000;
 export const MAX_CAPTION = 200;
 export const MAX_VIDEO_SECONDS = 60;
 const MAX_ACTIVE = 30; // unexpired stories per person
-/** Presets the story composer offers; the browser owns the actual gradients. */
-export const BACKGROUNDS = ['teal', 'logo', 'promo', 'night', 'paper', 'alert', 'floor3'] as const;
+/** Presets the story composer offers for text stories; the browser owns the actual colours. */
+export const BACKGROUNDS = ['white', 'light', 'grey', 'dark', 'black', 'blue'] as const;
 
 interface StoryRow {
   id: string;
@@ -53,7 +53,7 @@ const storyJson = (s: StoryRow, media: MediaRow, seen: boolean, viewCount?: numb
 
 async function liveStory(env: Env, id: string): Promise<StoryRow> {
   const story = await env.DB.prepare('SELECT * FROM stories WHERE id = ? AND expires_at > ?').bind(id, Date.now()).first<StoryRow>();
-  if (!story) fail(404, 'That story has expired. It has been retained.');
+  if (!story) fail(404, 'Story not found.');
   return story;
 }
 
@@ -61,31 +61,31 @@ stories.post('/', async c => {
   const user = requireUser(c);
   const input = await body(c);
   const mediaId = str(input.media_id, 64);
-  if (!mediaId) fail(422, 'A story needs a photo or a video. Kevin does not read.');
+  if (!mediaId) fail(422, 'Choose a photo or video.');
   let media: MediaRow;
   try {
     [media] = await ownedReadyMedia(c.env, user.id, [mediaId]);
   } catch (error) {
     fail(422, (error as Error).message);
   }
-  if (media.kind !== 'image' && media.kind !== 'video') fail(422, 'Stories are photos or short videos.');
+  if (media.kind !== 'image' && media.kind !== 'video') fail(422, 'Stories are photos or videos.');
   if (media.kind === 'video') {
-    if (media.duration == null) fail(422, 'Kevin could not measure that video. Stories are 60 seconds or less.');
+    if (media.duration == null) fail(422, `Could not read the video length. Stories are ${MAX_VIDEO_SECONDS} seconds or less.`);
     if (media.duration > MAX_VIDEO_SECONDS + 0.5)
-      fail(422, `That video is ${Math.round(media.duration)} seconds. Stories are ${MAX_VIDEO_SECONDS} seconds or less. Kevin timed it.`);
+      fail(422, `That video is ${Math.round(media.duration)} seconds. Stories are ${MAX_VIDEO_SECONDS} seconds or less.`);
   }
   const background = typeof input.background === 'string' && (BACKGROUNDS as readonly string[]).includes(input.background)
     ? input.background : null;
   const caption = str(input.caption, MAX_CAPTION * 2);
-  if ([...caption].length > MAX_CAPTION) fail(422, `Story captions are limited to ${MAX_CAPTION} characters. Kevin counted.`);
+  if ([...caption].length > MAX_CAPTION) fail(422, `Captions are limited to ${MAX_CAPTION} characters.`);
 
   const now = Date.now();
   const check = await c.env.DB.prepare(`SELECT
       (SELECT COUNT(*) FROM stories WHERE author_id = ?1 AND expires_at > ?2) AS active,
       EXISTS (SELECT 1 FROM stories WHERE media_id = ?3) OR EXISTS (SELECT 1 FROM post_media WHERE media_id = ?3) AS used`)
     .bind(user.id, now, media.id).first<{ active: number; used: number }>();
-  if (check?.used) fail(409, 'That file is already in use. Upload it again. Southbag will keep both.');
-  if ((check?.active ?? 0) >= MAX_ACTIVE) fail(429, `You have ${MAX_ACTIVE} live stories. That is enough story. Kevin is aware.`);
+  if (check?.used) fail(409, 'That file is already in use. Upload it again.');
+  if ((check?.active ?? 0) >= MAX_ACTIVE) fail(429, `You can have up to ${MAX_ACTIVE} stories at a time.`);
 
   const story: StoryRow = {
     id: newId(now), author_id: user.id, media_id: media.id, caption, background, created_at: now, expires_at: now + STORY_TTL,
@@ -131,10 +131,10 @@ stories.get('/', async c => {
 stories.get('/:handle', async c => {
   const viewer = c.get('user');
   const author = await userByHandle(c.env, c.req.param('handle'));
-  if (!author) fail(404, 'Kevin has closed this story.');
+  if (!author) fail(404, 'User not found.');
   if (viewer) {
     const blocked = await c.env.DB.prepare('SELECT 1 FROM blocks WHERE blocker_id = ? AND blocked_id = ?').bind(author.id, viewer.id).first();
-    if (blocked) fail(404, 'Kevin has closed this story.');
+    if (blocked) fail(404, 'User not found.');
   }
   const own = viewer?.id === author.id;
   const { results } = await c.env.DB.prepare(`SELECT s.*, m.id AS m_id, m.owner_id, m.kind, m.content_type, m.size, m.chunk_size,
@@ -155,10 +155,10 @@ stories.get('/:handle', async c => {
 stories.post('/:id/view', async c => {
   const viewer = c.get('user');
   const story = await liveStory(c.env, c.req.param('id'));
-  // Signed-out views are not recorded. They are, however, noticed.
+  // Views by signed-out visitors and by the author are not recorded.
   if (!viewer || viewer.id === story.author_id) return c.json({ ok: true, seen: true });
   const blocked = await c.env.DB.prepare('SELECT 1 FROM blocks WHERE blocker_id = ? AND blocked_id = ?').bind(story.author_id, viewer.id).first();
-  if (blocked) fail(404, 'That story has expired. It has been retained.');
+  if (blocked) fail(404, 'Story not found.');
   await c.env.DB.prepare('INSERT OR IGNORE INTO story_views (story_id, viewer_id, created_at) VALUES (?, ?, ?)')
     .bind(story.id, viewer.id, Date.now()).run();
   return c.json({ ok: true, seen: true });
@@ -191,8 +191,8 @@ async function ownStory(c: Ctx, userId: string, anyAge = false): Promise<StoryRo
   const story = anyAge
     ? await c.env.DB.prepare('SELECT * FROM stories WHERE id = ?').bind(c.req.param('id')).first<StoryRow>()
     : await liveStory(c.env, c.req.param('id') as string);
-  if (!story) fail(404, 'That story has expired. It has been retained.');
-  if (story.author_id !== userId) fail(403, 'That is not your story. Kevin has noted the attempt.');
+  if (!story) fail(404, 'Story not found.');
+  if (story.author_id !== userId) fail(403, 'That is not your story.');
   return story;
 }
 

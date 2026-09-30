@@ -1,17 +1,17 @@
-// Groups (Facebook). Public groups show everything to everyone; private groups show their name,
+// Groups. Public groups show everything to everyone; private groups show their name,
 // description and admins to everyone and their posts only to members. Joining a private group
 // files a request that the owner or an admin approves. Posting uses POST /api/posts with group_id.
 //
-//   POST   /api/groups                        { name, slug?, description, privacy, avatar_media_id?, banner_media_id? } → { group }
-//   GET    /api/groups                        ?tab=mine|discover&q&cursor → { items: GroupJson[], next }
-//   GET    /api/groups/:slug                  → { group: GroupJson & { owner }, viewer: { role } }
-//   PATCH  /api/groups/:slug                  owner/admin: { name?, description?, privacy?, avatar_media_id?, banner_media_id? } → { group }
+//   POST   /api/groups                        { name, slug?, description, privacy, avatar_media_id?, banner_media_id? } -> { group }
+//   GET    /api/groups                        ?tab=mine|discover&q&cursor -> { items: GroupJson[], next }
+//   GET    /api/groups/:slug                  -> { group: GroupJson & { owner }, viewer: { role } }
+//   PATCH  /api/groups/:slug                  owner/admin: { name?, description?, privacy?, avatar_media_id?, banner_media_id? } -> { group }
 //   DELETE /api/groups/:slug                  owner only (posts go with it)
-//   POST   /api/groups/:slug/join             → { viewer: { role } }  public → member, private → pending
+//   POST   /api/groups/:slug/join             -> { viewer: { role } }  public -> member, private -> pending
 //   DELETE /api/groups/:slug/join             leave, or withdraw a request (owners must delete instead)
-//   GET    /api/groups/:slug/members          ?cursor → { items: [{ user, role, created_at }], next }
-//   POST   /api/groups/:slug/members/:handle  admins: { action: approve|promote|demote|remove } → { member }
-//   GET    /api/groups/:slug/posts            ?cursor → { items: PostJson[], next }
+//   GET    /api/groups/:slug/members          ?cursor -> { items: [{ user, role, created_at }], next }
+//   POST   /api/groups/:slug/members/:handle  admins: { action: approve|promote|demote|remove } -> { member }
+//   GET    /api/groups/:slug/posts            ?cursor -> { items: PostJson[], next }
 //
 // GroupJson: { id, slug, name, description, privacy, member_count, post_count, avatar_url, banner_url,
 //              created_at, role }  (role = the viewer's: owner|admin|member|pending|null)
@@ -47,7 +47,7 @@ interface GroupRow {
 
 const MAX_NAME = 60;
 const MAX_DESCRIPTION = 1000;
-const RESERVED = new Set(['new', 'discover', 'mine', 'kevin', 'southbag', 'admin', 'floor-3', 'floor3']);
+const RESERVED = new Set(['new', 'discover', 'mine', 'southbag', 'admin']);
 
 const groupJson = (g: GroupRow, role: Role | null) => ({
   id: g.id,
@@ -66,9 +66,9 @@ const groupJson = (g: GroupRow, role: Role | null) => ({
 const isAdmin = (role: Role | null) => role === 'owner' || role === 'admin';
 const isMember = (role: Role | null) => role === 'owner' || role === 'admin' || role === 'member';
 
-/** "Kevin's Lunch Club!" → "kevins-lunch-club" */
+/** "Weekend Cyclists!" -> "weekend-cyclists" */
 export const slugify = (text: string): string =>
-  text.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/['’]/g, '')
+  text.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/['\u2019]/g, '')
     .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '');
 
 /** The group by slug plus the viewer's role in it, or a 404. */
@@ -77,7 +77,7 @@ async function load(c: Ctx): Promise<{ group: GroupRow; role: Role | null; user:
   const row = await c.env.DB.prepare(`SELECT g.*, ${user ? '(SELECT role FROM group_members WHERE group_id = g.id AND user_id = ?)' : 'NULL'} AS viewer_role
       FROM groups g WHERE g.slug = ?`)
     .bind(...(user ? [user.id] : []), c.req.param('slug')).first<GroupRow & { viewer_role: Role | null }>();
-  if (!row) fail(404, 'Kevin has closed this group. Or it never existed. Both are on file.');
+  if (!row) fail(404, 'Group not found.');
   const { viewer_role: role, ...group } = row;
   return { group, role, user };
 }
@@ -105,20 +105,20 @@ async function dropUnused(env: Env, ids: (string | null)[]): Promise<void> {
 
 function validName(value: unknown): string {
   const name = str(value, MAX_NAME * 2).replace(/\s+/g, ' ');
-  if ([...name].length < 3) fail(422, 'Group names need at least 3 characters. Kevin needs something to call it.');
-  if ([...name].length > MAX_NAME) fail(422, `Group names are limited to ${MAX_NAME} characters. Kevin counted.`);
+  if ([...name].length < 3) fail(422, 'Group names need at least 3 characters.');
+  if ([...name].length > MAX_NAME) fail(422, `Group names are limited to ${MAX_NAME} characters.`);
   return name;
 }
 
 function validDescription(value: unknown): string {
   const text = typeof value === 'string' ? value.trim() : '';
-  if ([...text].length > MAX_DESCRIPTION) fail(422, `Descriptions are limited to ${MAX_DESCRIPTION} characters. Kevin read all of them.`);
+  if ([...text].length > MAX_DESCRIPTION) fail(422, `Descriptions are limited to ${MAX_DESCRIPTION} characters.`);
   return text;
 }
 
 const validPrivacy = (value: unknown): Privacy => (value === 'private' ? 'private' : 'public');
 
-// ── Create and list ─────────────────────────────────────────────────────
+// Create and list
 
 groups.post('/', async c => {
   const user = requireUser(c);
@@ -134,10 +134,10 @@ groups.post('/', async c => {
   let slug: string;
   if (typeof input.slug === 'string' && input.slug.trim()) {
     slug = slugify(input.slug);
-    if (!/^[a-z0-9-]{3,40}$/.test(slug)) fail(422, 'Group addresses are 3–40 letters, numbers or dashes.');
-    if (RESERVED.has(slug)) fail(409, 'That address is reserved for Southbag. And Kevin.');
+    if (!/^[a-z0-9-]{3,40}$/.test(slug)) fail(422, 'Group addresses are 3 to 40 letters, numbers or dashes.');
+    if (RESERVED.has(slug)) fail(409, 'That address is reserved.');
     const taken = await c.env.DB.prepare('SELECT 1 FROM groups WHERE slug = ?').bind(slug).first();
-    if (taken) fail(409, 'That group address is taken. Someone got there first.');
+    if (taken) fail(409, 'That address is taken.');
   } else {
     let base = slugify(name);
     if (base.length < 3) base = `group-${base}`.replace(/-+$/, '');
@@ -187,7 +187,7 @@ groups.get('/', async c => {
   return c.json({ items: items.map(g => groupJson(g, g.viewer_role)), next });
 });
 
-// ── One group ───────────────────────────────────────────────────────────
+// One group
 
 groups.get('/:slug', async c => {
   const { group, role } = await load(c);
@@ -201,7 +201,7 @@ groups.get('/:slug', async c => {
 groups.patch('/:slug', async c => {
   const user = requireUser(c);
   const { group, role } = await load(c);
-  if (!isAdmin(role)) fail(403, 'Only the owner and admins can change this group. Kevin can too.');
+  if (!isAdmin(role)) fail(403, 'Only the owner and admins can change this group.');
   const input = await body(c);
   const sets: string[] = [];
   const values: unknown[] = [];
@@ -241,7 +241,7 @@ groups.patch('/:slug', async c => {
 groups.delete('/:slug', async c => {
   requireUser(c);
   const { group, role } = await load(c);
-  if (role !== 'owner') fail(403, 'Only the owner can delete a group. Kevin has declined to.');
+  if (role !== 'owner') fail(403, 'Only the owner can delete a group.');
   // Files attached to the group's posts go too (a bounded number per request: free-plan query limits).
   const { results: files } = await c.env.DB.prepare(`SELECT pm.media_id FROM post_media pm JOIN posts p ON p.id = pm.post_id
       WHERE p.group_id = ? LIMIT 20`).bind(group.id).all<{ media_id: string }>();
@@ -257,7 +257,7 @@ groups.delete('/:slug', async c => {
   return c.json({ ok: true });
 });
 
-// ── Membership ──────────────────────────────────────────────────────────
+// Membership
 
 groups.post('/:slug/join', async c => {
   const user = requireUser(c);
@@ -290,7 +290,7 @@ groups.delete('/:slug/join', async c => {
   const user = requireUser(c);
   const { group, role } = await load(c);
   if (!role) return c.json({ viewer: { role: null } });
-  if (role === 'owner') fail(409, 'Owners cannot leave. Delete the group instead. Kevin will stay either way.');
+  if (role === 'owner') fail(409, 'Owners cannot leave. Delete the group instead.');
   const statements = [c.env.DB.prepare('DELETE FROM group_members WHERE group_id = ? AND user_id = ?').bind(group.id, user.id)];
   if (role !== 'pending') statements.push(c.env.DB.prepare('UPDATE groups SET member_count = MAX(0, member_count - 1) WHERE id = ?').bind(group.id));
   await c.env.DB.batch(statements);
@@ -321,14 +321,14 @@ groups.post('/:slug/members/:handle', async c => {
   const target = await userByHandle(c.env, c.req.param('handle'));
   const membership = target && await c.env.DB.prepare('SELECT role FROM group_members WHERE group_id = ? AND user_id = ?')
     .bind(group.id, target.id).first<{ role: Role }>();
-  if (!target || !membership) fail(404, 'That person is not in this group. Kevin is, but you cannot manage Him.');
+  if (!target || !membership) fail(404, 'That person is not in this group.');
   const action = (await body(c)).action;
   const now = Date.now();
   const card = userCard(target);
   const setRole = (next: Role) => c.env.DB.prepare('UPDATE group_members SET role = ? WHERE group_id = ? AND user_id = ?').bind(next, group.id, target.id);
 
-  if (target.id === user.id && action !== 'approve') fail(409, 'You cannot do that to yourself. Ask another admin. Or Kevin.');
-  if (membership.role === 'owner') fail(403, 'The owner cannot be managed. Only Kevin can do that.');
+  if (target.id === user.id && action !== 'approve') fail(409, 'You cannot do that to yourself.');
+  if (membership.role === 'owner') fail(403, 'The owner cannot be changed.');
 
   switch (action) {
     case 'approve': {
@@ -345,7 +345,7 @@ groups.post('/:slug/members/:handle', async c => {
       return c.json({ member: { user: card, role: 'admin' } });
     case 'demote':
       if (role !== 'owner') fail(403, 'Only the owner can demote admins.');
-      if (membership.role !== 'admin') fail(409, 'They are not an admin. There is nowhere lower to put them.');
+      if (membership.role !== 'admin') fail(409, 'They are not an admin.');
       await setRole('member').run();
       return c.json({ member: { user: card, role: 'member' } });
     case 'remove': {
@@ -357,15 +357,15 @@ groups.post('/:slug/members/:handle', async c => {
       return c.json({ member: null });
     }
     default:
-      fail(422, 'Actions are approve, promote, demote or remove. Kevin has other options.');
+      fail(422, 'Actions are approve, promote, demote or remove.');
   }
 });
 
-// ── Posts ───────────────────────────────────────────────────────────────
+// Posts
 
 groups.get('/:slug/posts', async c => {
   const { group, role, user } = await load(c);
-  if (group.privacy === 'private' && !isMember(role)) fail(403, 'This group is private. Request to join. Kevin will decide.');
+  if (group.privacy === 'private' && !isMember(role)) fail(403, 'This group is private.');
   const size = limit(c);
   const after = cursor(c);
   const v = visibleTo(user?.id ?? null);
