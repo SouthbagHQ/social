@@ -1,1 +1,173 @@
-/* communities styles */
+/* Communities (Reddit style). Uses the tokens and furniture in southbag.css: greyscale, square
+   corners, ridge panels, dashed dividers. Buttons are never styled here (the pressed vote uses the
+   shared .icon-btn[aria-pressed] style). Pictures sit in fixed boxes and are stretched to fill them. */
+
+.cm-page { max-width: 1100px; margin: 0 auto; box-shadow: none; }
+.cm-page [hidden] { display: none !important; }
+.cm-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 300px); gap: 20px; align-items: start; box-shadow: none; }
+.cm-main, .cm-aside { min-width: 0; box-shadow: none; }
+.cm-aside .south-card h3 { margin-bottom: 8px; }
+.cm-note { margin: 8px 0 0; }
+.cm-note-host { box-shadow: none; }
+
+/* -- Home ---------------------------------------------------------------- */
+.cm-home-head { margin: 4px 0 14px; box-shadow: none; }
+.cm-home-head h1 { margin: 4px 0 18px; }
+.cm-feed-card h2 { margin: 0 0 8px; }
+.cm-joined { box-shadow: none; }
+.cm-joined-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; box-shadow: none; }
+.cm-joined-list li { display: flex; align-items: center; gap: 8px; min-width: 0; box-shadow: none; }
+.cm-joined-list a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cm-aside-actions { margin-top: 12px; }
+
+.cm-directory { max-width: 760px; }
+.cm-search { margin: 0 0 12px; gap: 8px; }
+.cm-search input { flex: 1; min-width: 0; }
+.cm-row-list { display: grid; box-shadow: none; }
+.cm-row { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; box-shadow: none; }
+.cm-row + .cm-row { border-top: 1px dashed #999; }
+.cm-row .grow, .cm-row .grow > div { box-shadow: none; }
+.cm-row-name { font-weight: 700; overflow-wrap: anywhere; }
+.cm-row-title { font-size: 0.9rem; overflow-wrap: anywhere; }
+.cm-row-desc { margin: 4px 0 0; font-size: 0.9rem; color: var(--sb-muted); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.cm-row > button { flex-shrink: 0; }
+
+.cm-form { max-width: 720px; }
+.cm-address { margin: 4px 0 0; }
+
+/* -- Icon: a square box, stretched ---------------------------------------- */
+.cm-icon { --size: 44px; width: var(--size); height: var(--size); flex-shrink: 0; display: inline-block; border: 1px solid #111; background: #ddd; overflow: hidden; }
+.cm-icon img { width: 100%; height: 100%; display: block; box-shadow: none; }
+.cm-icon .initial { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; color: #111; font-weight: 700; font-size: calc(var(--size) * 0.55); box-shadow: none; }
+.cm-icon.xs { --size: 24px; }
+.cm-icon.lg { --size: 96px; }
+
+/* -- Community header ----------------------------------------------------- */
+.cm-header { border: 2px ridge var(--sb-ridge); background: var(--sb-panel); margin: 0 0 18px; }
+/* Fixed-height banner box; the banner is stretched into it. Plain grey when there is none. */
+.cm-banner { height: 180px; background: var(--sb-hairline); border-bottom: 2px inset var(--sb-bevel); overflow: hidden; box-shadow: none; }
+.cm-banner img { width: 100%; height: 100%; display: block; box-shadow: none; }
+.cm-headline { display: flex; align-items: flex-end; gap: 16px; padding: 0 18px 12px; flex-wrap: wrap; box-shadow: none; }
+.cm-headline .cm-icon { position: relative; margin-top: -36px; background: #ddd; }
+.cm-headline .grow { box-shadow: none; }
+.cm-title { margin: 12px 0 6px; font-size: clamp(1.6rem, 4vw, 2.6rem); max-width: none; overflow-wrap: anywhere; }
+.cm-title a { text-decoration: none; }
+.cm-sub { margin: 0; color: var(--sb-muted); font-size: 0.9rem; }
+.cm-sub a { color: inherit; font-weight: 700; }
+.cm-header-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; box-shadow: none; }
+.cm-header.compact .cm-banner { height: 72px; }
+.cm-header.compact .cm-icon.lg { --size: 64px; margin-top: -24px; }
+.cm-header.compact .cm-title { font-size: clamp(1.3rem, 3vw, 1.8rem); transform: none; }
+
+/* -- Sort bar ------------------------------------------------------------- */
+.cm-sortbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; box-shadow: none; }
+.cm-sortbar .tabs { margin: 0; border-bottom: 0; padding: 0; }
+.cm-sortbar .cm-window { width: auto; }
+.cm-sort-card { padding: 0.5rem 0.75rem; }
+
+/* -- Create post ---------------------------------------------------------- */
+.cm-create h3 { margin: 0 0 10px; }
+.cm-create-form .field { margin-bottom: 8px; }
+.cm-create-form .tabs { margin: 8px 0 10px; }
+.cm-pane { box-shadow: none; }
+.cm-pane .progress-bar { margin-top: 6px; max-width: 320px; }
+.cm-file { display: block; margin: 4px 0; box-shadow: none; }
+.cm-image-preview { margin-top: 8px; box-shadow: none; }
+.cm-image-preview img { width: 160px; height: 160px; display: block; border: 2px inset var(--sb-bevel); }
+.cm-create-actions { margin-top: 10px; }
+
+/* -- Thread rows ---------------------------------------------------------- */
+.cm-thread-list { display: grid; gap: 0; border: 2px ridge var(--sb-ridge); background: var(--sb-panel); }
+.cm-thread-list:has(> :first-child) { padding: 0 0.75rem; }
+.cm-thread-list:not(:has(> *)) { display: none; }
+.cm-thread { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; box-shadow: none; }
+.cm-thread + .cm-thread { border-top: 2px dashed #000; }
+:root[data-theme='dark'] .cm-thread + .cm-thread { border-top-color: #666; }
+.cm-thread.pinned { background: var(--sb-paper); }
+.cm-thread-main { flex: 1; min-width: 0; box-shadow: none; }
+.cm-meta { margin: 0 0 4px; color: var(--sb-muted); font-size: 0.82rem; overflow-wrap: anywhere; }
+.cm-meta a { color: inherit; }
+.cm-community-link { font-weight: 700; }
+.cm-thread-title { margin: 0 0 4px; font-size: 1.15rem; line-height: 1.25; overflow-wrap: anywhere; animation: none; }
+.cm-thread-title a { text-decoration: none; }
+.cm-thread-title a:hover { text-decoration: underline; }
+.cm-thread-title .chip { vertical-align: middle; font-weight: 400; }
+.cm-link { font-size: 0.85rem; color: var(--sb-blue); overflow-wrap: anywhere; }
+.cm-thread-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; font-size: 0.85rem; box-shadow: none; }
+.cm-count { color: var(--sb-muted); }
+/* Thumbnails: a fixed square box, stretched. */
+.cm-thumb { flex-shrink: 0; order: 3; width: 96px; height: 96px; display: block; border: 2px inset var(--sb-bevel); background: #000; overflow: hidden; }
+.cm-thumb:hover { background: #000; }
+.cm-thumb img { width: 100%; height: 100%; display: block; box-shadow: none; }
+
+/* -- Votes ---------------------------------------------------------------- */
+.cm-votes { display: flex; flex-direction: column; align-items: stretch; gap: 4px; width: 88px; flex-shrink: 0; box-shadow: none; }
+.cm-votes.horizontal { flex-direction: row; align-items: center; width: auto; }
+.cm-score { text-align: center; font-weight: 700; font-size: 0.95rem; min-width: 2ch; }
+.cm-score.voted { color: var(--sb-blue); }
+
+/* -- Full thread ---------------------------------------------------------- */
+.cm-full { display: flex; gap: 14px; align-items: flex-start; }
+.cm-full-title { font-size: clamp(1.3rem, 3vw, 1.8rem); margin: 4px 0 10px; overflow-wrap: anywhere; }
+.cm-full-title .chip { font-size: 0.75rem; vertical-align: middle; font-weight: 400; }
+.cm-body-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 1.05rem; box-shadow: none; }
+.cm-body-text a { color: var(--sb-blue); }
+.cm-link-full { overflow-wrap: anywhere; }
+.cm-link-full a { color: var(--sb-blue); }
+/* The picture is stretched into a fixed 4:3 box. */
+.cm-image { display: block; width: 100%; max-width: 560px; aspect-ratio: 4 / 3; border: 2px inset var(--sb-bevel); background: #000; overflow: hidden; cursor: zoom-in; }
+.cm-image:hover { background: #000; }
+.cm-image img { width: 100%; height: 100%; display: block; box-shadow: none; }
+
+/* -- Comments ------------------------------------------------------------- */
+.cm-discussion { padding: 0.9rem; }
+.cm-comment-form { margin: 0 0 10px; box-shadow: none; }
+.cm-comment-form textarea { min-height: 4rem; }
+.cm-comment-form-actions { margin-top: 6px; }
+.cm-locked { margin: 0 0 12px; }
+.cm-login { margin: 0 0 10px; }
+.cm-login p { margin: 0; }
+.cm-comment-sort { display: flex; align-items: center; gap: 10px; margin: 6px 0 8px; box-shadow: none; }
+.cm-comment-sort .tabs { margin: 0; padding: 0; border-bottom: 0; }
+.cm-comments { border-top: 2px dashed #000; padding-top: 10px; box-shadow: none; }
+:root[data-theme='dark'] .cm-comments { border-top-color: #666; }
+.cm-comment { padding: 6px 0 2px; box-shadow: none; }
+.cm-comment .cm-meta { margin-bottom: 2px; }
+.cm-comment-body { white-space: pre-wrap; overflow-wrap: anywhere; margin: 2px 0 4px; box-shadow: none; }
+.cm-comment-body a { color: var(--sb-blue); }
+.cm-comment-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 4px 0; box-shadow: none; }
+.cm-comment-actions .icon-btn { font-size: 0.78rem; }
+/* One dashed rule per level. */
+.cm-children { margin-left: 10px; padding-left: 12px; border-left: 2px dashed #000; box-shadow: none; }
+.cm-children:empty { display: none; }
+:root[data-theme='dark'] .cm-children { border-left-color: #666; }
+
+/* -- Sidebar -------------------------------------------------------------- */
+.cm-description { white-space: pre-wrap; overflow-wrap: anywhere; }
+.cm-facts { margin: 8px 0 0; padding-left: 1.2em; list-style: square; box-shadow: none; }
+.cm-facts li, .cm-rules li { margin: 4px 0; box-shadow: none; overflow-wrap: anywhere; }
+.cm-rules { margin: 0; padding-left: 1.4em; box-shadow: none; }
+.cm-mods { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 6px; box-shadow: none; }
+.cm-mods li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; box-shadow: none; }
+.cm-missing { max-width: 640px; }
+
+@media (max-width: 1100px) {
+  .cm-body { grid-template-columns: minmax(0, 1fr) minmax(0, 260px); gap: 14px; }
+}
+@media (max-width: 900px) {
+  .cm-body { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  .cm-banner { height: 110px; }
+  .cm-header.compact .cm-banner { height: 56px; }
+  .cm-headline { padding: 0 10px 10px; gap: 10px; }
+  .cm-headline .cm-icon.lg { --size: 72px; margin-top: -26px; }
+  .cm-headline .grow { flex-basis: 100%; }
+  .cm-thread { gap: 8px; }
+  .cm-votes { width: 76px; }
+  .cm-votes .icon-btn { font-size: 0.75rem; padding: 0.2rem 0.3rem; }
+  .cm-thumb { width: 64px; height: 64px; }
+  .cm-full { flex-direction: column; }
+  .cm-full > .cm-votes { flex-direction: row; width: auto; }
+  .cm-children { margin-left: 4px; padding-left: 8px; }
+}
