@@ -1,29 +1,28 @@
-// /upload?type=video|short|photo — Southbag Studio.
-// Video and Short share one upload (switching tabs keeps the file); Photo post has its own list.
-// Files upload as soon as they are picked (public/js/upload.js → /api/media in 1.5 MiB chunks),
+// /upload?type=video|short|photo: the upload page.
+// Video and Short share one upload (switching tabs keeps the file); Photos has its own list.
+// Files upload as soon as they are picked (public/js/upload.js -> /api/media in 1.5 MiB chunks),
 // then Publish calls POST /api/posts { kind, title, body, media_ids, visibility }.
-// Also home to the "Go live" gauntlet: ten dialogues, then a branch referral.
+// Previews use the published shapes: 16:9 for videos, 9:16 for shorts, squares for photos.
 
 import { api } from '../api.js';
-import { h, icon, mount } from '../dom.js';
+import { h, mount } from '../dom.js';
 import { bytes, duration as fmtDuration } from '../format.js';
 import { navigate } from '../router.js';
 import { dialog, shake, toast, toastError } from '../ui.js';
 import { LIMITS, kindOf, pickFiles, uploadFile, videoMeta } from '../upload.js';
-import { celebrateFirstPost } from '../components/post.js';
 
 const TYPES = [
-  { key: 'video', label: 'Video', icon: 'video' },
-  { key: 'short', label: 'Short', icon: 'shorts' },
-  { key: 'photo', label: 'Photo post', icon: 'image' },
+  { key: 'video', label: 'Video' },
+  { key: 'short', label: 'Short' },
+  { key: 'photo', label: 'Photos' },
 ];
 const MAX_PHOTOS = 10;
 const SHORT_MAX = 180;
-const RETENTION = 'Uploads are retained permanently. Deletion is advisory.';
+const MB = n => `${Math.round(n / 1048576)} MB`;
 
 export default async function upload(ctx) {
   ctx.layout('wide');
-  ctx.title('Southbag Studio');
+  ctx.title('Upload');
   if (!ctx.requireAuth()) return null;
 
   let type = TYPES.some(t => t.key === ctx.query.get('type')) ? ctx.query.get('type') : 'video';
@@ -36,7 +35,7 @@ export default async function upload(ctx) {
   const paintTabs = () => {
     mount(tabBar, TYPES.map(t => h('button', {
       type: 'button', role: 'tab', 'aria-selected': t.key === type ? 'true' : 'false', onclick: () => setType(t.key),
-    }, icon(t.icon), ' ', t.label)));
+    }, t.label)));
     videoPanel.el.classList.toggle('hidden', type === 'photo');
     photoPanel.el.classList.toggle('hidden', type !== 'photo');
     videoPanel.refresh();
@@ -51,51 +50,51 @@ export default async function upload(ctx) {
 
   return h('div.studio',
     h('div.page-head',
-      h('div', h('p.eyebrow', 'SB-DIG-009 · STUDIO'), h('h1', 'Southbag Studio')),
+      h('h1', 'Upload'),
       h('span.spacer'),
-      h('button.btn.studio-live', { type: 'button', onclick: goLive }, icon('radio'), 'Go live')),
-    h('p.fine', RETENTION, ' Continued uploading constitutes acceptance.'),
+      h('button.btn', { type: 'button', onclick: goLive }, 'Go live')),
     tabBar,
     videoPanel.el,
     photoPanel.el);
 }
 
-// ── Video and Short ──────────────────────────────────────────────────────
+// -- Video and Short ---------------------------------------------------------
 
 function videoStudio(getType, setType, cleanups) {
   const s = { file: null, preview: null, meta: null, media: null, error: null, controller: null, progress: 0, publishing: false };
 
   const input = h('input', { type: 'file', accept: 'video/mp4,video/webm,video/quicktime,video/*', hidden: true, onchange: () => { if (input.files[0]) choose(input.files[0]); input.value = ''; } });
   const drop = dropzone({
-    title: () => (getType() === 'short' ? 'Drag a vertical video here' : 'Drag a video here'),
-    detail: () => `MP4, WebM or MOV, up to ${LIMITS.video / 1048576} MB.${getType() === 'short' ? ' Vertical, three minutes or less.' : ''} Kevin measured.`,
+    title: () => (getType() === 'short' ? 'Drag a short here' : 'Drag a video here'),
+    detail: () => `MP4, WebM or MOV, up to ${MB(LIMITS.video)}.${getType() === 'short' ? ' Three minutes or less.' : ''}`,
     button: 'Select file',
     onPick: () => input.click(),
-    onFiles: files => { const f = files.find(x => kindOf(x) === 'video'); if (f) choose(f); else toast('That is not a video. Kevin checked.', { error: true }); },
+    onFiles: files => { const f = files.find(x => kindOf(x) === 'video'); if (f) choose(f); else toast('That file is not a video.', { error: true }); },
   });
 
   // Upload status
   const bar = h('div');
   const statusText = h('div.studio-status-text');
-  const cancelBtn = h('button.btn-small.outline', { type: 'button', onclick: () => reset(true) }, 'Discard');
+  const cancelBtn = h('button.btn-small', { type: 'button', onclick: () => reset(true) }, 'Discard');
+  const filename = h('strong.studio-filename.grow');
   const status = h('div.studio-status.south-card.flat.hidden',
-    h('div.row', icon('upload'), h('strong.studio-filename.grow'), cancelBtn),
+    h('div.row', filename, cancelBtn),
     h('div.progress-bar.studio-progress', bar),
     statusText);
 
-  // Preview + poster
+  // Preview + poster, in the shape the video will be shown in.
   const previewHost = h('div.studio-preview-video');
   const posterHost = h('div.studio-poster', h('span.muted', 'No poster yet.'));
   const checks = h('div.studio-checks');
   const preview = h('div.studio-side.hidden',
     h('h3', 'Preview'), previewHost,
-    h('h3', 'Poster'), h('p.fine', 'Generated automatically from about a third of the way in. Southbag chose the frame. You may not.'), posterHost,
+    h('h3', 'Poster'), posterHost,
     checks);
 
   // Fields
-  const title = h('input.input', { maxLength: 120, placeholder: 'Add a title that describes your video', 'aria-required': 'true' });
+  const title = h('input.input', { maxLength: 120, 'aria-required': 'true' });
   const titleCount = h('span.counter');
-  const titleField = h('label.field', h('span', 'Title (required)'), title, titleCount);
+  const titleField = h('label.field', h('span', 'Title'), title, titleCount);
   const desc = h('textarea.textarea.boxed', { rows: 5, maxLength: 2200 });
   const descCount = h('span.counter');
   const descLabel = h('span', 'Description');
@@ -105,7 +104,7 @@ function videoStudio(getType, setType, cleanups) {
     titleField,
     h('label.field', descLabel, desc, descCount),
     h('label.field', h('span', 'Visibility'), visibility),
-    h('div.row.wrap', publish, h('span.fine', RETENTION)));
+    h('div.row.wrap', publish));
   title.addEventListener('input', refresh);
   desc.addEventListener('input', refresh);
 
@@ -116,7 +115,7 @@ function videoStudio(getType, setType, cleanups) {
   async function choose(file) {
     if (s.file) reset(true, { quiet: true });
     if (file.size > LIMITS.video) {
-      toast(`That video is ${bytes(file.size)}. The limit is ${LIMITS.video / 1048576} MB. Kevin measured.`, { error: true });
+      toast(`Videos are limited to ${MB(LIMITS.video)}.`, { error: true });
       shake(drop);
       return;
     }
@@ -127,9 +126,9 @@ function videoStudio(getType, setType, cleanups) {
     s.error = null;
     s.media = null;
     if (!title.value) title.value = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').slice(0, 120);
-    el.querySelector('.studio-filename').textContent = file.name;
+    filename.textContent = file.name;
     mount(previewHost, h('video', { src: s.preview, controls: true, muted: true, playsInline: true, preload: 'metadata' }));
-    mount(posterHost, h('div.loading', h('div.spinner'), 'Generating poster...'));
+    mount(posterHost, h('div.loading', 'Loading'));
     refresh();
 
     const controller = s.controller;
@@ -139,12 +138,8 @@ function videoStudio(getType, setType, cleanups) {
       if (meta.poster) {
         const url = URL.createObjectURL(meta.poster);
         cleanups.push(() => URL.revokeObjectURL(url));
-        mount(posterHost, h('img', { src: url, alt: 'Auto-generated poster' }));
-      } else mount(posterHost, h('span.muted', 'Southbag could not generate a poster. The first frame will do.'));
-      // Suggest the right tab.
-      if (isShortShaped(meta) && getType() === 'video') {
-        toast('This looks like a short. Vertical and brief. Consider the Short tab.', { timeout: 5000 });
-      }
+        mount(posterHost, h('img', { src: url, alt: 'Poster' }));
+      } else mount(posterHost, h('span.muted', 'No poster.'));
       refresh();
     });
 
@@ -156,11 +151,11 @@ function videoStudio(getType, setType, cleanups) {
       if (controller !== s.controller) { api.del(`media/${media.id}`).catch(() => {}); return; }
       s.media = media;
       s.progress = 1;
-      if (media.poster_url) mount(posterHost, h('img', { src: media.poster_url, alt: 'Auto-generated poster' }));
+      if (media.poster_url) mount(posterHost, h('img', { src: media.poster_url, alt: 'Poster' }));
       if (!s.meta) s.meta = { width: media.width, height: media.height, duration: media.duration };
     } catch (err) {
       if (err.name === 'AbortError' || controller !== s.controller) return;
-      s.error = `Upload failed. The video is still retained. (${err.message})`;
+      s.error = `Upload failed. ${err.message}`;
       toast(s.error, { error: true });
     }
     refresh();
@@ -174,7 +169,7 @@ function videoStudio(getType, setType, cleanups) {
     previewHost.querySelector('video')?.removeAttribute('src');
     mount(previewHost);
     mount(posterHost, h('span.muted', 'No poster yet.'));
-    if (!quiet) { title.value = ''; desc.value = ''; toast('Discarded. A copy may have been retained.'); }
+    if (!quiet) { title.value = ''; desc.value = ''; toast('Discarded.'); }
     refresh();
   }
 
@@ -186,9 +181,9 @@ function videoStudio(getType, setType, cleanups) {
     status.classList.toggle('hidden', !has);
     form.classList.toggle('hidden', !has);
     preview.classList.toggle('hidden', !has);
+    preview.classList.toggle('vertical', t === 'short');
     titleField.classList.toggle('hidden', t === 'short');
     descLabel.textContent = t === 'short' ? 'Caption' : 'Description';
-    desc.placeholder = t === 'short' ? 'Describe your short. #tags work. Kevin reads them.' : 'Tell viewers about your video. Kevin will read it first.';
     titleCount.textContent = title.value ? String(120 - [...title.value].length) : '';
     descCount.textContent = desc.value ? String(2200 - [...desc.value].length) : '';
 
@@ -199,35 +194,33 @@ function videoStudio(getType, setType, cleanups) {
       status.classList.toggle('failed', Boolean(s.error));
       statusText.textContent = s.error
         ? s.error
-        : s.media
-          ? `Upload complete. ${bytes(total)} stored in D1, in ${Math.ceil(total / (1536 * 1024))} chunk${total > 1536 * 1024 ? 's' : ''}. Processing is not required. Kevin watched it already.`
-          : `Uploading ${bytes(done)} of ${bytes(total)} · ${Math.round(s.progress * 100)}%`;
+        : s.media ? `Uploaded. ${bytes(total)}.` : `Uploading ${bytes(done)} of ${bytes(total)} (${Math.round(s.progress * 100)}%)`;
     }
 
-    // Checks and warnings
+    // Checks
     const m = s.meta;
     const notes = [];
-    if (m?.width && m?.height) notes.push(h('li', `${m.width} × ${m.height}${m.duration ? ` · ${fmtDuration(m.duration)}` : ''}`));
+    if (m?.width && m?.height) notes.push(h('li', `${m.width} x ${m.height}${m.duration ? `, ${fmtDuration(m.duration)}` : ''}`));
     if (t === 'short' && m) {
-      if (m.width && m.height && m.width >= m.height) notes.push(h('li.warn', 'This video is not vertical. It will be published as a short anyway, sideways in spirit. ',
-        h('button.btn-small.flat', { type: 'button', onclick: () => setType('video') }, 'Publish as a video instead')));
-      if (m.duration > SHORT_MAX) notes.push(h('li.warn', `Shorts are three minutes or less. This one is ${fmtDuration(m.duration)}. Kevin has noticed. `,
-        h('button.btn-small.flat', { type: 'button', onclick: () => setType('video') }, 'Publish as a video instead')));
+      if (m.width && m.height && m.width >= m.height) notes.push(h('li', 'This video is not vertical. It will be stretched to fit. ',
+        h('button.btn-small', { type: 'button', onclick: () => setType('video') }, 'Publish as a video')));
+      if (m.duration > SHORT_MAX) notes.push(h('li', 'Shorts are three minutes or less. ',
+        h('button.btn-small', { type: 'button', onclick: () => setType('video') }, 'Publish as a video')));
     }
-    if (t === 'video' && isShortShaped(m)) notes.push(h('li', 'This looks like a short. ',
-      h('button.btn-small.flat', { type: 'button', onclick: () => setType('short') }, 'Publish as a short')));
+    if (t === 'video' && isShortShaped(m)) notes.push(h('li', 'This video is vertical. It will be stretched to fit. ',
+      h('button.btn-small', { type: 'button', onclick: () => setType('short') }, 'Publish as a short')));
     mount(checks, notes.length ? h('ul.studio-notes', notes) : null);
 
     const needTitle = t === 'video' && !title.value.trim();
     publish.disabled = !s.media || needTitle || s.publishing;
-    publish.textContent = s.publishing ? 'Publishing…' : !has ? 'Publish' : s.error ? 'Upload failed'
-      : !s.media ? `Uploading… ${Math.round(s.progress * 100)}%` : needTitle ? 'Title required' : t === 'short' ? 'Publish short' : 'Publish video';
+    publish.textContent = s.publishing ? 'Publishing' : !has ? 'Publish' : s.error ? 'Upload failed'
+      : !s.media ? `Uploading ${Math.round(s.progress * 100)}%` : needTitle ? 'Add a title' : 'Publish';
   }
 
   async function submit() {
     const t = getType();
     if (publish.disabled) return;
-    if (t === 'video' && !title.value.trim()) { toast('Videos need a title. Kevin insists.', { error: true }); shake(title); return; }
+    if (t === 'video' && !title.value.trim()) { toast('Videos need a title.', { error: true }); shake(title); return; }
     s.publishing = true;
     refresh();
     try {
@@ -235,8 +228,7 @@ function videoStudio(getType, setType, cleanups) {
         kind: t, title: t === 'video' ? title.value.trim() : undefined, body: desc.value, media_ids: [s.media.id], visibility: visibility.value,
       });
       s.media = null; // published: nothing to clean up
-      celebrateFirstPost();
-      toast('Published. Pending review.');
+      toast('Published.');
       navigate(t === 'short' ? `/shorts/${post.id}` : `/watch/${post.id}`);
     } catch (err) {
       shake(form);
@@ -252,7 +244,7 @@ function videoStudio(getType, setType, cleanups) {
 
 const isShortShaped = m => Boolean(m?.width && m?.height && m.height > m.width && (m.duration || 0) <= SHORT_MAX);
 
-// ── Photo post ───────────────────────────────────────────────────────────
+// -- Photos ------------------------------------------------------------------
 
 function photoStudio(cleanups) {
   /** @type {{ file: File, preview: string, media: object|null, error: string|null, progress: number, controller: AbortController }[]} */
@@ -261,23 +253,23 @@ function photoStudio(cleanups) {
 
   const drop = dropzone({
     title: () => 'Drag photos here',
-    detail: () => `Up to ${MAX_PHOTOS} photos. JPEG, PNG, WebP or GIF. Large photos are shrunk before upload, like everything else here.`,
+    detail: () => `Up to ${MAX_PHOTOS} photos. JPEG, PNG, WebP or GIF.`,
     button: 'Select photos',
     onPick: async () => add(await pickFiles({ accept: 'image/*', multiple: true })),
     onFiles: add,
   });
   const list = h('ol.studio-photos');
-  const addMore = h('button.btn-small.outline', { type: 'button', onclick: async () => add(await pickFiles({ accept: 'image/*', multiple: true })) }, icon('plus'), 'Add photos');
+  const addMore = h('button.btn-small', { type: 'button', onclick: async () => add(await pickFiles({ accept: 'image/*', multiple: true })) }, 'Add photos');
   const counter = h('span.fine');
-  const caption = h('textarea.textarea.boxed', { rows: 4, maxLength: 2200, placeholder: 'Write a caption. #tags work. Kevin reads them.' });
+  const caption = h('textarea.textarea.boxed', { rows: 4, maxLength: 2200 });
   const visibility = visibilitySelect();
-  const publish = h('button.btn-large', { type: 'submit' }, 'Share');
+  const publish = h('button.btn-large', { type: 'submit' }, 'Publish');
   const form = h('form.studio-form.hidden', { onsubmit: e => { e.preventDefault(); submit(); } },
     h('div.row.wrap', addMore, counter),
     list,
     h('label.field', h('span', 'Caption'), caption),
     h('label.field', h('span', 'Visibility'), visibility),
-    h('div.row.wrap', publish, h('span.fine', RETENTION)));
+    h('div.row.wrap', publish));
   const el = h('section.studio-panel', drop, form);
 
   cleanups.push(() => {
@@ -290,9 +282,9 @@ function photoStudio(cleanups) {
 
   function add(files) {
     const images = files.filter(f => kindOf(f) === 'image');
-    if (files.length && !images.length) toast('Photos only here. Videos go in the other tabs.', { error: true });
+    if (files.length && !images.length) toast('Only photos can be added here.', { error: true });
     for (const file of images) {
-      if (items.length >= MAX_PHOTOS) { toast(`${MAX_PHOTOS} photos per post. Kevin counted.`, { error: true }); break; }
+      if (items.length >= MAX_PHOTOS) { toast(`Up to ${MAX_PHOTOS} photos per post.`, { error: true }); break; }
       const it = { file, preview: URL.createObjectURL(file), media: null, error: null, progress: 0, controller: new AbortController() };
       items.push(it);
       uploadFile(file, { signal: it.controller.signal, onProgress: p => { it.progress = p; paintProgress(it); } })
@@ -327,23 +319,23 @@ function photoStudio(cleanups) {
     drop.classList.toggle('hidden', items.length > 0);
     form.classList.toggle('hidden', items.length === 0);
     addMore.disabled = items.length >= MAX_PHOTOS;
-    counter.textContent = `${items.length} of ${MAX_PHOTOS} photos${items.length > 1 ? ' · the first one is the cover' : ''}`;
+    counter.textContent = `${items.length} of ${MAX_PHOTOS} photos${items.length > 1 ? '. The first one is the cover.' : ''}`;
     mount(list, items.map((it, i) => {
       it.el = h('li.studio-photo', { class: { error: Boolean(it.error) }, title: it.error || it.file.name },
-        h('img', { src: it.preview, alt: `Photo ${i + 1}` }),
-        h('span.studio-photo-n', String(i + 1)),
-        !it.media && !it.error ? h('div.progress-bar', h('div', { style: `width:${Math.round(it.progress * 100)}%` })) : null,
-        it.error ? h('span.studio-photo-err', 'Failed') : null,
+        h('div.studio-photo-box',
+          h('img', { src: it.preview, alt: `Photo ${i + 1}` }),
+          !it.media && !it.error ? h('div.progress-bar', h('div', { style: `width:${Math.round(it.progress * 100)}%` })) : null),
+        h('div.studio-photo-label', `Photo ${i + 1}`, it.error ? '. Failed.' : ''),
         h('div.studio-photo-tools',
-          h('button.icon-btn', { type: 'button', 'aria-label': `Move photo ${i + 1} left`, disabled: i === 0, onclick: () => move(it, -1) }, icon('chevron-left')),
-          h('button.icon-btn', { type: 'button', 'aria-label': `Remove photo ${i + 1}`, onclick: () => remove(it) }, icon('close')),
-          h('button.icon-btn', { type: 'button', 'aria-label': `Move photo ${i + 1} right`, disabled: i === items.length - 1, onclick: () => move(it, 1) }, icon('chevron-right'))));
+          h('button.btn-small', { type: 'button', 'aria-label': `Move photo ${i + 1} left`, disabled: i === 0, onclick: () => move(it, -1) }, 'Left'),
+          h('button.btn-small', { type: 'button', 'aria-label': `Remove photo ${i + 1}`, onclick: () => remove(it) }, 'Remove'),
+          h('button.btn-small', { type: 'button', 'aria-label': `Move photo ${i + 1} right`, disabled: i === items.length - 1, onclick: () => move(it, 1) }, 'Right')));
       return it.el;
     }));
     const uploading = items.some(it => !it.media && !it.error);
     const failed = items.some(it => it.error);
     publish.disabled = publishing || uploading || failed || !items.length;
-    publish.textContent = publishing ? 'Sharing…' : uploading ? 'Uploading…' : failed ? 'Remove failed uploads' : 'Share';
+    publish.textContent = publishing ? 'Publishing' : uploading ? 'Uploading' : failed ? 'Remove failed uploads' : 'Publish';
   }
 
   async function submit() {
@@ -355,8 +347,7 @@ function photoStudio(cleanups) {
         kind: 'photo', body: caption.value, media_ids: items.map(it => it.media.id), visibility: visibility.value,
       });
       items.forEach(it => { it.media = null; });
-      celebrateFirstPost();
-      toast('Shared. Pending review.');
+      toast('Published.');
       navigate(`/post/${post.id}`);
     } catch (err) {
       publishing = false;
@@ -370,12 +361,12 @@ function photoStudio(cleanups) {
   return { el };
 }
 
-// ── Shared bits ──────────────────────────────────────────────────────────
+// -- Shared bits -------------------------------------------------------------
 
 function visibilitySelect() {
   return h('select.select.boxed',
-    h('option', { value: 'public' }, 'Everyone (and Kevin)'),
-    h('option', { value: 'followers' }, 'The Pile (followers)'),
+    h('option', { value: 'public' }, 'Everyone'),
+    h('option', { value: 'followers' }, 'Followers'),
     h('option', { value: 'friends' }, 'Friends'));
 }
 
@@ -384,7 +375,6 @@ function dropzone({ title, detail, button, onPick, onFiles }) {
   const titleEl = h('strong.studio-drop-title');
   const detailEl = h('span.fine');
   const zone = h('div.studio-drop', { tabIndex: 0, role: 'button', onclick: e => { if (!e.target.closest('button')) onPick(); } },
-    icon('upload'),
     titleEl,
     h('span.muted', 'or'),
     h('button.btn', { type: 'button', onclick: onPick }, button),
@@ -398,39 +388,6 @@ function dropzone({ title, detail, button, onPick, onFiles }) {
   return zone;
 }
 
-// ── Go live: the ten-dialogue gauntlet ───────────────────────────────────
-
-const GAUNTLET = [
-  ['Before continuing, Southbag requires ten dialogues. This makes the stream safer by making the streamer tired.', 'Continue'],
-  ['You are about to go live. So is Kevin.', 'Yes'],
-  ['Live streams are recorded and retained per SB-NET-2022. The recording will outlive the stream.', 'I understand'],
-  ['Please confirm you are not broadcasting from Canberra. That area is Reserved.', 'I am not in Canberra'],
-  ['Please confirm nothing in frame refers to 2019. There was no 2019 incident.', 'Nothing refers to 2019'],
-  ['Please confirm no Blahaj is visible. This content is prohibited. (We love it.)', 'No Blahaj is visible'],
-  ['Your device is untrusted. So is your lighting.', 'Proceed regardless'],
-  ['Viewers may comment. Comments may be read aloud on Floor 3. Southbag has no Floor 3.', 'Acknowledged'],
-  ['A broadcast fee applies. Fee assessed: $7.00 — Kevin’s time.', 'Accept the fee'],
-  ['This is the tenth dialogue. Kevin has reviewed your stream in advance. You may now go live.', 'Go live'],
-];
-
-async function goLive() {
-  for (let i = 0; i < GAUNTLET.length; i++) {
-    const [text, ok] = GAUNTLET[i];
-    const go = await dialog({
-      title: `Southbag Untrusted Broadcast Warning (${i + 1} of ${GAUNTLET.length})`,
-      body: h('div', h('p', { style: 'margin-top:0' }, text),
-        i > 3 ? h('p.fine', `Dialogues remaining: ${GAUNTLET.length - i - 1}. You are doing well. Kevin is not.`) : null),
-      actions: [{ label: 'Cancel', value: false }, { label: ok, value: true, primary: true }],
-    });
-    if (!go) {
-      toast(`Broadcast cancelled at dialogue ${i + 1} of ${GAUNTLET.length}. Your hesitation has been logged.`);
-      return;
-    }
-  }
-  await dialog({
-    title: 'Southbag Alert',
-    body: h('div', h('p', { style: 'margin-top:0' }, h('strong', 'Broadcast unavailable. Please visit a branch.')),
-      h('p.fine', 'Live streaming requires an in-person identity check. Branches do not exist. This is being reviewed.')),
-    actions: [{ label: 'OK', value: false, primary: true }, { label: 'Find a branch', value: true }],
-  }).then(v => { if (v) window.open('https://branch-locator.southbag.cc', '_blank', 'noopener'); });
+function goLive() {
+  return dialog({ title: 'Go live', body: 'Live video is not available yet.' });
 }
