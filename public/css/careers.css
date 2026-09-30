@@ -1,1 +1,102 @@
-/* careers styles */
+/* Careers (LinkedIn): profile headline, the Career tab, jobs, company pages and applications.
+   Built on the southbag.css tokens and furniture. Greyscale, square corners, no button styling.
+   Company logos sit in a square box and are stretched to fill it. */
+
+/* -- Profile header ------------------------------------------------------ */
+.career-headline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 0 14px; margin-top: 8px; box-shadow: none; }
+.career-headline-text { margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--sb-text); overflow-wrap: anywhere; }
+.open-to-work { font-weight: 700; }
+@media (max-width: 640px) { .career-headline { padding: 0 10px; } }
+
+/* -- Company logo: a square box, the picture stretched into it ----------- */
+.company-logo {
+  --size: 48px; width: var(--size); height: var(--size); flex-shrink: 0; display: inline-block; overflow: hidden;
+  border: 1px solid #111; background: var(--sb-bevel); text-decoration: none;
+}
+.company-logo:hover { background: var(--sb-bevel); }
+.company-logo img { display: block; width: 100%; height: 100%; max-width: none; box-shadow: none; }
+.company-logo .initial {
+  display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;
+  color: #111; font-weight: 700; font-size: calc(var(--size) * 0.5); box-shadow: none;
+}
+.company-logo.sm { --size: 32px; }
+.company-logo.lg { --size: 96px; border: 3px ridge var(--sb-ridge); }
+@media (max-width: 640px) { .company-logo.lg { --size: 64px; } }
+
+/* -- Career tab ---------------------------------------------------------- */
+.career { box-shadow: none; }
+.career-section-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; box-shadow: none; }
+.career-section-head h2 { margin: 0; }
+.career-section-head .spacer { flex: 1; box-shadow: none; }
+.career-about { font-size: 1.05rem; margin: 6px 0; overflow-wrap: anywhere; }
+.career-toggle { margin-top: 10px; }
+.career-toggle small { display: block; }
+.career-item, .career-rec { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; box-shadow: none; }
+.career-item + .career-item, .career-rec + .career-rec { border-top: 1px dashed #999; }
+.career-item .grow, .career-rec .grow { box-shadow: none; overflow-wrap: anywhere; }
+.career-item-title { display: block; font-size: 1.05rem; }
+.career-text { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 0; }
+.career-controls { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; align-items: center; box-shadow: none; }
+.career-skill { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 0; box-shadow: none; }
+.career-skill + .career-skill { border-top: 1px dashed #999; }
+.career-skill .grow { box-shadow: none; min-width: 10rem; }
+.career-skill .career-controls { margin-top: 0; }
+.career-requests { margin: 8px 0 4px; padding: 8px 10px; border: 2px inset var(--sb-bevel); background: var(--sb-paper); }
+.career-requests h3 { margin: 0 0 4px; }
+.career-requests .user-row .row { box-shadow: none; }
+
+/* Forms in dialogs */
+.career-form { box-shadow: none; }
+.career-form .field { margin-bottom: 10px; }
+.career-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; box-shadow: none; }
+.career-form-grid > span { box-shadow: none; }
+.career-form-actions { display: flex; justify-content: flex-end; gap: 9px; flex-wrap: wrap; padding: 6px 0 4px; box-shadow: none; }
+.career-add-admin { margin-top: 10px; box-shadow: none; }
+.career-add-admin input { flex: 1; min-width: 0; }
+@media (max-width: 640px) { .career-form-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* -- Jobs ---------------------------------------------------------------- */
+.jobs-page { box-shadow: none; }
+.jobs-basis { margin: 0 0 10px; }
+.jobs-toolbar { margin: 0 0 14px; box-shadow: none; }
+.jobs-toolbar form { box-shadow: none; }
+.jobs-toolbar input { flex: 1; min-width: 0; }
+.jobs-empty-actions { justify-content: center; margin-top: 8px; box-shadow: none; }
+.job-search-grid { display: grid; grid-template-columns: 2fr 1.4fr 1fr 1fr; gap: 0 12px; box-shadow: none; }
+@media (max-width: 900px) { .job-search-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .job-search-grid { grid-template-columns: minmax(0, 1fr); } }
+.job-list { gap: 10px; }
+.job-row { display: flex; gap: 12px; align-items: flex-start; padding: 10px; }
+.job-row .grow { box-shadow: none; overflow-wrap: anywhere; }
+.job-title { font-weight: 700; font-size: 1.08rem; }
+.job-company { margin-top: 2px; }
+.job-meta { color: var(--sb-muted); font-size: 0.9rem; }
+.job-chips { margin-top: 4px; box-shadow: none; }
+.job-application-line { margin-top: 6px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; box-shadow: none; }
+.job-form { max-width: 720px; }
+.job-actions { margin: 12px 0 16px; box-shadow: none; }
+.job-detail h1, .company-header h1 { font-size: clamp(1.6rem, 4vw, 2.4rem); max-width: none; margin: 0 0 6px; overflow-wrap: anywhere; }
+.job-detail h2 { margin-top: 10px; }
+.job-poster { margin-top: 16px; padding-top: 10px; border-top: 1px dashed #999; box-shadow: none; }
+.job-poster h3 { margin: 0 0 2px; }
+.company-head { display: flex; gap: 14px; align-items: flex-start; box-shadow: none; }
+.company-head .grow { box-shadow: none; overflow-wrap: anywhere; }
+.company-actions { margin: 12px 0 0; box-shadow: none; }
+.company-about { margin-top: 12px; }
+.company-card .company-head { margin-bottom: 8px; }
+.company-card .btn-small { margin-top: 10px; }
+
+/* -- Applications (for the poster) --------------------------------------- */
+.application-list { gap: 10px; }
+.application { padding: 10px; }
+.application-head { display: flex; gap: 10px; align-items: flex-start; box-shadow: none; }
+.application-head .grow { box-shadow: none; overflow-wrap: anywhere; }
+.application-head .chip.teal { margin-top: 4px; }
+.application-note { padding: 8px; border-left: 2px dashed #000; }
+:root[data-theme='dark'] .application-note { border-left-color: #777; }
+
+/* Inner lines of rows and cards: no halo of their own. */
+.career-item .grow > div, .career-rec .grow > div, .career-skill .grow, .job-row .grow > div, .company-head .grow > div,
+.application-head .grow > div, .career-toggle, .job-detail > div:not(.notice) { box-shadow: none; }
+.job-poster .user-row div, .company-page .user-row div, .career-requests .user-row div { box-shadow: none; }
+.jobs-panel, .jobs-basis { box-shadow: none; }

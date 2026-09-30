@@ -845,7 +845,7 @@ interface JobRow {
 }
 
 /** Job columns joined with the company and the viewer's saved/applied/manage state. Binds (viewer, viewer, viewer). */
-const jobSelect = `SELECT j.*, co.slug AS c_slug, co.name AS c_name, co.logo_media_id AS c_logo, co.location AS c_location,
+const jobSelect = `SELECT j.*, co.slug AS c_slug, co.name AS c_name, co.logo_media_id AS c_logo, co.location AS c_location, co.industry AS c_industry,
     EXISTS (SELECT 1 FROM saved_jobs s WHERE s.job_id = j.id AND s.user_id = ?1) AS saved,
     (SELECT a.status FROM job_applications a WHERE a.job_id = j.id AND a.user_id = ?1) AS application_status,
     (j.poster_id = ?1 OR EXISTS (SELECT 1 FROM company_admins ad WHERE ad.company_id = j.company_id AND ad.user_id = ?1)) AS can_manage
@@ -1189,7 +1189,7 @@ careers.get('/recommended', async c => {
   if (!terms.length) return c.json({ items: [], basis: { terms, location } });
   // ?1 viewer, ?2 location pattern, ?3 limit, ?4… terms.
   const score = terms.map((_, i) => `(CASE WHEN sub.title LIKE ?${i + 4} ESCAPE '\\' THEN 3
-      WHEN sub.description LIKE ?${i + 4} ESCAPE '\\' THEN 1 ELSE 0 END)`).join(' + ');
+      WHEN sub.description LIKE ?${i + 4} ESCAPE '\\' OR sub.c_industry LIKE ?${i + 4} ESCAPE '\\' THEN 1 ELSE 0 END)`).join(' + ');
   const { results } = await c.env.DB.prepare(`SELECT * FROM (SELECT sub.*, (${score}) AS term_score,
         (CASE WHEN ?2 != '' AND sub.location LIKE ?2 ESCAPE '\\' THEN 2 WHEN sub.workplace = 'remote' THEN 1 ELSE 0 END) AS place_score
       FROM (${jobSelect} WHERE j.status = 'open') sub)
