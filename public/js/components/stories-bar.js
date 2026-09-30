@@ -204,7 +204,7 @@ export function openStoryComposer() {
         h('button', { type: 'button', 'aria-selected': 'true', onclick: () => setMode('media') }, 'Photo or video'),
         h('button', { type: 'button', 'aria-selected': 'false', onclick: () => setMode('text') }, 'Text'));
       const mediaFields = h('div.stack', pick, h('label.field', h('span', 'Caption'), caption));
-      const textFields = h('div.stack', { hidden: true }, h('label.field', h('span', 'Text'), textInput), h('div', h('span.label', 'Background'), swatches));
+      const textFields = h('div.stack', { hidden: true }, h('label.field', h('span', 'Text'), textInput), h('div', h('span.field-label', 'Background'), swatches));
 
       function setMode(next) {
         mode = next;

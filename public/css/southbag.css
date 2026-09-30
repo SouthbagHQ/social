@@ -179,7 +179,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 
 /* ── Forms (Materialize underline inputs; labels lean a little, like banking) ── */
 .field { display: block; margin: 0 0 14px; }
-.field > span, .label {
+.field > span, .field-label {
   display: inline-block; font-size: 0.86rem; color: var(--sb-muted); margin-bottom: 2px;
   transform: skew(-4deg); transform-origin: left;
 }
@@ -515,8 +515,8 @@ aside .sticky { position: sticky; top: 64px; }
 .privacy-option { display: flex; gap: 10px; align-items: flex-start; margin: 8px 0; padding: 8px; border: 1px solid var(--sb-hairline); }
 .privacy-option small { display: block; color: var(--sb-muted); }
 .privacy-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
-.privacy-min { position: fixed; left: 16px; bottom: 16px; z-index: 900; border: 3px solid var(--sb-privacy-border); padding: 4px; background: var(--sb-paper); }
-@media (max-width: 640px) { .privacy-min { bottom: 72px; } }
+.privacy-min { position: fixed; left: 8px; bottom: 8px; z-index: 900; border: 2px solid var(--sb-privacy-border); padding: 2px; background: var(--sb-paper); line-height: 1; }
+@media (max-width: 640px) { .privacy-min { display: none; } }
 
 /* Promo carousel (fake ads, skippable, once per session) */
 .promo-carousel {

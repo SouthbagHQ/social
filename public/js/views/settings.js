@@ -82,7 +82,7 @@ function imagePicker({ label, kind, current, maxEdge, field }) {
     } catch (err) { toastError(err); }
   });
   return h('div.image-picker', { class: `pick-${kind}` },
-    h('span.label', label),
+    h('span.field-label', label),
     preview,
     progress,
     h('div.row.wrap', change, remove));

@@ -75,7 +75,7 @@ export function privacyPanel() {
   let seen = false;
   try { seen = localStorage.getItem('sb_privacy') === '1'; } catch {}
   const host = h('div');
-  const minimised = () => mount(host, h('div.privacy-min', h('button.btn-small', { type: 'button', onclick: expanded }, 'Privacy permissions')));
+  const minimised = () => mount(host, h('div.privacy-min', h('button.btn-tiny', { type: 'button', onclick: expanded, title: 'Privacy permissions' }, 'Privacy permissions')));
   const save = message => { try { localStorage.setItem('sb_privacy', '1'); } catch {} minimised(); toast(message); };
   const options = [
     ['Share my posts with everyone', 'Required.'],
