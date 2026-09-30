@@ -1,16 +1,17 @@
-// /photos — Instagram: a centred feed of photo posts (or a 3-column grid).
-//   GET /api/videos/feed?kind=photo&cursor → { items, next }
+// /photos: a feed of photo posts (or a 3-column grid). Every photo sits in a square and is
+// stretched to fill it.
+//   GET /api/videos/feed?kind=photo&cursor -> { items, next }
 // Double-tap a photo to like it. The feed/grid choice is remembered per browser.
 
 import { api } from '../api.js';
-import { h, icon, mount } from '../dom.js';
+import { h, mount } from '../dom.js';
 import { count, fullDate, plural, relative } from '../format.js';
 import { login, store } from '../store.js';
 import { confirm, dialog, empty, infiniteList, menu, share, toast, toastError } from '../ui.js';
 import { carousel } from '../components/media.js';
 import { REACTIONS, postUrl, richText } from '../components/post.js';
 import { avatar, verifiedBadge } from '../components/user.js';
-import { heartBurst } from './videos.js';
+import { likedNote } from './videos.js';
 
 const VIEW_KEY = 'sb_photos_view';
 const readView = () => { try { return localStorage.getItem(VIEW_KEY) === 'grid' ? 'grid' : 'feed'; } catch { return 'feed'; } };
@@ -22,12 +23,12 @@ export default async function photos(ctx) {
   let view = ctx.query.get('view') === 'grid' ? 'grid' : ctx.query.get('view') === 'feed' ? 'feed' : readView();
 
   const body = h('div');
-  const toggle = h('div.ig-toggle', { role: 'tablist', 'aria-label': 'Layout' });
+  const toggle = h('div.ig-toggle', { role: 'group', 'aria-label': 'Layout' });
   const paintToggle = () => mount(toggle,
-    [['feed', 'list', 'Feed'], ['grid', 'grid', 'Grid']].map(([key, ic, label]) => h('button.icon-btn', {
-      type: 'button', role: 'tab', 'aria-selected': view === key ? 'true' : 'false', title: `${label} view`,
+    [['feed', 'Feed'], ['grid', 'Grid']].map(([key, label]) => h('button.icon-btn', {
+      type: 'button', 'aria-pressed': view === key ? 'true' : 'false',
       onclick: () => { if (view === key) return; view = key; writeView(key); paintToggle(); paint(); },
-    }, icon(ic), h('span', label))));
+    }, label)));
 
   function paint() {
     mount(body, infiniteList({
@@ -36,10 +37,8 @@ export default async function photos(ctx) {
       load: cursor => api.get('videos/feed', { kind: 'photo', cursor, limit: view === 'grid' ? 30 : 12 }, { signal: ctx.signal }),
       render: post => (view === 'grid' ? gridTile(post) : igCard(post)),
       empty: empty({
-        icon: 'image',
         title: 'No photos yet.',
-        text: 'Nobody has shared a photo. Your face is already on file, so Southbag is not worried.',
-        action: store.me ? h('a.btn', { href: '/upload?type=photo' }, 'New photo post') : null,
+        action: store.me ? h('a.btn', { href: '/upload?type=photo' }, 'New post') : null,
       }),
     }));
   }
@@ -52,42 +51,38 @@ export default async function photos(ctx) {
       h('span.spacer'),
       toggle,
       store.me
-        ? h('a.btn', { href: '/upload?type=photo' }, icon('camera'), 'New photo post')
-        : h('button.btn', { type: 'button', onclick: () => login('/upload?type=photo') }, icon('camera'), 'New photo post')),
-    h('p.fine', 'Up to ten photos per post. Filters are not available. Southbag applies its own.'),
+        ? h('a.btn', { href: '/upload?type=photo' }, 'New post')
+        : h('button.btn', { type: 'button', onclick: () => login('/upload?type=photo') }, 'New post')),
     body);
 }
 
-/** A 3-column grid square: first photo, a stack marker for carousels, counts on hover. */
+/** A grid square: the first photo stretched to fill it, a count for carousels, totals on hover. */
 function gridTile(post) {
   const first = post.media.find(m => m.kind === 'image');
   if (!first) return null;
   return h('a.ig-tile', { href: postUrl(post), dataset: { postId: post.id }, 'aria-label': post.body ? post.body.slice(0, 100) : `Photo by @${post.author.handle}` },
     h('img', { src: first.url, alt: first.alt || '', loading: 'lazy', decoding: 'async' }),
-    post.media.length > 1 ? h('span.ig-tile-multi', { title: `${post.media.length} photos` }, icon('image')) : null,
+    post.media.length > 1 ? h('span.ig-tile-multi', `${post.media.length} photos`) : null,
     h('span.ig-tile-hover',
-      h('span', icon('heart'), count(post.counts.reactions)),
-      h('span', icon('comment'), count(post.counts.replies))));
+      h('span', plural(post.counts.reactions, 'like')),
+      h('span', plural(post.counts.replies, 'comment'))));
 }
 
-/** The Instagram-style card. */
+/** A photo post card: header, square carousel, actions, likes, caption, comments link. */
 export function igCard(post) {
   if (!post.media.some(m => m.kind === 'image')) return null;
   const author = post.author;
   const images = post.media.filter(m => m.kind === 'image');
 
-  // ── Like state ──
-  const likes = h('button.ig-likes', { type: 'button' });
-  const heartBtn = h('button.ig-action.ig-heart', { type: 'button' });
+  // -- Like state --
+  const likes = h('button.btn-small.ig-likes', { type: 'button' });
+  const likeBtn = h('button.icon-btn', { type: 'button' });
   const paint = () => {
-    const on = Boolean(post.viewer.reaction);
-    heartBtn.classList.toggle('on', on);
-    heartBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
-    heartBtn.setAttribute('aria-label', on ? 'Withdraw like' : 'Like');
-    heartBtn.title = on ? 'Withdraw like (processing: 1–3 business days)' : 'Like (fees apply)';
-    mount(heartBtn, on && post.viewer.reaction !== 'like' ? h('span.ig-emoji', REACTIONS[post.viewer.reaction]?.emoji || '❤️') : icon('heart'));
-    likes.textContent = post.counts.reactions ? plural(post.counts.reactions, 'like') : 'Be the first to like this';
-    likes.classList.toggle('none', !post.counts.reactions);
+    const r = post.viewer.reaction;
+    likeBtn.setAttribute('aria-pressed', r ? 'true' : 'false');
+    likeBtn.textContent = !r ? 'Like' : r === 'like' ? 'Liked' : REACTIONS[r]?.label || 'Liked';
+    likes.textContent = plural(post.counts.reactions, 'like');
+    likes.classList.toggle('hidden', !post.counts.reactions);
   };
   let busy = false;
   const setLiked = async liked => {
@@ -98,12 +93,10 @@ export function igCard(post) {
     post.viewer.reaction = liked ? 'like' : null;
     post.counts.reactions = Math.max(0, post.counts.reactions + (liked ? 1 : -1));
     paint();
-    if (liked) { heartBtn.classList.remove('pop'); void heartBtn.offsetWidth; heartBtn.classList.add('pop'); }
     try {
       const { post: fresh } = liked ? await api.put(`posts/${post.id}/reaction`, { type: 'like' }) : await api.del(`posts/${post.id}/reaction`);
       Object.assign(post, { viewer: fresh.viewer, counts: fresh.counts, reactions: fresh.reactions });
       paint();
-      if (liked && Math.random() < 0.25) toast('Liked.', { fee: 'Appreciation surcharge' });
     } catch (err) {
       post.viewer.reaction = before.reaction;
       post.counts.reactions = before.n;
@@ -112,11 +105,11 @@ export function igCard(post) {
     }
     busy = false;
   };
-  heartBtn.addEventListener('click', () => setLiked(!post.viewer.reaction));
+  likeBtn.addEventListener('click', () => setLiked(!post.viewer.reaction));
   likes.addEventListener('click', () => showLikers(post));
   paint();
 
-  // ── Media: double-tap to like. Single taps are swallowed (no lightbox), like Instagram. ──
+  // -- Media: double-tap to like. Single taps are swallowed (no lightbox). --
   const mediaBox = h('div.ig-media', carousel(images));
   let lastTap = 0;
   mediaBox.addEventListener('click', e => {
@@ -125,52 +118,51 @@ export function igCard(post) {
     const now = Date.now();
     if (now - lastTap < 320) {
       lastTap = 0;
-      heartBurst(mediaBox);
+      likedNote(mediaBox);
       setLiked(true);
     } else lastTap = now;
   }, true);
   mediaBox.addEventListener('dblclick', e => e.preventDefault());
 
-  // ── Bookmark ──
-  const bm = h('button.ig-action', { type: 'button', 'aria-label': 'Save', class: { on: post.viewer.bookmarked } }, icon('bookmark'));
+  // -- Save --
+  const bm = h('button.icon-btn', { type: 'button', 'aria-pressed': post.viewer.bookmarked ? 'true' : 'false' }, post.viewer.bookmarked ? 'Saved' : 'Save');
   bm.addEventListener('click', async () => {
     if (!store.me) return login();
     try {
       if (post.viewer.bookmarked) await api.del(`posts/${post.id}/bookmark`);
       else await api.put(`posts/${post.id}/bookmark`);
       post.viewer.bookmarked = !post.viewer.bookmarked;
-      bm.classList.toggle('on', post.viewer.bookmarked);
-      toast(post.viewer.bookmarked ? 'Saved. Southbag saved a copy too.' : 'Unsaved. The copy we kept is not.');
+      bm.textContent = post.viewer.bookmarked ? 'Saved' : 'Save';
+      bm.setAttribute('aria-pressed', post.viewer.bookmarked ? 'true' : 'false');
+      toast(post.viewer.bookmarked ? 'Saved.' : 'Removed from saved.');
     } catch (err) { toastError(err); }
   });
 
-  // ── Caption, clamped until "more" ──
+  // -- Caption, clamped until "More" --
   let caption = null;
   if (post.body) {
-    const moreBtn = h('button.ig-more', { type: 'button' }, 'more');
-    caption = h('div.ig-caption.clamped',
+    const moreBtn = h('button.btn-small.ig-more', { type: 'button' }, 'More');
+    const text = h('div.ig-caption.clamped',
       h('a.ig-handle', { href: `/@${author.handle}` }, author.handle), ' ',
       h('span', richText(post.body)));
     const long = post.body.length > 110 || post.body.split('\n').length > 2;
-    if (!long) caption.classList.remove('clamped');
-    const text = caption;
+    if (!long) text.classList.remove('clamped');
     moreBtn.addEventListener('click', () => { text.classList.remove('clamped'); moreBtn.remove(); });
     caption = h('div', text, long ? moreBtn : null);
   }
 
-  const moreMenu = h('button.icon-btn', { type: 'button', 'aria-label': 'More options' }, icon('more'));
+  const moreMenu = h('button.icon-btn', { type: 'button' }, 'More');
   const card = h('article.ig-card', { dataset: { postId: post.id } });
   moreMenu.addEventListener('click', () => menu(moreMenu, [
-    { label: 'Go to post', icon: 'link', href: postUrl(post) },
-    { label: 'Copy link', icon: 'share', onClick: () => share(postUrl(post)) },
-    { label: 'Why am I seeing this?', icon: 'eye', onClick: () => dialog({ title: 'Algorithmic transparency', body: 'Kevin.' }) },
+    { label: 'Go to post', href: postUrl(post) },
+    { label: 'Copy link', onClick: () => share(postUrl(post)) },
     post.viewer.can_edit
-      ? { label: 'Request deletion', icon: 'trash', danger: true, onClick: async () => {
-          if (!(await confirm('Request deletion of this post? Deletion is advisory.', { ok: 'Request deletion' }))) return;
-          try { await api.del(`posts/${post.id}`); card.remove(); toast('Deletion request filed. Photos are never fully deleted.'); }
+      ? { label: 'Delete', onClick: async () => {
+          if (!(await confirm('Delete this post?', { title: 'Delete post', ok: 'Delete' }))) return;
+          try { await api.del(`posts/${post.id}`); card.remove(); toast('Deleted.'); }
           catch (err) { toastError(err); }
         } }
-      : { label: 'Report to Kevin', icon: 'flag', onClick: () => toast('Reported. Kevin has already seen it.') },
+      : { label: 'Report', onClick: () => toast('Reported.') },
   ]));
 
   mount(card,
@@ -178,22 +170,20 @@ export function igCard(post) {
       avatar(author, { size: 'sm' }),
       h('div.grow',
         h('a.ig-handle', { href: `/@${author.handle}` }, author.handle, author.verified ? verifiedBadge() : null),
-        h('span.ig-dot', ' • '),
         h('time.muted', { datetime: new Date(post.created_at).toISOString(), title: fullDate(post.created_at) }, relative(post.created_at))),
       moreMenu),
     mediaBox,
     h('div.ig-actions',
-      heartBtn,
-      h('a.ig-action', { href: `${postUrl(post)}#reply`, 'aria-label': 'Comment' }, icon('comment')),
-      h('button.ig-action', { type: 'button', 'aria-label': 'Share', onclick: () => share(postUrl(post)) }, icon('send')),
+      likeBtn,
+      h('a.icon-btn', { href: `${postUrl(post)}#reply` }, 'Comment'),
+      h('button.icon-btn', { type: 'button', onclick: () => share(postUrl(post)) }, 'Share'),
       h('span.spacer'),
       bm),
     likes,
     caption,
     post.counts.replies
       ? h('a.ig-comments', { href: postUrl(post) }, post.counts.replies === 1 ? 'View 1 comment' : `View all ${count(post.counts.replies)} comments`)
-      : h('a.ig-comments', { href: `${postUrl(post)}#reply` }, 'Add a comment. Say something compliant.'),
-    h('div.ig-time', relative(post.created_at)));
+      : h('a.ig-comments', { href: `${postUrl(post)}#reply` }, 'Add a comment'));
   return card;
 }
 
@@ -202,13 +192,12 @@ async function showLikers(post) {
   try {
     const { items } = await api.get(`posts/${post.id}/reactions`);
     dialog({
-      title: 'Likes (fees apply)',
+      title: 'Likes',
       body: h('div', items.length
         ? items.map(r => h('div.user-row', avatar(r.user, { size: 'sm' }),
           h('div.grow', h('a', { href: `/@${r.user.handle}`, onclick: () => document.querySelector('.overlay')?.remove() }, r.user.name), h('span.muted', ` @${r.user.handle}`)),
-          h('span', REACTIONS[r.type]?.emoji || '❤️')))
-        : h('p', 'Nobody. Kevin liked it privately.')),
+          h('span', REACTIONS[r.type]?.label || 'Like')))
+        : h('p', 'No likes yet.')),
     });
   } catch (err) { toastError(err); }
 }
-

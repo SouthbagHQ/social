@@ -1,13 +1,13 @@
-// /watch/:id — the YouTube watch page: player, title, channel row, actions, description,
-// comments, and "Up next" (related videos) on the right (below on narrow screens).
+// /watch/:id: the player (a 16:9 box; every video is stretched to fill it), title, channel row,
+// actions, description, comments, and "Up next" on the right (below on narrow screens).
 //   GET  /api/posts/:id                    the video
 //   GET  /api/videos/:id/related           up next
 //   GET  /api/posts/:id/replies?sort       comments
 //   POST /api/posts/:id/view               once, about three seconds into playback
-// Keys: space/k play-pause, j/l ∓10 s, f fullscreen, m mute (ignored while typing).
+// Keys: space/k play or pause, j/l back or forward 10 s, f fullscreen, m mute (ignored while typing).
 
 import { api } from '../api.js';
-import { h, icon, mount } from '../dom.js';
+import { h, mount } from '../dom.js';
 import { fullDate, plural, relative } from '../format.js';
 import { navigate } from '../router.js';
 import { login, store } from '../store.js';
@@ -30,10 +30,8 @@ export default async function watch(ctx) {
     if (err.name === 'AbortError') return null;
     ctx.title('Video unavailable');
     return h('div.south-card.flat',
-      h('p.eyebrow', 'REF: SB-ERR-404'),
-      h('h1', 'This video is unavailable.'),
+      h('h1', 'Video not available.'),
       errorBox(err),
-      h('p.muted', 'It may be private, deleted, or simply withheld. Kevin has been notified. He does not need to respond.'),
       h('a.btn', { href: '/videos' }, 'Back to videos'));
   }
   if (post.kind === 'short') { navigate(`/shorts/${post.id}`, { replace: true }); return null; }
@@ -42,11 +40,11 @@ export default async function watch(ctx) {
   if (!media) { navigate(`/post/${post.id}`, { replace: true }); return null; }
   ctx.title(post.title);
 
-  // ── Player ──
+  // -- Player --
   const video = videoEl(media, { controls: true, autoplay: false, preload: 'auto' });
   video.setAttribute('aria-label', post.title);
   const unmuteBtn = h('button.watch-unmute.hidden', { type: 'button', onclick: () => { video.muted = false; unmuteBtn.classList.add('hidden'); } },
-    icon('mute'), 'Tap to unmute');
+    'Unmute');
   const upNext = h('div.watch-upnext.hidden');
   const player = h('div.watch-player', video, unmuteBtn, upNext);
 
@@ -78,14 +76,14 @@ export default async function watch(ctx) {
   video.addEventListener('seeking', () => { lastTime = video.currentTime; });
   video.addEventListener('ended', countView);
 
-  // ── Title, meta, channel row, actions ──
+  // -- Title, meta, channel row, actions --
   const titleEl = h('h1.watch-title', post.title);
-  const channelCount = h('span.watch-subs', ' ');
+  const channelCount = h('span.watch-subs', '\u00a0');
   const followSlot = h('span');
   const author = post.author;
   channelInfo(author.handle).then(info => {
     if (ctx.signal.aborted) return;
-    if (info?.follower_count != null) channelCount.textContent = `${plural(info.follower_count, 'person', 'people')} in The Pile`;
+    if (info?.follower_count != null) channelCount.textContent = plural(info.follower_count, 'follower');
     else channelCount.textContent = `@${author.handle}`;
     if (store.me?.id !== author.id) {
       mount(followSlot, followButton({ ...author, is_following: Boolean(info?.is_following) }, {
@@ -94,37 +92,36 @@ export default async function watch(ctx) {
           if (info?.follower_count == null) return;
           info.follower_count += following ? 1 : -1;
           info.is_following = following;
-          channelCount.textContent = `${plural(info.follower_count, 'person', 'people')} in The Pile`;
+          channelCount.textContent = plural(info.follower_count, 'follower');
         },
       }));
     }
   });
 
-  const bookmarkBtn = h('button.watch-pill', { type: 'button', class: { on: post.viewer.bookmarked } }, icon('bookmark'), h('span', post.viewer.bookmarked ? 'Saved' : 'Save'));
+  const bookmarkBtn = h('button.icon-btn', { type: 'button', 'aria-pressed': post.viewer.bookmarked ? 'true' : 'false' }, post.viewer.bookmarked ? 'Saved' : 'Save');
   bookmarkBtn.addEventListener('click', async () => {
     if (!store.me) return login();
     try {
       if (post.viewer.bookmarked) await api.del(`posts/${post.id}/bookmark`);
       else await api.put(`posts/${post.id}/bookmark`);
       post.viewer.bookmarked = !post.viewer.bookmarked;
-      bookmarkBtn.classList.toggle('on', post.viewer.bookmarked);
-      bookmarkBtn.querySelector('span').textContent = post.viewer.bookmarked ? 'Saved' : 'Save';
-      toast(post.viewer.bookmarked ? 'Saved to your bookmarks. Southbag saved a copy too.' : 'Removed from your bookmarks. The copy we kept is not.');
+      bookmarkBtn.setAttribute('aria-pressed', post.viewer.bookmarked ? 'true' : 'false');
+      bookmarkBtn.textContent = post.viewer.bookmarked ? 'Saved' : 'Save';
+      toast(post.viewer.bookmarked ? 'Saved.' : 'Removed from saved.');
     } catch (err) { toastError(err); }
   });
 
-  const moreBtn = h('button.watch-pill.icon-only', { type: 'button', 'aria-label': 'More actions' }, icon('more'));
+  const moreBtn = h('button.icon-btn', { type: 'button' }, 'More');
   moreBtn.addEventListener('click', () => menu(moreBtn, [
-    { label: 'Copy link at current time', icon: 'link', onClick: () => share(`/watch/${post.id}?t=${Math.floor(video.currentTime)}`, post.title) },
-    { label: 'Why am I seeing this?', icon: 'eye', onClick: () => dialog({ title: 'Algorithmic transparency', body: 'Kevin.' }) },
-    post.viewer.can_edit ? { label: 'Amend', icon: 'edit', onClick: amend } : null,
-    post.viewer.can_edit ? { label: 'Request deletion', icon: 'trash', danger: true, onClick: remove } : null,
-    !post.viewer.can_edit ? { label: 'Report to Kevin', icon: 'flag', onClick: () => toast('Reported. Kevin has already seen it.') } : null,
+    { label: 'Copy link at current time', onClick: () => share(`/watch/${post.id}?t=${Math.floor(video.currentTime)}`, post.title) },
+    post.viewer.can_edit ? { label: 'Edit', onClick: amend } : null,
+    post.viewer.can_edit ? { label: 'Delete', onClick: remove } : null,
+    !post.viewer.can_edit ? { label: 'Report', onClick: () => toast('Reported.') } : null,
   ]));
 
   const actions = h('div.watch-actions',
-    h('span.watch-like', reactionButton(post)),
-    h('button.watch-pill', { type: 'button', onclick: () => share(`/watch/${post.id}`, post.title) }, icon('share'), h('span', 'Share')),
+    reactionButton(post),
+    h('button.icon-btn', { type: 'button', onclick: () => share(`/watch/${post.id}`, post.title) }, 'Share'),
     bookmarkBtn,
     moreBtn);
 
@@ -135,19 +132,19 @@ export default async function watch(ctx) {
       channelCount),
     followSlot);
 
-  // ── Description (collapsed until clicked) ──
-  const descText = h('div.watch-desc-text', post.body ? richText(post.body) : h('span.muted', 'No description. The video speaks for itself, and it has been logged.'));
-  const toggle = h('button.watch-desc-toggle', { type: 'button' }, '...more');
+  // -- Description (collapsed until clicked) --
+  const descText = h('div.watch-desc-text', post.body ? richText(post.body) : h('span.muted', 'No description.'));
+  const toggle = h('button.btn-small.watch-desc-toggle', { type: 'button' }, 'More');
   const desc = h('div.watch-desc.collapsed',
     h('div.watch-desc-meta', viewsEl, h('span', { title: fullDate(post.created_at) }, relative(post.created_at)),
-      post.visibility !== 'public' ? h('span', post.visibility === 'followers' ? 'The Pile only' : 'Friends only') : null,
-      post.edited_at ? h('span', { title: `Amended ${fullDate(post.edited_at)}` }, 'amended') : null),
+      post.visibility !== 'public' ? h('span', post.visibility === 'followers' ? 'Followers only' : 'Friends only') : null,
+      post.edited_at ? h('span', { title: `Edited ${fullDate(post.edited_at)}` }, 'Edited') : null),
     descText,
-    h('p.fine.watch-desc-legal', `Published ${fullDate(post.created_at)}. Uploads are retained permanently. Deletion is advisory.`),
+    h('p.fine.watch-desc-legal', `Published ${fullDate(post.created_at)}.`),
     toggle);
   const setCollapsed = collapsed => {
     desc.classList.toggle('collapsed', collapsed);
-    toggle.textContent = collapsed ? '...more' : 'Show less';
+    toggle.textContent = collapsed ? 'More' : 'Less';
   };
   desc.addEventListener('click', e => {
     if (e.target.closest('a')) return;
@@ -155,21 +152,21 @@ export default async function watch(ctx) {
     if (desc.classList.contains('collapsed')) setCollapsed(false);
   });
 
-  // ── Comments ──
+  // -- Comments --
   let sort = 'top';
   const commentCount = h('h2.watch-comments-title', `${plural(post.counts.replies, 'comment')}`);
-  const sortBtn = h('button.btn-small.flat', { type: 'button' }, icon('list'), 'Sort: top');
+  const sortBtn = h('button.btn-small', { type: 'button' }, 'Sort: Top');
   const listHost = h('div');
   const paintComments = () => mount(listHost, infiniteList({
     className: 'watch-comment-list',
     signal: ctx.signal,
     load: cursor => api.get(`posts/${post.id}/replies`, { cursor, sort: sort === 'top' ? 'top' : 'new' }, { signal: ctx.signal }),
     render: reply => postCard(reply, { compact: true, card: false, link: true }),
-    empty: empty({ icon: 'comment', title: 'No comments.', text: 'The silence is compliant.' }),
+    empty: empty({ title: 'No comments yet.' }),
   }));
   sortBtn.addEventListener('click', () => menu(sortBtn, [
-    { label: 'Top comments', onClick: () => { sort = 'top'; sortBtn.lastChild.textContent = 'Sort: top'; paintComments(); } },
-    { label: 'Newest first', onClick: () => { sort = 'new'; sortBtn.lastChild.textContent = 'Sort: newest'; paintComments(); } },
+    { label: 'Top', onClick: () => { sort = 'top'; sortBtn.textContent = 'Sort: Top'; paintComments(); } },
+    { label: 'Newest', onClick: () => { sort = 'new'; sortBtn.textContent = 'Sort: Newest'; paintComments(); } },
   ]));
   paintComments();
   const comments = h('section.watch-comments', { id: 'comments' },
@@ -177,28 +174,28 @@ export default async function watch(ctx) {
     composer({
       replyTo: post,
       compact: true,
-      placeholder: 'Add a comment. Say something compliant.',
+      placeholder: 'Add a comment',
       submitLabel: 'Comment',
       onPosted: reply => {
         post.counts.replies++;
         commentCount.textContent = plural(post.counts.replies, 'comment');
         listHost.firstChild?.prepend(postCard(reply, { compact: true, card: false }));
-        toast('Comment posted. Pending review.');
+        toast('Posted.');
       },
     }),
     listHost);
 
-  // ── Up next ──
-  const related = h('aside.watch-related', { 'aria-label': 'Up next' }, h('h2.watch-related-title', 'Up next'), h('div.loading', h('div.spinner'), 'Loading...'));
+  // -- Up next --
+  const related = h('aside.watch-related', { 'aria-label': 'Up next' }, h('h2.watch-related-title', 'Up next'), h('div.loading', 'Loading'));
   let nextVideo = null;
   api.get(`videos/${post.id}/related`, { limit: 12 }, { signal: ctx.signal }).then(({ items }) => {
     nextVideo = items[0] || null;
     mount(related, h('h2.watch-related-title', 'Up next'),
       items.length ? items.map(p => videoCard(p, { compact: true }))
-        : h('p.muted', 'Nothing else to watch. Kevin recommends this video again.'));
-  }).catch(err => { if (err.name !== 'AbortError') mount(related, h('h2.watch-related-title', 'Up next'), h('p.muted', 'Recommendations are withheld pending review.')); });
+        : h('p.muted', 'No other videos.'));
+  }).catch(err => { if (err.name !== 'AbortError') mount(related, h('h2.watch-related-title', 'Up next'), h('p.muted', 'Could not load videos.')); });
 
-  // Autoplay the next video after a short countdown, YouTube style.
+  // Play the next video after a short countdown.
   let upNextTimer = null;
   const cancelUpNext = () => { clearInterval(upNextTimer); upNextTimer = null; upNext.classList.add('hidden'); };
   video.addEventListener('ended', () => {
@@ -211,8 +208,8 @@ export default async function watch(ctx) {
       label,
       h('div.watch-upnext-title', nextVideo.title),
       h('div.row',
-        h('button.btn-small.outline', { type: 'button', onclick: cancelUpNext }, 'Cancel'),
-        h('a.btn-small', { href: `/watch/${nextVideo.id}` }, icon('play'), 'Play now')));
+        h('button.btn-small', { type: 'button', onclick: cancelUpNext }, 'Cancel'),
+        h('a.btn-small', { href: `/watch/${nextVideo.id}` }, 'Play now')));
     upNext.classList.remove('hidden');
     upNextTimer = setInterval(() => {
       left--;
@@ -227,7 +224,7 @@ export default async function watch(ctx) {
   const startAt = Number(ctx.query.get('t'));
   if (startAt > 0) video.addEventListener('loadedmetadata', () => { video.currentTime = Math.min(startAt, video.duration || startAt); }, { once: true });
 
-  // ── Keyboard ──
+  // -- Keyboard --
   const onKey = e => {
     if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || isTyping(e)) return;
     const onControl = e.target.closest?.('button, a, [role="button"]') && e.target !== video;
@@ -262,13 +259,12 @@ export default async function watch(ctx) {
   async function amend() {
     let title, body;
     const ok = await dialog({
-      title: 'Amend video',
+      title: 'Edit video',
       wide: true,
       body: h('div',
         h('label.field', h('span', 'Title'), title = h('input.input', { value: post.title || '', maxLength: 120 })),
-        h('label.field', h('span', 'Description'), body = h('textarea.textarea.boxed', { rows: 6, maxLength: 2200 }, post.body)),
-        h('p.fine', 'Amendments are logged. The original is retained.')),
-      actions: [{ label: 'Cancel', value: false }, { label: 'Amend', value: true, primary: true }],
+        h('label.field', h('span', 'Description'), body = h('textarea.textarea.boxed', { rows: 6, maxLength: 2200 }, post.body))),
+      actions: [{ label: 'Cancel', value: false }, { label: 'Save', value: true, primary: true }],
     });
     if (!ok) return;
     try {
@@ -277,15 +273,15 @@ export default async function watch(ctx) {
       titleEl.textContent = fresh.title;
       mount(descText, fresh.body ? richText(fresh.body) : h('span.muted', 'No description.'));
       ctx.title(fresh.title);
-      toast('Amended. The original is retained.');
+      toast('Saved.');
     } catch (err) { toastError(err); }
   }
 
   async function remove() {
-    if (!(await confirm('Request deletion of this video? Deletion is advisory. The video is still retained.', { ok: 'Request deletion' }))) return;
+    if (!(await confirm('Delete this video?', { title: 'Delete video', ok: 'Delete' }))) return;
     try {
       await api.del(`posts/${post.id}`);
-      toast('Deletion request filed. Uploads are never fully deleted.');
+      toast('Deleted.');
       navigate('/videos');
     } catch (err) { toastError(err); }
   }

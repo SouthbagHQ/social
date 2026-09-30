@@ -1,23 +1,23 @@
-// /videos — the YouTube home: chips (All / Recent / Popular), a thumbnail grid, a Shorts shelf.
-//   GET /api/videos/feed?kind=video&sort=recent|popular&cursor → { items, next }
-//   GET /api/videos/shorts?limit → { items }
+// /videos: tabs (All / Recent / Popular), a grid of 16:9 thumbnails, a row of Shorts.
+//   GET /api/videos/feed?kind=video&sort=recent|popular&cursor -> { items, next }
+//   GET /api/videos/shorts?limit -> { items }
 //
 // Also exports the small pieces the other video views share (watch, shorts, photos, upload):
-// videoCard, shortTile, viewsLine, channelInfo, heartBurst, isTyping.
+// videoCard, shortTile, viewsLine, channelInfo, likedNote, isTyping.
 
 import { api } from '../api.js';
-import { h, icon, mount } from '../dom.js';
+import { h, mount } from '../dom.js';
 import { fullDate, plural, relative } from '../format.js';
 import { login, store } from '../store.js';
-import { empty, infiniteList } from '../ui.js';
+import { empty, infiniteList, tabs } from '../ui.js';
 import { videoThumb } from '../components/media.js';
 import { avatar, verifiedBadge } from '../components/user.js';
 
-// ── Shared helpers ───────────────────────────────────────────────────────
+// -- Shared helpers -------------------------------------------------------
 
-/** "1.2K views · 3 days ago" */
+/** "1.2K views, 3 days ago" */
 export const viewsLine = post =>
-  `${plural(post.counts.views, 'view')} · ${relative(post.created_at)}`;
+  `${plural(post.counts.views, 'view')}, ${relative(post.created_at)}`;
 
 /** Is the user typing somewhere (so keyboard shortcuts should stay out of the way)? */
 export const isTyping = e => {
@@ -26,11 +26,13 @@ export const isTyping = e => {
     || Boolean(document.querySelector('.overlay'));
 };
 
-/** Channel name with the purchased tick. */
+/** Channel name with the verified label. */
 export const channelName = user => h('a.yt-channel', { href: `/@${user.handle}`, title: `@${user.handle}` },
   h('span', user.name), user.verified ? verifiedBadge() : null);
 
-/** A YouTube grid card: thumbnail, 2-line title, channel, "N views · 3 days ago". */
+const visibilityWord = v => v === 'followers' ? 'Followers' : v === 'friends' ? 'Friends' : null;
+
+/** A grid card: 16:9 thumbnail, title, channel, "N views, 3 days ago". */
 export function videoCard(post, { compact = false } = {}) {
   const m = post.media.find(x => x.kind === 'video');
   if (!m) return null;
@@ -40,13 +42,13 @@ export function videoCard(post, { compact = false } = {}) {
     h('div.yt-meta',
       compact ? null : avatar(post.author, { size: 'sm' }),
       h('div.grow',
-        h('a.yt-title', { href, title: post.title || '' }, post.title || 'Untitled video (Kevin approved)'),
+        h('a.yt-title', { href, title: post.title || '' }, post.title || 'Untitled video'),
         h('div.yt-sub', channelName(post.author)),
         h('div.yt-sub', { title: fullDate(post.created_at) }, viewsLine(post),
-          post.visibility !== 'public' ? h('span', { title: `Visible to ${post.visibility === 'followers' ? 'The Pile' : 'friends'}` }, ' · ', icon(post.visibility === 'friends' ? 'users' : 'lock')) : null))));
+          visibilityWord(post.visibility) ? `, ${visibilityWord(post.visibility)}` : null))));
 }
 
-/** A vertical Shorts tile (shelf rows, channel pages). */
+/** A 9:16 Shorts tile (shelf rows, channel pages). */
 export function shortTile(post) {
   const m = post.media.find(x => x.kind === 'video');
   if (!m) return null;
@@ -57,7 +59,7 @@ export function shortTile(post) {
 }
 
 /**
- * Channel details for a handle: { follower_count, is_following, … }. Asks the users API first and
+ * Channel details for a handle: { follower_count, is_following, ... }. Asks the users API first and
  * falls back to /api/videos/channel/:handle. Cached briefly; resolves to null if both fail.
  */
 const channelCache = new Map();
@@ -76,16 +78,17 @@ export function channelInfo(handle) {
   return promise;
 }
 
-/** The Instagram double-tap heart, drawn over `host` (which should be position: relative). */
-export function heartBurst(host) {
-  const el = h('span.heart-burst', { 'aria-hidden': 'true' }, icon('heart'));
+/** Double-tap feedback: the word "Liked" over `host` (which should be position: relative) for a moment. */
+export function likedNote(host) {
+  host.querySelector('.liked-note')?.remove();
+  const el = h('span.liked-note', { 'aria-hidden': 'true' }, 'Liked');
   host.append(el);
-  setTimeout(() => el.remove(), 900);
+  setTimeout(() => el.remove(), 1200);
 }
 
-// ── The page ─────────────────────────────────────────────────────────────
+// -- The page -------------------------------------------------------------
 
-const chips = [
+const SORTS = [
   { key: 'all', label: 'All' },
   { key: 'recent', label: 'Recent' },
   { key: 'popular', label: 'Popular' },
@@ -94,21 +97,22 @@ const chips = [
 export default async function videos(ctx) {
   ctx.layout('wide');
   ctx.title('Videos');
-  let sort = chips.some(c => c.key === ctx.query.get('sort')) ? ctx.query.get('sort') : 'all';
+  let sort = SORTS.some(c => c.key === ctx.query.get('sort')) ? ctx.query.get('sort') : 'all';
 
-  const chipBar = h('div.yt-chips', { role: 'tablist', 'aria-label': 'Sort videos' });
+  const tabHost = h('div');
   const body = h('div');
 
-  const paintChips = () => mount(chipBar, chips.map(c => h('button.yt-chip', {
-    type: 'button', role: 'tab', 'aria-selected': c.key === sort ? 'true' : 'false',
-    onclick: () => {
+  const paintTabs = () => mount(tabHost, tabs(SORTS.map(c => ({
+    label: c.label,
+    selected: c.key === sort,
+    onClick: () => {
       if (c.key === sort) return;
       sort = c.key;
       history.replaceState({}, '', c.key === 'all' ? '/videos' : `/videos?sort=${c.key}`);
-      paintChips();
+      paintTabs();
       paintBody();
     },
-  }, c.label)));
+  }))));
 
   function paintBody() {
     let shelfPlaced = false;
@@ -119,13 +123,11 @@ export default async function videos(ctx) {
       load: cursor => api.get('videos/feed', { kind: 'video', sort: sort === 'popular' ? 'popular' : 'recent', cursor }, { signal: ctx.signal }),
       render: post => videoCard(post),
       empty: empty({
-        icon: 'video',
         title: 'No videos yet.',
-        text: 'Nothing has been uploaded. Kevin is watching the empty grid in the meantime.',
-        action: store.me ? h('a.btn', { href: '/upload?type=video' }, 'Upload video') : null,
+        action: store.me ? h('a.btn', { href: '/upload?type=video' }, 'Upload') : null,
       }),
       onPage: () => {
-        // YouTube puts the Shorts shelf after the first two rows.
+        // The Shorts row goes after the first two rows of videos.
         if (!shelf || shelfPlaced) return;
         shelfPlaced = true;
         const cards = list.list.children;
@@ -136,28 +138,27 @@ export default async function videos(ctx) {
     mount(body, list);
   }
 
-  paintChips();
+  paintTabs();
   paintBody();
 
   return h('div.yt-home',
     h('div.page-head',
       h('h1', 'Videos'),
       h('span.spacer'),
-      h('a.btn-small.outline', { href: '/shorts' }, icon('shorts'), 'Shorts'),
+      h('a.btn-small', { href: '/shorts' }, 'Shorts'),
       store.me
-        ? h('a.btn', { href: '/upload?type=video' }, icon('upload'), 'Upload video')
-        : h('button.btn', { type: 'button', onclick: () => login('/upload?type=video') }, icon('upload'), 'Upload video')),
-    h('p.fine.yt-tagline', 'Watch anything. Southbag is watching you watch it. Uploads are retained permanently.'),
-    chipBar,
+        ? h('a.btn', { href: '/upload?type=video' }, 'Upload')
+        : h('button.btn', { type: 'button', onclick: () => login('/upload?type=video') }, 'Upload')),
+    tabHost,
     body);
 }
 
 /** A row of Shorts under a heading. Removes itself when there are none. */
 function shortsShelf(ctx) {
-  const row = h('div.yt-shelf-row', h('div.loading', h('div.spinner'), 'Loading...'));
+  const row = h('div.yt-shelf-row', h('div.loading', 'Loading'));
   const shelf = h('section.yt-shelf', { 'aria-label': 'Shorts' },
-    h('div.yt-shelf-head', icon('shorts'), h('h2', 'Shorts'), h('span.spacer'),
-      h('a.btn-small.flat', { href: '/shorts' }, 'Watch all')),
+    h('div.yt-shelf-head', h('h2', 'Shorts'), h('span.spacer'),
+      h('a.btn-small', { href: '/shorts' }, 'See all')),
     row);
   api.get('videos/shorts', { limit: 12 }, { signal: ctx.signal }).then(({ items }) => {
     if (!items.length) return shelf.remove();
