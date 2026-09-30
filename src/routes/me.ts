@@ -58,8 +58,8 @@ me.patch('/', async c => {
   }
   if ('handle' in input) {
     const handle = str(input.handle, 30).replace(/^@/, '');
-    if (!/^\w{3,20}$/.test(handle)) fail(422, 'Handles are 3–20 letters, numbers or underscores.');
-    // Keeping the handle you already have is always allowed (Kevin is @kevin).
+    if (!/^\w{3,20}$/.test(handle)) fail(422, 'Handles are 3 to 20 letters, numbers or underscores.');
+    // Keeping the handle you already have is always allowed, even a reserved one.
     if (handle.toLowerCase() !== session.handle.toLowerCase() && /^(kevin|southbag|admin|support|api|auth|media|me|suggested|settings|welcome|verified|notifications|friends)$/i.test(handle)) fail(409, 'That handle is not available.');
     const taken = await c.env.DB.prepare('SELECT id FROM users WHERE handle = ? AND id != ?').bind(handle, session.id).first();
     if (taken) fail(409, 'That handle is taken.');
