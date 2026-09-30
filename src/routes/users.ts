@@ -1,22 +1,22 @@
-// People: profiles, The Pile (follows), friends, blocks, profile tabs, suggestions and the
-// Southbag Verified™ subscription. Mounted at /api/users.
+// People: profiles, follows, friends, blocks, profile tabs, suggestions and the
+// Southbag Verified subscription. Mounted at /api/users.
 //
-//   GET    /api/users/suggested?limit                → { items: [UserCard + { bio, is_following, mutual }] }
-//   GET    /api/users/me/friend-requests             → { incoming: [...], outgoing: [...] }
-//   POST   /api/users/me/verify     { tier? }        → { verified, tier, charged, bag_balance, message }
-//   DELETE /api/users/me/verify                      → { verified, charged, bag_balance, message }
-//   GET    /api/users/:handle                        → { user, viewer }
-//   PUT    /api/users/:handle/follow                 DELETE …   → { is_following, follower_count }
-//   GET    /api/users/:handle/followers?cursor       → { items: [UserCard + { bio, is_following }], next }
-//   GET    /api/users/:handle/following?cursor       → same
-//   PUT    /api/users/:handle/friend                 → { friendship }   (request, or accept an incoming one)
-//   DELETE /api/users/:handle/friend                 → { friendship }   (cancel / decline / unfriend)
-//   GET    /api/users/:handle/friends?cursor         → { items, next }
-//   PUT    /api/users/:handle/block                  DELETE …   → { blocked }
-//   GET    /api/users/:handle/posts?tab&cursor       → { items: PostJson[], next }
+//   GET    /api/users/suggested?limit&exclude=friends -> { items: [UserCard + { bio, is_following, mutual }] }
+//   GET    /api/users/me/friend-requests             -> { incoming: [...], outgoing: [...] }
+//   POST   /api/users/me/verify                      -> { verified, tier, charged, bag_balance, message }
+//   DELETE /api/users/me/verify                      -> { verified, charged, bag_balance, message }
+//   GET    /api/users/:handle                        -> { user, viewer }
+//   PUT    /api/users/:handle/follow                 DELETE ...   -> { is_following, follower_count }
+//   GET    /api/users/:handle/followers?cursor       -> { items: [UserCard + { bio, is_following }], next }
+//   GET    /api/users/:handle/following?cursor       -> same
+//   PUT    /api/users/:handle/friend                 -> { friendship }   (request, or accept an incoming one)
+//   DELETE /api/users/:handle/friend                 -> { friendship }   (cancel / decline / unfriend)
+//   GET    /api/users/:handle/friends?cursor         -> { items, next }
+//   PUT    /api/users/:handle/block                  DELETE ...   -> { blocked }
+//   GET    /api/users/:handle/posts?tab&cursor       -> { items: PostJson[], next }
 //
 // `:handle` may also be `me` for the signed-in account.
-// Lists of people page by (created_at, rowid) — "<ms>.<rowid>" cursors — because the join
+// Lists of people page by (created_at, rowid) - "<ms>.<rowid>" cursors - because the join
 // tables have no time-sortable id.
 
 import { Hono } from 'hono';
@@ -50,7 +50,7 @@ async function target(c: Ctx): Promise<ProfileRow> {
   const row = handle.toLowerCase() === 'me' && viewer
     ? await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(viewer.id).first<ProfileRow>()
     : await c.env.DB.prepare('SELECT * FROM users WHERE handle = ?').bind(handle).first<ProfileRow>();
-  if (!row) fail(404, 'No customer by that handle. Kevin may have closed the account. He does not need to explain.');
+  if (!row) fail(404, 'User not found.');
   return row;
 }
 
@@ -87,12 +87,16 @@ function peoplePage(rows: ListRow[], size: number) {
 const friendshipState = (row: { requester_id: string; status: string } | null, viewerId: string) =>
   !row ? 'none' : row.status === 'accepted' ? 'friends' : row.requester_id === viewerId ? 'requested' : 'incoming';
 
-// ── Suggestions ───────────────────────────────────────────────────────────
+// -- Suggestions -----------------------------------------------------------
 
 users.get('/suggested', async c => {
   const viewer = c.get('user');
   const size = limit(c, 5, 20);
   const exclude = viewer?.id ?? '';
+  // ?exclude=friends also leaves out friends and anyone with a pending friend request either way.
+  const noFriends = c.req.query('exclude') === 'friends' && Boolean(viewer);
+  const notFriends = (p: string) => `AND NOT EXISTS (SELECT 1 FROM friendships fr
+      WHERE (fr.requester_id = ${p} AND fr.addressee_id = u.id) OR (fr.addressee_id = ${p} AND fr.requester_id = u.id))`;
   // People followed by the people you follow, most shared first.
   const { results: fof } = viewer
     ? await c.env.DB.prepare(`SELECT f2.followee_id AS id, COUNT(*) AS mutual
@@ -105,19 +109,21 @@ users.get('/suggested', async c => {
   // Then whoever is popular.
   const { results: popular } = await c.env.DB.prepare(`SELECT id FROM users u WHERE u.id != ?1
       AND NOT EXISTS (SELECT 1 FROM follows x WHERE x.follower_id = ?1 AND x.followee_id = u.id)
+      ${noFriends ? notFriends('?1') : ''}
       ORDER BY u.follower_count DESC, u.post_count DESC, u.id LIMIT ?2`).bind(exclude, size * 2).all<{ id: string }>();
   const ids = [...new Set([...fof.map(r => r.id), ...popular.map(r => r.id)])];
   if (!ids.length) return c.json({ items: [] });
   const { results } = await c.env.DB.prepare(`SELECT ${u('u')}, u.bio FROM users u WHERE u.id IN (${placeholders(ids.length)})
-      AND NOT EXISTS (SELECT 1 FROM blocks b WHERE (b.blocker_id = ? AND b.blocked_id = u.id) OR (b.blocker_id = u.id AND b.blocked_id = ?))`)
-    .bind(...ids, exclude, exclude).all<UserRow & { bio: string }>();
+      AND NOT EXISTS (SELECT 1 FROM blocks b WHERE (b.blocker_id = ? AND b.blocked_id = u.id) OR (b.blocker_id = u.id AND b.blocked_id = ?))
+      ${noFriends ? notFriends('?') : ''}`)
+    .bind(...ids, exclude, exclude, ...(noFriends ? [exclude, exclude] : [])).all<UserRow & { bio: string }>();
   const byId = new Map(results.map(r => [r.id, r]));
   const items = ids.map(id => byId.get(id)).filter((r): r is UserRow & { bio: string } => Boolean(r)).slice(0, size)
     .map(r => ({ ...userCard(r), bio: r.bio, is_following: false, mutual: mutual.get(r.id) ?? 0 }));
   return c.json({ items });
 });
 
-// ── Friend requests (the signed-in account) ─────────────────────────────
+// -- Friend requests (the signed-in account) -----------------------------
 
 users.get('/me/friend-requests', async c => {
   const me = requireUser(c);
@@ -133,47 +139,39 @@ users.get('/me/friend-requests', async c => {
   return c.json({ incoming: incoming.results.map(shape), outgoing: outgoing.results.map(shape) });
 });
 
-// ── Southbag Verified™ ($8.00/week; does nothing; never charged, always recorded) ──
+// -- Southbag Verified (one monthly price; shows "Verified" next to your name) --
 
-const TIERS: Record<string, { name: string; cents: number }> = {
-  bronze: { name: 'Bronze', cents: 800 },
-  silver: { name: 'Silver', cents: 1600 },
-  gold: { name: 'Gold', cents: 3200 },
-  platinum: { name: 'Platinum', cents: 6400 },
-  diamond: { name: 'Diamond', cents: 12800 },
-  obsidian: { name: 'Obsidian', cents: 25600 },
-};
-/** 30 days' notice at $8.00/week, to the cent. */
-const NOTICE_FEE = Math.round((800 * 30) / 7);
+const VERIFIED_CENTS = 800;
 
 users.post('/me/verify', async c => {
   const me = requireUser(c);
-  const input = await body(c);
-  const key = typeof input.tier === 'string' && input.tier.toLowerCase() in TIERS ? input.tier.toLowerCase() : 'bronze';
-  const tier = TIERS[key];
-  const row = await c.env.DB.prepare('UPDATE users SET verified = 1, bag_balance = bag_balance + ?, updated_at = ? WHERE id = ? RETURNING bag_balance')
-    .bind(tier.cents, Date.now(), me.id).first<{ bag_balance: number }>();
+  const row = await c.env.DB.prepare('UPDATE users SET verified = 1, bag_balance = bag_balance + ?, updated_at = ? WHERE id = ? AND verified = 0 RETURNING bag_balance')
+    .bind(VERIFIED_CENTS, Date.now(), me.id).first<{ bag_balance: number }>();
+  if (!row) {
+    // Already subscribed: nothing to charge.
+    const current = await c.env.DB.prepare('SELECT bag_balance FROM users WHERE id = ?').bind(me.id).first<{ bag_balance: number }>();
+    return c.json({ verified: true, tier: 'standard', charged: 0, bag_balance: current?.bag_balance ?? 0, message: 'You are already subscribed.' });
+  }
   await c.env.DB.prepare(`INSERT INTO notifications (id, user_id, actor_id, type, body, created_at) VALUES (?, ?, NULL, 'system', ?, ?)`)
-    .bind(newId(), me.id, `Southbag Verified™ ${tier.name} activated. Fee assessed: $${(tier.cents / 100).toFixed(2)} — first week. The badge does nothing. That is the product.`, Date.now()).run();
+    .bind(newId(), me.id, 'Your Southbag Verified subscription is active.', Date.now()).run();
   return c.json({
-    verified: true, tier: key, charged: tier.cents, bag_balance: row?.bag_balance ?? 0,
-    message: `Southbag Verified™ ${tier.name}. $${(tier.cents / 100).toFixed(2)} per week. It does absolutely nothing.`,
+    verified: true, tier: 'standard', charged: VERIFIED_CENTS, bag_balance: row.bag_balance,
+    message: 'Subscribed to Southbag Verified.',
   });
 });
 
 users.delete('/me/verify', async c => {
   const me = requireUser(c);
-  const current = await c.env.DB.prepare('SELECT verified FROM users WHERE id = ?').bind(me.id).first<{ verified: number }>();
-  if (!current?.verified) fail(409, 'You are not verified. There is nothing to cancel. A cancellation fee may still apply.');
-  const row = await c.env.DB.prepare('UPDATE users SET verified = 0, bag_balance = bag_balance + ?, updated_at = ? WHERE id = ? RETURNING bag_balance')
-    .bind(NOTICE_FEE, Date.now(), me.id).first<{ bag_balance: number }>();
+  const row = await c.env.DB.prepare('UPDATE users SET verified = 0, updated_at = ? WHERE id = ? AND verified = 1 RETURNING bag_balance')
+    .bind(Date.now(), me.id).first<{ bag_balance: number }>();
+  if (!row) fail(409, 'You are not subscribed.');
   return c.json({
-    verified: false, charged: NOTICE_FEE, bag_balance: row?.bag_balance ?? 0,
-    message: "Cancellation processing: 30 days' notice. Your badge is revoked immediately.",
+    verified: false, charged: 0, bag_balance: row.bag_balance,
+    message: 'Subscription cancelled.',
   });
 });
 
-// ── Profiles ──────────────────────────────────────────────────────────────
+// -- Profiles --------------------------------------------------------------
 
 users.get('/:handle', async c => {
   const viewer = c.get('user');
@@ -220,11 +218,11 @@ users.get('/:handle', async c => {
   });
 });
 
-// ── The Pile (follows) ────────────────────────────────────────────────────
+// -- Follows ----------------------------------------------------
 
 users.put('/:handle/follow', async c => {
-  const { me, them } = await actOn(c, 'You cannot add yourself to The Pile. Kevin has already done it for you.');
-  if (await blockedEitherWay(c, me.id, them.id)) fail(403, `You cannot add @${them.handle} to The Pile. A block is in place. Kevin can still see both of you.`);
+  const { me, them } = await actOn(c, 'You cannot follow yourself.');
+  if (await blockedEitherWay(c, me.id, them.id)) fail(403, `You cannot follow @${them.handle}.`);
   const now = Date.now();
   // Every statement is conditional on the follow not existing yet, so repeating the request
   // (or racing it) never double-counts. The batch runs as one transaction.
@@ -254,7 +252,7 @@ function unfollowStatements(c: Ctx, follower: string, followee: string): D1Prepa
 }
 
 users.delete('/:handle/follow', async c => {
-  const { me, them } = await actOn(c, 'You cannot remove yourself from The Pile. No removal process is documented.');
+  const { me, them } = await actOn(c, 'You cannot unfollow yourself.');
   await c.env.DB.batch(unfollowStatements(c, me.id, them.id));
   const row = await c.env.DB.prepare('SELECT follower_count FROM users WHERE id = ?').bind(them.id).first<{ follower_count: number }>();
   return c.json({ is_following: false, follower_count: row?.follower_count ?? 0 });
@@ -279,13 +277,13 @@ async function followList(c: Ctx, direction: 'followers' | 'following') {
 users.get('/:handle/followers', c => followList(c, 'followers'));
 users.get('/:handle/following', c => followList(c, 'following'));
 
-// ── Friends (Facebook) ────────────────────────────────────────────────────
+// -- Friends ----------------------------------------------------
 // One row per pair, requester first. A request to someone who already asked you accepts theirs,
 // so a reverse duplicate is never created.
 
 users.put('/:handle/friend', async c => {
-  const { me, them } = await actOn(c, 'You cannot befriend yourself. Southbag recommends a hobby.');
-  if (await blockedEitherWay(c, me.id, them.id)) fail(403, 'Friend requests are unavailable. A block is in place.');
+  const { me, them } = await actOn(c, 'You cannot add yourself as a friend.');
+  if (await blockedEitherWay(c, me.id, them.id)) fail(403, `You cannot send @${them.handle} a friend request.`);
   const existing = await c.env.DB.prepare(`SELECT requester_id, status FROM friendships
       WHERE (requester_id = ? AND addressee_id = ?) OR (requester_id = ? AND addressee_id = ?)`)
     .bind(me.id, them.id, them.id, me.id).first<{ requester_id: string; status: string }>();
@@ -318,7 +316,7 @@ users.put('/:handle/friend', async c => {
 });
 
 users.delete('/:handle/friend', async c => {
-  const { me, them } = await actOn(c, 'You cannot unfriend yourself. You are retained permanently.');
+  const { me, them } = await actOn(c, 'You cannot unfriend yourself.');
   await c.env.DB.prepare(`DELETE FROM friendships WHERE (requester_id = ? AND addressee_id = ?) OR (requester_id = ? AND addressee_id = ?)`)
     .bind(me.id, them.id, them.id, me.id).run();
   return c.json({ friendship: 'none' });
@@ -339,10 +337,10 @@ users.get('/:handle/friends', async c => {
   return c.json(peoplePage(results, size));
 });
 
-// ── Blocks ────────────────────────────────────────────────────────────────
+// -- Blocks ----------------------------------------------------------------
 
 users.put('/:handle/block', async c => {
-  const { me, them } = await actOn(c, 'You cannot block yourself. Kevin can still see you.');
+  const { me, them } = await actOn(c, 'You cannot block yourself.');
   await c.env.DB.batch([
     c.env.DB.prepare('INSERT OR IGNORE INTO blocks (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)').bind(me.id, them.id, Date.now()),
     ...unfollowStatements(c, me.id, them.id),
@@ -354,12 +352,12 @@ users.put('/:handle/block', async c => {
 });
 
 users.delete('/:handle/block', async c => {
-  const { me, them } = await actOn(c, 'You have not blocked yourself. Kevin would not allow it.');
+  const { me, them } = await actOn(c, 'You cannot unblock yourself.');
   await c.env.DB.prepare('DELETE FROM blocks WHERE blocker_id = ? AND blocked_id = ?').bind(me.id, them.id).run();
   return c.json({ blocked: false });
 });
 
-// ── Profile tabs ──────────────────────────────────────────────────────────
+// -- Profile tabs ----------------------------------------------------------
 
 const TABS = ['posts', 'replies', 'media', 'photos', 'videos', 'shorts', 'likes', 'wall'] as const;
 type Tab = (typeof TABS)[number];

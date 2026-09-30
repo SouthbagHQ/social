@@ -1,8 +1,8 @@
 // Notifications. Mounted at /api/notifications.
 //
-//   GET  /api/notifications?cursor&limit&unread=1 → { items: [NotificationJson], next }
-//   GET  /api/notifications/unread                → { notifications, friend_requests }
-//   POST /api/notifications/read   { ids? }       → { ok, unread }   (no ids = mark everything read)
+//   GET  /api/notifications?cursor&limit&unread=1 -> { items: [NotificationJson], next }
+//   GET  /api/notifications/unread                -> { notifications, friend_requests }
+//   POST /api/notifications/read   { ids? }       -> { ok, unread }   (no ids = mark everything read)
 //
 // NotificationJson: { id, type, actor: UserCard|null, post: { id, kind, title, body }|null,
 //                     group: { slug, name }|null, body, read, created_at }
@@ -30,7 +30,7 @@ interface NotificationRow {
 const EXCERPT = 140;
 const excerpt = (text: string) => {
   const chars = [...text.replace(/\s+/g, ' ').trim()];
-  return chars.length > EXCERPT ? chars.slice(0, EXCERPT - 1).join('') + '…' : chars.join('');
+  return chars.length > EXCERPT ? chars.slice(0, EXCERPT - 1).join('') + '...' : chars.join('');
 };
 
 async function unreadCounts(c: Ctx, userId: string) {

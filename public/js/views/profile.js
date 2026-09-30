@@ -1,15 +1,15 @@
 // Profiles: /@:handle and /@:handle/:tab.
-// Twitter header + Facebook friend button + Instagram photo grid + YouTube video grid + TikTok shorts grid
-// + Facebook wall. Tabs: posts, replies, photos, videos, shorts, wall, likes; people: followers, following, friends.
-//   GET /api/users/:handle → { user, viewer }
+// Header (banner, photo, name, counts, actions), then tabs: posts, replies, photos, videos, shorts,
+// wall, likes; and the people tabs: followers, following, friends.
+//   GET /api/users/:handle -> { user, viewer }
 //   GET /api/users/:handle/posts?tab&cursor, /followers, /following, /friends
 
 import { api } from '../api.js';
-import { h, icon, mount } from '../dom.js';
+import { h, mount } from '../dom.js';
 import { count, plural } from '../format.js';
 import { navigate, refresh } from '../router.js';
 import { login, store } from '../store.js';
-import { confirm, copy, empty,infiniteList, menu, tabs, toast, toastError } from '../ui.js';
+import { confirm, copy, empty, infiniteList, lightbox, menu, tabs, toast, toastError } from '../ui.js';
 import { composerCard } from '../components/composer.js';
 import { videoThumb } from '../components/media.js';
 import { postCard, richText } from '../components/post.js';
@@ -19,9 +19,8 @@ const POST_TABS = [
   ['posts', 'Posts'], ['replies', 'Replies'], ['photos', 'Photos'], ['videos', 'Videos'],
   ['shorts', 'Shorts'], ['wall', 'Wall'], ['likes', 'Likes'],
 ];
-const PEOPLE_TABS = [['followers', 'The Pile'], ['following', 'Following'], ['friends', 'Friends']];
+const PEOPLE_TABS = [['followers', 'Followers'], ['following', 'Following'], ['friends', 'Friends']];
 
-const isKevin = user => user.handle.toLowerCase() === 'kevin';
 const joined = ms => new Date(ms).toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
 
 export default async function profile(ctx) {
@@ -37,16 +36,14 @@ export default async function profile(ctx) {
     data = await api.get(`users/${encodeURIComponent(handle)}`, null, { signal: ctx.signal });
   } catch (err) {
     if (err.status !== 404) throw err;
-    ctx.title('Profile not found');
+    ctx.title('User not found');
     return h('div.south-card.flat',
-      h('p.eyebrow', 'REF: SB-ERR-404'),
-      h('h1', 'Kevin has closed this profile.'),
-      h('p', `There is no customer called @${handle}. There may never have been. Kevin does not need to explain.`),
-      h('p.mono', 'Fee — $12.00 — Policy curiosity'),
-      h('a.btn', { href: '/explore' }, 'Find someone who exists'));
+      h('h1', 'User not found.'),
+      h('p', `There is no account called @${handle}.`),
+      h('a.btn', { href: '/explore' }, 'Explore'));
   }
   const { user, viewer } = data;
-  // Keep the address bar on the canonical handle (e.g. /@me → /@alice).
+  // Keep the address bar on the canonical handle (e.g. /@me becomes /@alice).
   if (user.handle !== handle) history.replaceState({}, '', `/@${user.handle}${tab === 'posts' ? '' : `/${tab}`}`);
   ctx.title(`${user.name} (@${user.handle})`);
 
@@ -60,7 +57,7 @@ export default async function profile(ctx) {
     body);
 
   if (viewer.blocked_by) {
-    mount(body, empty({ icon: 'lock', title: `@${user.handle} has blocked you.`, text: 'Their posts are withheld. Kevin can still see both of you.' }));
+    mount(body, empty({ title: 'Posts unavailable.', text: `@${user.handle} has blocked you.` }));
   } else if (isPeopleTab) {
     mount(body, peopleList(ctx, user, viewer, tab));
   } else {
@@ -69,111 +66,114 @@ export default async function profile(ctx) {
   return root;
 }
 
-// ── Header ────────────────────────────────────────────────────────────────
+// -- Header ----------------------------------------------------------------
 
 function header(user, viewer) {
-  const banner = h('div.profile-banner', user.banner_url
-    ? h('img', { src: user.banner_url, alt: '' })
-    : h('img.watermark', { src: '/img/logo-400.png', alt: '' }));
+  // A fixed-height box. An uploaded banner is stretched to fill it; without one it is plain grey.
+  const banner = h('div.profile-banner', { class: { empty: !user.banner_url } },
+    user.banner_url ? h('img', { src: user.banner_url, alt: '' }) : null);
   const pic = avatar(user, { size: 'xl', link: false, ring: viewer.has_story ? 'unseen' : null });
-  const picture = viewer.has_story
-    ? h('a.profile-avatar', { href: `/stories/${user.handle}`, title: 'View story', 'aria-label': `View @${user.handle}'s story` }, pic)
-    : h('div.profile-avatar', pic);
-  if (!viewer.has_story && user.avatar_url) {
-    picture.style.cursor = 'zoom-in';
-    picture.addEventListener('click', () => import('../ui.js').then(({ lightbox }) => lightbox(user.avatar_url, user.name)));
+  let picture;
+  if (viewer.has_story) {
+    picture = h('a.profile-avatar', { href: `/stories/${user.handle}`, 'aria-label': `View story from @${user.handle}` }, pic);
+  } else if (user.avatar_url) {
+    picture = h('a.profile-avatar', {
+      href: user.avatar_url, 'aria-label': 'View profile photo',
+      onclick: e => { e.preventDefault(); lightbox(user.avatar_url, user.name); },
+    }, pic);
+  } else {
+    picture = h('div.profile-avatar', pic);
   }
 
   const followers = h('strong', count(user.follower_count));
-  const kevin = isKevin(user) && !viewer.is_me;
+  const friends = h('strong', count(user.friend_count));
   const chips = h('div.row.wrap.chips',
-    viewer.follows_you || kevin ? h('span.chip', 'Follows you') : null,
-    viewer.friendship === 'friends' ? h('span.chip.teal', 'Friends') : null,
-    user.verified ? h('span.chip.red', 'Verified (purchased)') : null,
-    kevin ? h('span.chip', 'Seen') : null);
+    viewer.follows_you ? h('span.chip', 'Follows you') : null,
+    viewer.friendship === 'friends' ? h('span.chip', 'Friends') : null);
 
   const meta = h('div.profile-meta',
-    user.location ? h('span', icon('map-pin'), user.location) : null,
-    user.website ? h('span', icon('link'), h('a', { href: user.website, target: '_blank', rel: 'noopener noreferrer nofollow' }, user.website.replace(/^https?:\/\//, '').replace(/\/$/, ''))) : null,
-    h('span', icon('calendar'), `Joined ${joined(user.created_at)}`));
+    user.location ? h('span', user.location) : null,
+    user.website ? h('span', h('a', { href: user.website, target: '_blank', rel: 'noopener noreferrer nofollow' }, user.website.replace(/^https?:\/\//, '').replace(/\/$/, ''))) : null,
+    h('span', `Joined ${joined(user.created_at)}`));
 
   const counts = h('div.profile-counts',
-    h('a', { href: `/@${user.handle}/followers` }, followers, ' in The Pile'),
-    h('a', { href: `/@${user.handle}/following` }, h('strong', kevin ? 'Everyone' : count(user.following_count)), ' following'),
-    h('a', { href: `/@${user.handle}/friends` }, h('strong', count(user.friend_count)), user.friend_count === 1 ? ' friend' : ' friends'),
-    h('span', h('strong', count(user.post_count)), user.post_count === 1 ? ' post' : ' posts'));
+    h('a', { href: `/@${user.handle}/followers` }, followers, user.follower_count === 1 ? ' Follower' : ' Followers'),
+    h('a', { href: `/@${user.handle}/following` }, h('strong', count(user.following_count)), ' Following'),
+    h('a', { href: `/@${user.handle}/friends` }, friends, user.friend_count === 1 ? ' Friend' : ' Friends'),
+    h('span', h('strong', count(user.post_count)), user.post_count === 1 ? ' Post' : ' Posts'));
 
-  const setFollowers = n => { followers.textContent = count(n); };
+  const setFollowers = n => {
+    followers.textContent = count(n);
+    followers.nextSibling.textContent = n === 1 ? ' Follower' : ' Followers';
+  };
+  const setFriends = n => {
+    friends.textContent = count(n);
+    friends.nextSibling.textContent = n === 1 ? ' Friend' : ' Friends';
+  };
 
   return h('section.south-card.flat.profile-card',
     banner,
     h('div.profile-top',
       picture,
-      h('div.profile-actions', actions(user, viewer, setFollowers))),
+      h('div.profile-actions', actions(user, viewer, setFollowers, setFriends))),
     h('div.profile-id',
-      h('h1', user.name, user.verified ? verifiedBadge() : null),
-      h('div.handle', `@${user.handle}`),
+      h('h1', user.name),
+      h('div.handle', `@${user.handle}`, user.verified ? [' ', verifiedBadge()] : null),
       chips),
     user.bio ? h('p.profile-bio', richText(user.bio)) : null,
-    kevin ? h('p.fine', 'Seen · your profile, 4 minutes before you opened it. Kevin has taken action before the event that caused it.') : null,
     meta,
     counts,
-    viewer.blocked ? h('div.notice', { style: 'margin:12px 0 0' },
-      `You have blocked @${user.handle}. They can still see you. Kevin can still see both of you. `,
+    viewer.blocked ? h('div.notice.profile-notice',
+      `You have blocked @${user.handle}. `,
       h('button.btn-small', { type: 'button', onclick: () => unblock(user) }, 'Unblock')) : null);
 }
 
-function actions(user, viewer, setFollowers) {
+function actions(user, viewer, setFollowers, setFriends) {
   if (viewer.is_me) {
     return [
-      h('a.btn.outline', { href: '/settings' }, icon('edit'), 'Edit profile'),
-      user.verified
-        ? h('a.btn-small.flat', { href: '/verified' }, 'Manage verification')
-        : h('a.btn', { href: '/verified' }, 'Get verified ($8.00/wk)'),
+      h('a.btn', { href: '/settings' }, 'Edit profile'),
+      h('a.btn', { href: '/verified' }, user.verified ? 'Southbag Verified' : 'Get verified'),
     ];
   }
-  const more = h('button.icon-btn.boxed-icon', { type: 'button', 'aria-label': 'More options' }, icon('more'));
+  const more = h('button.btn', { type: 'button', 'aria-haspopup': 'menu' }, 'More');
   more.addEventListener('click', () => menu(more, [
-    { label: 'Copy link to profile', icon: 'link', onClick: () => copy(new URL(`/@${user.handle}`, location.origin).href) },
-    { label: 'Report to Kevin', icon: 'flag', onClick: () => toast('Reported. Kevin has already seen it.') },
+    { label: 'Copy link', onClick: () => copy(new URL(`/@${user.handle}`, location.origin).href) },
     'divider',
     viewer.blocked
-      ? { label: `Unblock @${user.handle}`, icon: 'lock', onClick: () => unblock(user) }
-      : { label: `Block @${user.handle}`, icon: 'lock', danger: true, onClick: () => block(user) },
+      ? { label: `Unblock @${user.handle}`, onClick: () => unblock(user) }
+      : { label: `Block @${user.handle}`, onClick: () => block(user) },
   ]));
   if (viewer.blocked) return [more];
 
-  let follow;
-  if (isKevin(user)) {
-    follow = h('button.btn', { type: 'button', disabled: true, title: 'Kevin follows everyone. The feeling is not required to be mutual.' }, 'Already following you');
-  } else {
-    follow = followButton({ ...user, is_following: viewer.is_following }, {
-      small: false,
-      onChange: following => { user.follower_count += following ? 1 : -1; setFollowers(user.follower_count); },
-    });
-  }
+  const follow = followButton({ ...user, is_following: viewer.is_following }, {
+    small: false,
+    onChange: following => { user.follower_count += following ? 1 : -1; setFollowers(user.follower_count); },
+  });
   return [
     follow,
-    friendButton(user, viewer),
-    h('a.btn.outline', { href: `/messages?to=${encodeURIComponent(user.handle)}` }, icon('message'), h('span.label', 'Message')),
+    friendButton(user, viewer, setFriends),
+    h('a.btn', { href: `/messages?to=${encodeURIComponent(user.handle)}` }, 'Message'),
     more,
   ];
 }
 
-/** Add friend / Request sent / Respond / Friends ▾ */
-function friendButton(user, viewer) {
+/** Add friend / Requested / Respond / Friends */
+function friendButton(user, viewer, setFriends) {
   let state = viewer.friendship;
-  const btn = h('button.btn.outline', { type: 'button' });
+  const btn = h('button.btn', { type: 'button' });
   const paint = () => {
-    const labels = { none: ['user-plus', 'Add friend'], requested: ['check', 'Request sent'], incoming: ['user-plus', 'Respond'], friends: ['users', 'Friends ▾'] };
-    const [ic, label] = labels[state] || labels.none;
-    mount(btn, icon(ic), label);
-    btn.classList.toggle('outline', state !== 'incoming');
+    const labels = { none: 'Add friend', requested: 'Requested', incoming: 'Respond', friends: 'Friends' };
+    btn.textContent = labels[state] || labels.none;
+    btn.setAttribute('aria-haspopup', state === 'none' ? 'false' : 'menu');
   };
   const send = async (method, success) => {
     btn.disabled = true;
     try {
       const res = method === 'put' ? await api.put(`users/${user.handle}/friend`) : await api.del(`users/${user.handle}/friend`);
+      if ((state === 'friends') !== (res.friendship === 'friends')) {
+        user.friend_count = Math.max(0, user.friend_count + (res.friendship === 'friends' ? 1 : -1));
+        setFriends(user.friend_count);
+      }
       state = res.friendship;
       viewer.friendship = state;
       paint();
@@ -184,18 +184,18 @@ function friendButton(user, viewer) {
   };
   btn.addEventListener('click', () => {
     if (!store.me) return login();
-    if (state === 'none') return send('put', 'Friend request sent. Friendship is subject to review.');
+    if (state === 'none') return send('put', 'Friend request sent.');
     if (state === 'requested') return menu(btn, [
-      { label: 'Cancel request', icon: 'close', onClick: () => send('del', 'Request withdrawn. It has been retained.') },
+      { label: 'Cancel request', onClick: () => send('del', 'Request cancelled.') },
     ]);
     if (state === 'incoming') return menu(btn, [
-      { label: 'Confirm request', icon: 'check', onClick: () => send('put', 'You are now friends. This has been recorded.') },
-      { label: 'Delete request', icon: 'trash', onClick: () => send('del', 'Request declined. They have not been told. They will work it out.') },
+      { label: 'Accept', onClick: () => send('put', `You and @${user.handle} are now friends.`) },
+      { label: 'Decline', onClick: () => send('del', 'Request declined.') },
     ]);
     menu(btn, [
-      { label: 'Unfriend', icon: 'close', danger: true, onClick: async () => {
-        if (await confirm(`Unfriend ${user.name}? Your shared history is retained permanently.`, { ok: 'Unfriend' }))
-          send('del', 'Unfriended. The friendship has been archived, not deleted.');
+      { label: 'Unfriend', onClick: async () => {
+        if (await confirm(`Remove ${user.name} from your friends?`, { title: 'Unfriend', ok: 'Unfriend' }))
+          send('del', 'Unfriended.');
       } },
     ]);
   });
@@ -204,10 +204,10 @@ function friendButton(user, viewer) {
 }
 
 async function block(user) {
-  if (!(await confirm(`Block @${user.handle}? They will be removed from The Pile and from your friends. They can still see you. Kevin can still see both of you.`, { ok: 'Block' }))) return;
+  if (!(await confirm(`@${user.handle} will be removed from your followers, following and friends, and won't be able to follow you or send you friend requests.`, { title: `Block @${user.handle}?`, ok: 'Block' }))) return;
   try {
     await api.put(`users/${user.handle}/block`);
-    toast('Blocked. They can still see you. Kevin can still see both of you.');
+    toast(`Blocked @${user.handle}.`);
     store.refresh();
     refresh();
   } catch (err) { toastError(err); }
@@ -216,33 +216,26 @@ async function block(user) {
 async function unblock(user) {
   try {
     await api.del(`users/${user.handle}/block`);
-    toast(`@${user.handle} is unblocked. The Pile has not forgotten.`);
+    toast(`Unblocked @${user.handle}.`);
     refresh();
   } catch (err) { toastError(err); }
 }
 
-// ── Tabs ──────────────────────────────────────────────────────────────────
+// -- Tabs ------------------------------------------------------------------
 
-function emptyFor(tab, user, viewer) {
-  const me = viewer.is_me;
-  const who = me ? 'You have' : `@${user.handle} has`;
-  const map = {
-    posts: me
-      ? { icon: 'edit', title: 'Nothing posted yet.', text: 'Your silence has been noted.' }
-      : { icon: 'edit', title: `@${user.handle} has not posted.`, text: isKevin(user) ? 'Kevin does not post. Kevin is posted about.' : 'Their silence has been noted.' },
-    replies: { icon: 'comment', title: `${who} not replied to anything.`, text: 'No comments. The silence is compliant.' },
-    photos: { icon: 'camera', title: 'No photos.', text: me ? 'We already have your face. You may still upload others.' : 'Southbag has photos of them anyway.' },
-    videos: { icon: 'video', title: 'No videos.', text: 'Uploads are retained permanently. None have been made.' },
-    shorts: { icon: 'shorts', title: 'No shorts.', text: 'Vertical content is pending.' },
-    wall: { icon: 'edit', title: 'The wall is empty.', text: 'A blank wall is compliant. It will not stay that way.' },
-    likes: { icon: 'heart', title: `${who} not liked anything.`, text: 'Appreciation is optional. The surcharge is not.' },
-  };
-  return empty(map[tab]);
-}
+const EMPTY = {
+  posts: 'No posts yet.',
+  replies: 'No replies yet.',
+  photos: 'No photos yet.',
+  videos: 'No videos yet.',
+  shorts: 'No shorts yet.',
+  wall: 'Nothing on this wall yet.',
+  likes: 'No likes yet.',
+};
 
 function postsTab(ctx, user, viewer, tab) {
   const load = cursor => api.get(`users/${user.handle}/posts`, { tab, cursor }, { signal: ctx.signal });
-  const emptyNode = emptyFor(tab, user, viewer);
+  const emptyNode = empty({ title: EMPTY[tab] });
 
   if (tab === 'photos') {
     return infiniteList({
@@ -250,10 +243,11 @@ function postsTab(ctx, user, viewer, tab) {
       render: post => {
         const first = post.media.find(m => m.kind === 'image');
         if (!first) return null;
-        return h('a.grid-tile', { href: `/post/${post.id}`, title: post.body || 'Photo', 'aria-label': post.body || 'Photo' },
+        const label = post.body || 'Photo';
+        return h('a.grid-tile', { href: `/post/${post.id}`, title: label, 'aria-label': label },
           h('img', { src: first.url, alt: first.alt || '', loading: 'lazy' }),
-          post.media.length > 1 ? h('span.multi', icon('grid')) : null,
-          h('span.hover', icon('heart'), count(post.counts.reactions), icon('comment'), count(post.counts.replies)));
+          post.media.length > 1 ? h('span.multi', `${post.media.length} photos`) : null,
+          h('span.hover', `${plural(post.counts.reactions, 'like')}, ${plural(post.counts.replies, 'comment')}`));
       },
     });
   }
@@ -265,8 +259,8 @@ function postsTab(ctx, user, viewer, tab) {
         if (!video) return null;
         return h('div.video-tile',
           videoThumb(video, { href: `/watch/${post.id}` }),
-          h('a.title', { href: `/watch/${post.id}` }, post.title || 'Untitled video (Kevin approved)'),
-          h('div.fine', `${plural(post.counts.views, 'view')} · ${relativeDate(post.created_at)}`));
+          h('a.title', { href: `/watch/${post.id}` }, post.title || 'Untitled video'),
+          h('div.fine', `${plural(post.counts.views, 'view')}, ${relativeDate(post.created_at)}`));
       },
     });
   }
@@ -277,7 +271,7 @@ function postsTab(ctx, user, viewer, tab) {
         const video = post.media.find(m => m.kind === 'video');
         if (!video) return null;
         const thumb = videoThumb(video, { href: `/shorts/${post.id}`, vertical: true });
-        thumb.append(h('span.views', icon('play'), count(post.counts.views)));
+        thumb.append(h('span.views', plural(post.counts.views, 'view')));
         return thumb;
       },
     });
@@ -290,11 +284,11 @@ function postsTab(ctx, user, viewer, tab) {
   } else if (tab === 'wall' && (viewer.is_me || viewer.friendship === 'friends')) {
     top = composerCard({
       wallUserId: user.id,
-      placeholder: viewer.is_me ? 'Write on your own wall. Kevin reads walls.' : `Write something on ${user.name}'s wall. It will be retained.`,
+      placeholder: viewer.is_me ? 'Write on your wall' : `Write on ${user.name}'s wall`,
       onPosted: post => list.prepend(postCard(post)),
     });
   } else if (tab === 'wall' && store.me) {
-    top = h('div.notice', `Only friends can write on ${user.name}'s wall. Friendship is subject to review.`);
+    top = h('div.notice', `Only friends of ${user.name} can write on this wall.`);
   }
   return h('div', top, list);
 }
@@ -310,27 +304,19 @@ function relativeDate(ms) {
 function peopleList(ctx, user, viewer, tab) {
   const me = viewer.is_me;
   const empties = {
-    followers: me
-      ? { icon: 'users', title: 'Nobody has added you to The Pile.', text: 'Kevin is aware.' }
-      : { icon: 'users', title: `Nobody has added @${user.handle} to The Pile.`, text: 'Kevin is aware.' },
-    following: me
-      ? { icon: 'user-plus', title: 'You are not following anyone.', text: 'Kevin follows you. That will have to do.' }
-      : { icon: 'user-plus', title: `@${user.handle} is not following anyone.`, text: 'Kevin follows them. That will have to do.' },
-    friends: { icon: 'users', title: 'No friends yet.', text: 'Friendship is subject to review.' },
+    followers: 'No followers yet.',
+    following: me ? 'You are not following anyone.' : `@${user.handle} is not following anyone.`,
+    friends: 'No friends yet.',
   };
-  const headings = {
-    followers: me ? 'People who added you to The Pile' : `People who added @${user.handle} to The Pile`,
-    following: me ? 'People in your Pile' : `People in @${user.handle}'s Pile`,
-    friends: me ? 'Your friends' : `${user.name}'s friends`,
-  };
+  const headings = { followers: 'Followers', following: 'Following', friends: 'Friends' };
   return h('div.south-card.flat',
     h('h2', headings[tab]),
-    tab === 'friends' && me ? h('p.fine', h('a', { href: '/friends' }, 'Manage friends and requests')) : null,
+    tab === 'friends' && me ? h('p.fine', h('a', { href: '/friends' }, 'Friend requests')) : null,
     infiniteList({
       className: 'people-list',
       signal: ctx.signal,
       load: cursor => api.get(`users/${user.handle}/${tab}`, { cursor }, { signal: ctx.signal }),
       render: person => userRow(person),
-      empty: empty(empties[tab]),
+      empty: empty({ title: empties[tab] }),
     }));
 }
