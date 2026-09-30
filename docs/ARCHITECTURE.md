@@ -1,7 +1,6 @@
 # Southbag Social — architecture and conventions
 
-Read this before adding a feature. See also `docs/design.md` (UI, derived from SouthbagHQ/banking)
-and `docs/voice.md` (copy and lore).
+Read this before adding a feature. See also `docs/STYLE.md` (interface and copy).
 
 ## Runtime (Cloudflare free plan)
 
@@ -32,7 +31,7 @@ on `/welcome` to pick theirs.
 - One Hono router per feature in `src/routes/<feature>.ts`, mounted in `src/index.ts` at
   `/api/<feature>`. Don't edit other features' routers.
 - Errors: `fail(status, message)` from `src/lib/http.ts`. The message is shown to the user, so
-  write it in the Southbag voice ("Kevin has closed this post.").
+  keep it short and plain ("Post not found.").
 - Input: `await body(c)` and `str(value, max)`. Never trust client ids; check ownership.
 - Paging: `?cursor=<last id>&limit=`; respond `{ items, next }` (`next` null at the end). IDs are
   time-sortable (`newId()`), so `WHERE id < ? ORDER BY id DESC` is newest-first keyset paging.
@@ -61,16 +60,15 @@ on `/welcome` to pick theirs.
   - `components/media.js` — `photoGrid`, `carousel`, `videoEl`, `videoPlayer`, `videoThumb`, `postMedia`
   - `components/user.js` — `avatar`, `userName`, `verifiedBadge`, `followButton`, `userRow`
   - `ui.js` — `toast`, `toastError`, `dialog`, `confirm`, `promptDialog`, `menu`, `loading`,
-    `empty`, `errorBox`, `tabs`, `infiniteList`, `lightbox`, `share`, `copy`, `shake`, `confetti`, `fee`
+    `empty`, `errorBox`, `tabs`, `infiniteList`, `lightbox`, `share`, `copy`, `shake`
   - `upload.js` — `uploadFile(file, { onProgress })`, `pickFiles()`
   - `format.js` — `timeAgo`, `relative`, `count`, `plural`, `duration`, `money`
   - `store.js` — `store.me`, `store.unread`, `store.refresh()`, `store.patchMe()`, `login()`
 - Styling: `public/css/southbag.css` holds the design system (tokens, `.south-card`,
   `.announcement-grid`, `.south-item`, `.btn`/`.btn-large`/`.btn-small`/`.btn-tiny`, `.tabs`,
   `.dialog`, …). Feature-specific CSS goes in `public/css/<feature>.css`, linked from
-  `index.html`. Use the tokens (`var(--sb-teal)` etc.) so dark mode works.
-- Copy: Australian spelling, sentence-case buttons, deadpan, no exclamation marks, Kevin is
-  weather. See `docs/voice.md`.
+  `index.html`. Use the tokens (`var(--sb-blue)`, `var(--sb-muted)`, …) so dark mode works.
+- Interface and copy rules: `docs/STYLE.md` (plain text only, greyscale, stretched media).
 
 ## Local development
 

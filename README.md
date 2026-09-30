@@ -1,15 +1,10 @@
 # Southbag Social
 
-A social network of people *you do not fully control.*
+Posts, photos, videos, shorts, stories, groups and messages for Southbag accounts.
 
-Southbag Social is Southbag's answer to Twitter, Instagram, YouTube, Facebook and TikTok, in one
-monitored place: short posts, photo posts, long videos, vertical shorts, 24-hour stories, groups,
-friends, walls, reactions, reposts, direct messages and notifications. Everything is retained
-permanently. Continued scrolling constitutes acceptance.
-
-It signs in with **Southbag Identity™** and follows the look of
-[Southbag Online Banking](https://github.com/SouthbagHQ/banking): teal buttons, beveled borders,
-crooked paper cards and a promotional banner nobody asked for.
+It signs in with **Southbag Identity™** and follows the look of the other Southbag products
+([Identity](https://github.com/SouthbagHQ/identity), [Office](https://github.com/SouthbagHQ/office),
+[Branch Locator](https://github.com/SouthbagHQ/branch-locator)).
 
 ## How it runs (Cloudflare free plan)
 
@@ -34,7 +29,7 @@ URIs on `*.southbag.cc` skip Identity's consent gauntlet. Sessions are opaque to
 Apps can also send an Identity access token as `Authorization: Bearer …`.
 
 Identity calls everyone "Southbag Customer" and has no usernames, so new accounts land on
-`/welcome` to choose a handle. Southbag has already chosen one for you.
+`/welcome` to choose a handle.
 
 ## Develop
 
@@ -48,8 +43,8 @@ npm run dev            # http://localhost:8787
 Set the cookie `southbag_social_session=dev-alice` (or `dev-bob`, `dev-carol`, `dev-kevin`) to be
 signed in locally without Identity. `npm run check` type-checks the Worker.
 
-Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) before adding a feature. The UI guide is
-[`docs/design.md`](docs/design.md) and the copy guide is [`docs/voice.md`](docs/voice.md).
+Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) before adding a feature, and
+[`docs/STYLE.md`](docs/STYLE.md) for the interface and copy rules.
 
 ## Deploy
 
@@ -69,5 +64,4 @@ grid in SouthbagHQ/identity.
 
 ---
 
-*This is satire. Southbag is not a real company, and none of the services, products, or policies
-described here exist. All policy decisions are final and reviewed by Kevin.*
+*This is satire. Southbag is not a real company.*

@@ -1,38 +1,27 @@
 // Shared UI kit: toasts, retro dialogs, menus, empty/loading states, tabs, infinite lists.
 
-import { h, icon, mount } from './dom.js';
-
-// ── Kevin's fees (never charged, always itemised) ────────────────────────
-const feeReasons = [
-  "Kevin's time", 'Looking at Kevin wrong', 'Existing near Kevin', 'Kevin tax', "Interrupting Kevin's lunch",
-  'Kevin knows what you did', 'Policy curiosity', 'Appreciation surcharge', 'Vibes assessment',
-  'Suspicion of happiness tax', 'Inactivity fee (you blinked)', 'Fee for having a fee', 'Gravity usage charge',
-];
-export function fee(reason) {
-  const cents = [2, 37, 99, 150, 350, 700, 1200][Math.floor(Math.random() * 7)];
-  return `Fee assessed: $${(cents / 100).toFixed(2)} — ${reason || feeReasons[Math.floor(Math.random() * feeReasons.length)]}.`;
-}
+import { h, mount } from './dom.js';
 
 // ── Toasts ───────────────────────────────────────────────────────────────
 let toastHost;
-/** toast('Posted. Pending review.') / toast(err, { error: true }) / toast('Liked.', { fee: true }) */
-export function toast(message, { error = false, fee: withFee = false, timeout = 4200 } = {}) {
+/** toast('Posted.') / toast(err, { error: true }) */
+export function toast(message, { error = false, timeout = 4200 } = {}) {
   if (!toastHost) toastHost = document.body.appendChild(h('div.toasts', { role: 'status', 'aria-live': 'polite' }));
   const text = message instanceof Error ? message.message : String(message);
-  const el = h('div.toast', { class: { error } }, text, withFee ? h('span.fee', typeof withFee === 'string' ? fee(withFee) : fee()) : null);
+  const el = h('div.toast', { class: { error } }, text);
   toastHost.append(el);
   setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 320); }, timeout);
   return el;
 }
 export const toastError = err => toast(err?.message || String(err), { error: true, timeout: 6000 });
 
-// ── Retro dialogs ────────────────────────────────────────────────────────
+// ── Dialogs (Office style: stretched logo, heading, text, grey buttons) ────
 /**
- * Opens a Windows-95-ish dialog. Resolves with the value of the clicked action (or null when closed).
- *   dialog({ title: 'Southbag Alert', body: 'Text or node', actions: [{ label: 'OK', value: true, primary: true }] })
+ * Opens a dialog. Resolves with the value of the clicked action (or null when closed).
+ *   dialog({ title: 'Delete post?', body: 'Text or node', actions: [{ label: 'OK', value: true, primary: true }] })
  * `body` may be a function (close) => Node for custom content that closes itself.
  */
-export function dialog({ title = 'Southbag Alert', body, actions = [{ label: 'OK', value: true, primary: true }], wide = false, onOpen } = {}) {
+export function dialog({ title = 'Southbag Social', body, actions = [{ label: 'OK', value: true, primary: true }], wide = false, onOpen } = {}) {
   return new Promise(resolve => {
     const previous = document.activeElement;
     let done = false;
@@ -47,7 +36,9 @@ export function dialog({ title = 'Southbag Alert', body, actions = [{ label: 'OK
     const onKey = e => { if (e.key === 'Escape') close(null); };
     const content = typeof body === 'function' ? body(close) : body;
     const box = h('div.dialog', { class: { wide }, role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
-      h('div.titlebar', h('span', title), h('button', { type: 'button', 'aria-label': 'Close', onclick: () => close(null) }, '✕')),
+      h('div.titlebar', h('img', { src: '/img/logo-400.png', alt: 'southbag' }),
+        h('button', { type: 'button', onclick: () => close(null) }, 'Close')),
+      h('h2.dialog-title', title),
       h('div.body', typeof content === 'string' ? h('p', { style: 'margin:0' }, content) : content),
       actions.length ? h('div.actions', actions.map(a =>
         h('button.retro-btn', { type: 'button', class: { primary: a.primary }, onclick: () => close(a.value) }, a.label))) : null,
@@ -55,15 +46,15 @@ export function dialog({ title = 'Southbag Alert', body, actions = [{ label: 'OK
     const overlay = h('div.overlay', { onclick: e => { if (e.target === overlay) close(null); } }, box);
     document.body.append(overlay);
     document.addEventListener('keydown', onKey);
-    (box.querySelector('.retro-btn.primary') || box.querySelector('input, textarea, button:not(.titlebar button)'))?.focus();
+    (box.querySelector('.retro-btn.primary') || box.querySelector('.body input, .body textarea, .body button'))?.focus();
     onOpen?.(box, close);
   });
 }
 
-export const alertDialog = (message, title = 'Southbag Alert') => dialog({ title, body: message });
+export const alertDialog = (message, title = 'Southbag Social') => dialog({ title, body: message });
 
 /** confirm('Delete this post?', { ok: 'Request deletion' }) → Promise<boolean> */
-export async function confirm(message, { title = 'Southbag Alert', ok = 'OK', cancel = 'Cancel' } = {}) {
+export async function confirm(message, { title = 'Are you sure?', ok = 'OK', cancel = 'Cancel' } = {}) {
   return Boolean(await dialog({
     title, body: message,
     actions: [{ label: cancel, value: false }, { label: ok, value: true, primary: true }],
@@ -71,7 +62,7 @@ export async function confirm(message, { title = 'Southbag Alert', ok = 'OK', ca
 }
 
 /** prompt('New group name', { value }) → Promise<string|null> */
-export function promptDialog(label, { title = 'Southbag Input Required', value = '', placeholder = '', multiline = false, ok = 'OK' } = {}) {
+export function promptDialog(label, { title = 'Southbag Social', value = '', placeholder = '', multiline = false, ok = 'OK' } = {}) {
   let input;
   return dialog({
     title,
@@ -85,7 +76,7 @@ export function promptDialog(label, { title = 'Southbag Input Required', value =
 export function lightbox(src, alt = '') {
   const overlay = h('div.overlay.lightbox', { onclick: () => overlay.remove() },
     h('img', { src, alt }),
-    h('button.icon-btn.close', { type: 'button', 'aria-label': 'Close' }, icon('close')));
+    h('button.close', { type: 'button' }, 'Close'));
   const onKey = e => { if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', onKey); } };
   document.addEventListener('keydown', onKey);
   document.body.append(overlay);
@@ -93,16 +84,16 @@ export function lightbox(src, alt = '') {
 
 // ── Menus ────────────────────────────────────────────────────────────────
 /**
- * Pops a menu under `anchor`. items: [{ label, icon?, onClick, danger? } | 'divider']
+ * Pops a menu under `anchor`. items: [{ label, href?, onClick? } | 'divider']
  */
 export function menu(anchor, items) {
   document.querySelectorAll('.menu.popup').forEach(m => m.remove());
   const rect = anchor.getBoundingClientRect();
   const el = h('div.menu.popup', { role: 'menu' }, items.filter(Boolean).map(item => item === 'divider' ? h('hr') :
     h(item.href ? 'a' : 'button', {
-      type: item.href ? undefined : 'button', href: item.href, role: 'menuitem', class: { danger: item.danger },
+      type: item.href ? undefined : 'button', href: item.href, role: 'menuitem',
       onclick: () => { el.remove(); item.onClick?.(); },
-    }, item.icon ? icon(item.icon) : null, item.label)));
+    }, item.label)));
   el.style.top = `${rect.bottom + window.scrollY + 4}px`;
   document.body.append(el);
   const width = el.offsetWidth;
@@ -114,12 +105,11 @@ export function menu(anchor, items) {
 }
 
 // ── States ───────────────────────────────────────────────────────────────
-export const loading = (text = 'Loading...') => h('div.loading', h('div.spinner'), text);
+export const loading = (text = 'Loading') => h('div.loading', text);
 
-/** empty({ icon: 'bell', title: 'No notifications.', text: 'Kevin has read them already.' }) */
-export const empty = ({ icon: name = 'bag', title, text, ref, action } = {}) =>
-  h('div.empty', icon(name), title ? h('p', h('strong', title)) : null, text ? h('p', text) : null,
-    ref ? h('p.ref', ref) : null, action || null);
+/** empty({ title: 'No notifications' }) */
+export const empty = ({ title, text, action } = {}) =>
+  h('div.empty', title ? h('p', title) : null, text ? h('p', text) : null, action || null);
 
 export const errorBox = err => h('div.error-box', { role: 'alert' }, err?.message || String(err));
 
@@ -159,7 +149,7 @@ export function infiniteList({ load, render, empty: emptyNode, className = 'sout
       mount(status, done && !count && emptyNode ? emptyNode : null);
     } catch (err) {
       if (err.name === 'AbortError') return;
-      mount(status, errorBox(err), h('button.btn-small.outline', { type: 'button', onclick: () => { busy = false; more(); } }, 'Try again'));
+      mount(status, errorBox(err), h('button', { type: 'button', onclick: () => { busy = false; more(); } }, 'Try again'));
       done = true;
       busy = false;
       return;
@@ -185,7 +175,7 @@ const isVisible = el => {
   return r.top < window.innerHeight + 600 && r.bottom > -600 && el.isConnected;
 };
 
-// ── Gags ─────────────────────────────────────────────────────────────────
+// ── Effects ──────────────────────────────────────────────────────────────
 export function shake(el = document.body) {
   el.classList.remove('shake');
   void el.offsetWidth;
@@ -193,23 +183,11 @@ export function shake(el = document.body) {
   setTimeout(() => el.classList.remove('shake'), 600);
 }
 
-/** ASCII confetti, as in the banking support chat's [CONFETTI] tag. */
-export function confetti(n = 50) {
-  const chars = ['*', '+', 'o', '.', 'x', '-'];
-  const colours = ['#cc0000', '#00cc00', '#0000cc', '#cccc00'];
-  for (let i = 0; i < n; i++) {
-    const el = h('span.confetti', chars[i % chars.length]);
-    el.style.left = `${Math.random() * 100}vw`;
-    el.style.color = colours[i % colours.length];
-    el.style.fontSize = `${14 + Math.random() * 14}px`;
-    el.style.animationDuration = `${1.5 + Math.random() * 2}s`;
-    document.body.append(el);
-    setTimeout(() => el.remove(), 4000);
-  }
-}
+/** Removed. Kept so older call sites keep working. */
+export function confetti() {}
 
 /** Copies text; falls back to a dialog when the clipboard is blocked. */
-export async function copy(text, message = 'Link copied. Recipients have been logged.') {
+export async function copy(text, message = 'Link copied.') {
   try {
     await navigator.clipboard.writeText(text);
     toast(message);
@@ -224,5 +202,5 @@ export async function share(url, title = 'Southbag Social') {
   if (navigator.share) {
     try { await navigator.share({ title, url: full }); return; } catch (e) { if (e.name === 'AbortError') return; }
   }
-  copy(full, 'Shared. Recipients have been logged.');
+  copy(full, 'Link copied.');
 }

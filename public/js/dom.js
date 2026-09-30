@@ -50,13 +50,10 @@ export const mount = (el, ...children) => { el.replaceChildren(); return append(
 export const $ = (selector, root = document) => root.querySelector(selector);
 export const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
-/** SVG icon from the sprite in index.html: icon('heart'). */
-export function icon(name, cls = '') {
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('class', `icon ${cls}`.trim());
-  svg.setAttribute('aria-hidden', 'true');
-  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-  use.setAttribute('href', `#i-${name}`);
-  svg.append(use);
-  return svg;
+/**
+ * Southbag Social has no icons. This used to return an SVG; it now returns an empty text node so
+ * old call sites keep working. Every control must say what it does in words.
+ */
+export function icon() {
+  return document.createTextNode('');
 }

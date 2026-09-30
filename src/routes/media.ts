@@ -25,7 +25,7 @@ media.post('/', async c => {
   const user = requireUser(c);
   const input = await body(c);
   const kind = input.kind as keyof typeof limits;
-  if (!(kind in limits)) fail(422, 'Southbag only accepts photos, videos and audio.');
+  if (!(kind in limits)) fail(422, 'Only photos, videos and audio can be uploaded.');
   const contentType = str(input.content_type, 100).toLowerCase();
   if (!allowedTypes[kind].test(contentType)) fail(422, `That kind of ${kind} is not supported.`);
   const size = Number(input.size);

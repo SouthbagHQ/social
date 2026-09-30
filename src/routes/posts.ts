@@ -29,7 +29,7 @@ const REACTION_FEE = 2;
 
 async function visibleOr404(c: Ctx, id: string): Promise<PostRow> {
   const post = await loadVisiblePost(c.env, c.get('user')?.id ?? null, id);
-  if (!post) fail(404, 'Kevin has closed this post.');
+  if (!post) fail(404, 'Post not found.');
   return post;
 }
 
@@ -76,13 +76,13 @@ posts.get('/:id/replies', async c => {
 posts.patch('/:id', async c => {
   const user = requireUser(c);
   const post = await visibleOr404(c, c.req.param('id'));
-  if (post.author_id !== user.id || post.deleted_at) fail(403, 'Only the author may amend a post. The original is retained.');
+  if (post.author_id !== user.id || post.deleted_at) fail(403, 'You cannot edit this post.');
   const input = await body(c);
   const newBody = 'body' in input ? str(input.body, MAX_BODY) : post.body;
   const title = 'title' in input ? str(input.title, MAX_TITLE) || null : post.title;
-  if (post.kind === 'text' && [...newBody].length > MAX_TEXT) fail(422, `Posts are limited to ${MAX_TEXT} characters. Kevin counted.`);
-  if (post.kind === 'video' && !title) fail(422, 'Videos need a title. Kevin insists.');
-  if (!newBody && post.kind === 'text' && !post.repost_of_id) fail(422, 'Kevin does not accept blank posts.');
+  if (post.kind === 'text' && [...newBody].length > MAX_TEXT) fail(422, `Posts are limited to ${MAX_TEXT} characters.`);
+  if (post.kind === 'video' && !title) fail(422, 'Videos need a title.');
+  if (!newBody && post.kind === 'text' && !post.repost_of_id) fail(422, 'Write something first.');
   const now = Date.now();
   await c.env.DB.batch([
     c.env.DB.prepare('UPDATE posts SET body = ?, title = ?, edited_at = ? WHERE id = ?').bind(newBody, title, now, post.id),
@@ -101,7 +101,7 @@ posts.delete('/:id', async c => {
 posts.put('/:id/reaction', async c => {
   const user = requireUser(c);
   const post = await visibleOr404(c, c.req.param('id'));
-  if (post.deleted_at) fail(404, 'Kevin has closed this post.');
+  if (post.deleted_at) fail(404, 'Post not found.');
   const input = await body(c);
   const type = (reactionTypes as readonly string[]).includes(input.type as string) ? input.type as ReactionType : 'like';
   const existing = await c.env.DB.prepare('SELECT type FROM reactions WHERE post_id = ? AND user_id = ?')

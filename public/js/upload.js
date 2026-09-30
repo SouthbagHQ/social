@@ -102,14 +102,14 @@ async function retry(fn, attempts = 3) {
  */
 export async function uploadFile(file, { onProgress, signal, maxEdge, alt } = {}) {
   const kind = kindOf(file);
-  if (!kind) throw new Error('Southbag only accepts photos, videos and audio.');
+  if (!kind) throw new Error('Only photos, videos and audio can be uploaded.');
   if (kind === 'image') {
     const { blob, width, height } = await prepareImage(file, maxEdge);
-    if (blob.size > LIMITS.image) throw new Error('That photo is too big, even after Southbag compressed it.');
+    if (blob.size > LIMITS.image) throw new Error('That photo is too big.');
     return uploadBlob(blob, { kind, width, height, alt, onProgress, signal });
   }
   if (file.size > LIMITS[kind]) {
-    throw new Error(`That ${kind} is ${(file.size / 1048576).toFixed(1)} MB. The limit is ${LIMITS[kind] / 1048576} MB. Kevin measured.`);
+    throw new Error(`That ${kind} is ${(file.size / 1048576).toFixed(1)} MB. The limit is ${LIMITS[kind] / 1048576} MB.`);
   }
   let meta = {};
   let posterId;

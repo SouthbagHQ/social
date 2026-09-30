@@ -232,7 +232,7 @@ export async function createPost(env: Env, user: SessionUser, input: CreatePostI
   const now = Date.now();
   const id = newId(now);
   const body = typeof input.body === 'string' ? input.body.trim() : '';
-  if ([...body].length > MAX_BODY) fail(422, `That is ${[...body].length} characters. The limit is ${MAX_BODY}. Kevin counted.`);
+  if ([...body].length > MAX_BODY) fail(422, `Text is limited to ${MAX_BODY} characters.`);
   const title = typeof input.title === 'string' ? input.title.trim().slice(0, MAX_TITLE) : '';
   const visibility: Visibility = ['public', 'followers', 'friends'].includes(input.visibility as string)
     ? input.visibility as Visibility : 'public';
@@ -249,7 +249,7 @@ export async function createPost(env: Env, user: SessionUser, input: CreatePostI
   const images = mediaRows.filter(m => m.kind === 'image');
   if (kind === 'video' || kind === 'short') {
     if (videos.length !== 1 || mediaRows.length !== 1) fail(422, 'A video post needs exactly one video.');
-    if (kind === 'video' && !title) fail(422, 'Videos need a title. Kevin insists.');
+    if (kind === 'video' && !title) fail(422, 'Videos need a title.');
   } else if (videos.length) {
     // A video attached to a normal post: shorts if vertical, otherwise a regular video.
     if (mediaRows.length !== 1) fail(422, 'Attach either one video or some photos, not both.');
@@ -263,26 +263,26 @@ export async function createPost(env: Env, user: SessionUser, input: CreatePostI
   let repostOf: PostRow | null = null;
   if (input.reply_to_id) {
     replyTo = await loadVisiblePost(env, user.id, input.reply_to_id);
-    if (!replyTo || replyTo.deleted_at) fail(404, 'That post has left the building.');
+    if (!replyTo || replyTo.deleted_at) fail(404, 'Post not found.');
   }
   if (input.repost_of_id) {
     repostOf = await loadVisiblePost(env, user.id, input.repost_of_id);
-    if (!repostOf || repostOf.deleted_at) fail(404, 'That post has left the building.');
+    if (!repostOf || repostOf.deleted_at) fail(404, 'Post not found.');
     // Reposting a plain repost reposts the original instead.
     if (repostOf.repost_of_id && !repostOf.body) {
       repostOf = await loadVisiblePost(env, user.id, repostOf.repost_of_id);
-      if (!repostOf) fail(404, 'That post has left the building.');
+      if (!repostOf) fail(404, 'Post not found.');
     }
     if (!body && !mediaRows.length) {
       const already = await env.DB.prepare(`SELECT id FROM posts WHERE author_id = ? AND repost_of_id = ? AND body = ''
         AND deleted_at IS NULL`).bind(user.id, repostOf.id).first();
-      if (already) fail(409, 'You already reposted that. Once is plenty.');
+      if (already) fail(409, 'You already reposted this.');
     }
   }
   if (!body && !mediaRows.length && !repostOf)
-    fail(422, 'Kevin does not accept blank posts. He does accept fees. Fee assessed: $2.00 — Kevin tax.');
+    fail(422, 'Write something first.');
   if (kind === 'text' && [...body].length > MAX_TEXT)
-    fail(422, `Posts are limited to ${MAX_TEXT} characters. Kevin counted. His count is authoritative.`);
+    fail(422, `Posts are limited to ${MAX_TEXT} characters.`);
 
   let groupId: string | null = null;
   if (input.group_id) {
@@ -298,7 +298,7 @@ export async function createPost(env: Env, user: SessionUser, input: CreatePostI
     const friend = await env.DB.prepare(`SELECT 1 FROM friendships WHERE status = 'accepted'
       AND ((requester_id = ? AND addressee_id = ?) OR (requester_id = ? AND addressee_id = ?))`)
       .bind(user.id, input.wall_user_id, input.wall_user_id, user.id).first();
-    if (!friend) fail(403, 'Only friends can post on each other’s walls.');
+    if (!friend) fail(403, 'Only friends can post on your wall.');
     wallUserId = input.wall_user_id;
   }
 
@@ -340,14 +340,14 @@ export async function createPost(env: Env, user: SessionUser, input: CreatePostI
 /** Soft-deletes a post (threads keep their shape); plain reposts are removed outright. */
 export async function deletePost(env: Env, user: SessionUser, id: string): Promise<void> {
   const post = await env.DB.prepare('SELECT * FROM posts WHERE id = ?').bind(id).first<PostRow>();
-  if (!post || post.deleted_at) fail(404, 'That post has left the building.');
+  if (!post || post.deleted_at) fail(404, 'Post not found.');
   let allowed = post.author_id === user.id || post.wall_user_id === user.id;
   if (!allowed && post.group_id) {
     const admin = await env.DB.prepare(`SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ? AND role IN ('owner', 'admin')`)
       .bind(post.group_id, user.id).first();
     allowed = Boolean(admin);
   }
-  if (!allowed) fail(403, 'That is not your post to delete.');
+  if (!allowed) fail(403, 'You cannot delete this post.');
   const now = Date.now();
   const statements: D1PreparedStatement[] = [];
   if (post.repost_of_id && !post.body) {

@@ -9,7 +9,7 @@ export function fail(status: 400 | 401 | 403 | 404 | 409 | 413 | 422 | 429 | 500
 /** The signed-in user, or a 401. */
 export function requireUser(c: Ctx): SessionUser {
   const user = c.get('user');
-  if (!user) fail(401, 'Sign in with Southbag Identity to do that.');
+  if (!user) fail(401, 'Log in to do that.');
   return user;
 }
 

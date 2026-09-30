@@ -2,26 +2,27 @@
 //
 //   postCard(post, { compact, onDeleted, onReply, link = true })
 //
-// Handles reposts ("@x reposted"), quotes, reactions (click = like, hover/long-press = picker),
-// comments, reposting/quoting, sharing, bookmarks, amending and "requesting deletion".
+// Handles reposts ("x reposted"), quotes, reactions (click = like, hover/long-press = picker),
+// comments, reposting/quoting, sharing, saving, editing and deleting. Plain text only: no icons.
 
 import { api } from '../api.js';
-import { h, icon, mount } from '../dom.js';
+import { h, mount } from '../dom.js';
 import { count, fullDate, timeAgo } from '../format.js';
 import { navigate } from '../router.js';
 import { login, store } from '../store.js';
-import { confetti, confirm, dialog, menu, share, shake, toast, toastError } from '../ui.js';
+import { confirm, dialog, menu, share, shake, toast, toastError } from '../ui.js';
 import { postMedia } from './media.js';
 import { avatar, userName } from './user.js';
 
+// Reactions are words. `emoji` is kept as an alias of the label for older call sites.
 export const REACTIONS = {
-  like: { emoji: '❤️', label: 'Like' },
-  love: { emoji: '😍', label: 'Love' },
-  haha: { emoji: '😂', label: 'Haha' },
-  wow: { emoji: '😮', label: 'Wow' },
-  sad: { emoji: '😢', label: 'Sad' },
-  angry: { emoji: '😡', label: 'Angry' },
-  bag: { emoji: '💰', label: 'Bag' },
+  like: { emoji: 'Like', label: 'Like' },
+  love: { emoji: 'Love', label: 'Love' },
+  haha: { emoji: 'Haha', label: 'Haha' },
+  wow: { emoji: 'Wow', label: 'Wow' },
+  sad: { emoji: 'Sad', label: 'Sad' },
+  angry: { emoji: 'Angry', label: 'Angry' },
+  bag: { emoji: 'Bag', label: 'Bag' },
 };
 
 export const postUrl = post =>
@@ -49,7 +50,7 @@ export function richText(text) {
   return out;
 }
 
-const visibilityIcon = v => v === 'friends' ? icon('users') : v === 'followers' ? icon('lock') : null;
+const visibilityLabel = v => v === 'friends' ? 'Friends' : v === 'followers' ? 'Followers' : null;
 
 function header(post, { onDeleted, onEdited }) {
   const a = post.author;
@@ -57,18 +58,18 @@ function header(post, { onDeleted, onEdited }) {
     h('span.handle', `@${a.handle}`),
     h('span', '·'),
     h('a', { href: postUrl(post), title: fullDate(post.created_at) }, h('time', { datetime: new Date(post.created_at).toISOString() }, timeAgo(post.created_at))),
-    post.edited_at ? h('span', { title: `Amended ${fullDate(post.edited_at)}. The original is retained.` }, '· amended') : null,
-    visibilityIcon(post.visibility) ? h('span', { title: `Visible to ${post.visibility}` }, visibilityIcon(post.visibility)) : null,
-    post.sponsored ? h('span.sponsored-tag', 'SPONSORED') : null,
+    post.edited_at ? h('span', { title: `Edited ${fullDate(post.edited_at)}` }, '· edited') : null,
+    visibilityLabel(post.visibility) ? h('span', `· ${visibilityLabel(post.visibility)}`) : null,
+    post.sponsored ? h('span.sponsored-tag', 'Sponsored') : null,
   );
-  const more = h('button.icon-btn', { type: 'button', 'aria-label': 'More options' }, icon('more'));
+  const more = h('button.icon-btn', { type: 'button' }, 'More');
   more.addEventListener('click', e => { e.stopPropagation(); postMenu(more, post, { onDeleted, onEdited }); });
   return h('div.post-head',
     avatar(a),
     h('div.meta',
       h('div', userName(a, { handle: false }),
-        post.wall_user ? h('span.muted', ' ▸ ', h('a', { href: `/@${post.wall_user.handle}` }, post.wall_user.name)) : null,
-        post.group ? h('span.muted', ' ▸ ', h('a', { href: `/g/${post.group.slug}` }, post.group.name)) : null),
+        post.wall_user ? h('span.muted', ' to ', h('a', { href: `/@${post.wall_user.handle}` }, post.wall_user.name)) : null,
+        post.group ? h('span.muted', ' in ', h('a', { href: `/g/${post.group.slug}` }, post.group.name)) : null),
       sub),
     more);
 }
@@ -76,14 +77,12 @@ function header(post, { onDeleted, onEdited }) {
 function postMenu(anchor, post, { onDeleted, onEdited }) {
   const mine = post.viewer?.can_edit;
   menu(anchor, [
-    { label: 'Copy link', icon: 'link', onClick: () => share(postUrl(post)) },
-    store.me ? { label: 'Send in a message', icon: 'send', href: `/messages?share=${post.id}` } : null,
-    { label: post.viewer?.bookmarked ? 'Remove bookmark' : 'Bookmark', icon: 'bookmark', onClick: () => toggleBookmark(post) },
-    mine ? { label: 'Amend', icon: 'edit', onClick: () => amend(post, onEdited) } : null,
-    mine || post.viewer?.can_delete ? { label: 'Request deletion', icon: 'trash', danger: true, onClick: () => remove(post, onDeleted) } : null,
-    'divider',
-    { label: 'Why am I seeing this?', icon: 'eye', onClick: () => dialog({ title: 'Algorithmic transparency', body: 'Kevin.' }) },
-    !mine ? { label: 'Report to Kevin', icon: 'flag', onClick: () => toast('Reported. Kevin has already seen it.') } : null,
+    { label: 'Copy link', onClick: () => share(postUrl(post)) },
+    store.me ? { label: 'Send in a message', href: `/messages?share=${post.id}` } : null,
+    { label: post.viewer?.bookmarked ? 'Unsave' : 'Save', onClick: () => toggleBookmark(post) },
+    mine ? { label: 'Edit', onClick: () => amend(post, onEdited) } : null,
+    mine || post.viewer?.can_delete ? { label: 'Delete', onClick: () => remove(post, onDeleted) } : null,
+    !mine ? { label: 'Report', onClick: () => toast('Reported.') } : null,
   ]);
 }
 
@@ -93,35 +92,34 @@ async function toggleBookmark(post) {
     if (post.viewer.bookmarked) await api.del(`posts/${post.id}/bookmark`);
     else await api.put(`posts/${post.id}/bookmark`);
     post.viewer.bookmarked = !post.viewer.bookmarked;
-    toast(post.viewer.bookmarked ? 'Bookmarked. Southbag has bookmarked it too.' : 'Bookmark removed. The copy we kept is not.');
-    document.querySelectorAll(`[data-post-id="${post.id}"] .bm`).forEach(b => b.classList.toggle('bookmarked', post.viewer.bookmarked));
+    toast(post.viewer.bookmarked ? 'Saved.' : 'Removed from saved.');
+    document.querySelectorAll(`[data-post-id="${post.id}"] .bm`).forEach(b => { b.textContent = post.viewer.bookmarked ? 'Saved' : 'Save'; });
   } catch (err) { toastError(err); }
 }
 
 async function amend(post, onEdited) {
   let title, textarea;
   const ok = await dialog({
-    title: 'Amend post',
+    title: 'Edit post',
     wide: true,
     body: h('div',
       post.kind === 'video' ? h('label.field', h('span', 'Title'), title = h('input.input', { value: post.title || '', maxLength: 120 })) : null,
-      h('label.field', h('span', 'Text'), textarea = h('textarea.textarea.boxed', { rows: 5 }, post.body)),
-      h('p.fine', 'Amendments are logged. The original is retained.')),
-    actions: [{ label: 'Cancel', value: false }, { label: 'Amend', value: true, primary: true }],
+      h('label.field', h('span', 'Text'), textarea = h('textarea.textarea.boxed', { rows: 5 }, post.body))),
+    actions: [{ label: 'Cancel', value: false }, { label: 'Save', value: true, primary: true }],
   });
   if (!ok) return;
   try {
     const { post: updated } = await api.patch(`posts/${post.id}`, { body: textarea.value, ...(title && { title: title.value }) });
-    toast('Amended. The original is retained.');
+    toast('Saved.');
     onEdited ? onEdited(updated) : replaceCards(updated);
   } catch (err) { toastError(err); }
 }
 
 async function remove(post, onDeleted) {
-  if (!(await confirm('Request deletion of this post? Deletion is advisory.', { ok: 'Request deletion' }))) return;
+  if (!(await confirm('Delete this post?', { title: 'Delete post', ok: 'Delete' }))) return;
   try {
     await api.del(`posts/${post.id}`);
-    toast('Deletion request filed. Posts are never fully deleted.');
+    toast('Deleted.');
     if (onDeleted) onDeleted(post);
     else document.querySelectorAll(`[data-post-id="${post.id}"]`).forEach(el => el.remove());
   } catch (err) { toastError(err); }
@@ -135,12 +133,10 @@ function replaceCards(post) {
   });
 }
 
-/** Summary like "❤️😂 12". */
+/** Summary like "Like 3, Haha 1". */
 export function reactionSummary(post) {
   if (!post.counts.reactions) return null;
-  const top = post.reactions.slice(0, 3).map(([type]) => REACTIONS[type]?.emoji || '❤️');
-  return h('span.reaction-summary', { title: post.reactions.map(([t, n]) => `${REACTIONS[t]?.label}: ${n}`).join(', ') },
-    h('span.emo', top.join('')), count(post.counts.reactions));
+  return h('span.reaction-summary', post.reactions.slice(0, 3).map(([t, n]) => `${REACTIONS[t]?.label || t} ${count(n)}`).join(', '));
 }
 
 /** Like button with a Facebook-style picker on hover / long press. Updates `post` in place. */
@@ -151,9 +147,8 @@ export function reactionButton(post, { onChange } = {}) {
     const r = post.viewer.reaction;
     btn.classList.toggle('on', Boolean(r));
     btn.setAttribute('aria-pressed', r ? 'true' : 'false');
-    btn.title = r ? 'Withdraw reaction (processing: 1–3 business days)' : 'Like (fees apply)';
-    mount(btn, r && r !== 'like' ? h('span', { style: 'font-size:1.1rem' }, REACTIONS[r].emoji) : icon('heart'),
-      post.counts.reactions ? h('span', count(post.counts.reactions)) : h('span.sr-only', 'Like'));
+    const word = r ? (r === 'like' ? 'Liked' : REACTIONS[r].label) : 'Like';
+    mount(btn, post.counts.reactions ? `${word} (${count(post.counts.reactions)})` : word);
   };
   const react = async type => {
     if (!store.me) return login();
@@ -169,7 +164,6 @@ export function reactionButton(post, { onChange } = {}) {
       Object.assign(post, { viewer: fresh.viewer, counts: fresh.counts, reactions: fresh.reactions });
       paint();
       onChange?.(post);
-      if (!removing && !before.viewer.reaction && Math.random() < 0.25) toast(`${REACTIONS[type].label}d.`, { fee: 'Appreciation surcharge' });
     } catch (err) {
       Object.assign(post, before);
       paint();
@@ -184,7 +178,7 @@ export function reactionButton(post, { onChange } = {}) {
       Object.entries(REACTIONS).map(([type, r]) => h('button', {
         type: 'button', title: r.label, 'aria-label': r.label,
         onclick: e => { e.stopPropagation(); closePicker(); react(type); },
-      }, r.emoji)));
+      }, r.label)));
     wrap.append(picker);
   };
   const closePicker = () => { picker?.remove(); picker = null; };
@@ -209,26 +203,25 @@ export function reactionButton(post, { onChange } = {}) {
 
 /** Repost button: menu with Repost / Quote. */
 function repostButton(post) {
-  const btn = h('button.icon-btn', { type: 'button', title: 'Repost', class: { reposted: post.viewer.reposted } },
-    icon('repost'), post.counts.reposts ? h('span', count(post.counts.reposts)) : h('span.sr-only', 'Repost'));
+  const label = () => `${post.viewer.reposted ? 'Reposted' : 'Repost'}${post.counts.reposts ? ` (${count(post.counts.reposts)})` : ''}`;
+  const btn = h('button.icon-btn', { type: 'button', 'aria-pressed': post.viewer.reposted ? 'true' : 'false' }, label());
   btn.addEventListener('click', e => {
     e.stopPropagation();
     if (!store.me) return login();
     menu(btn, [
       post.viewer.reposted
-        ? { label: 'Undo repost', icon: 'repost', onClick: () => doRepost(false) }
-        : { label: 'Repost', icon: 'repost', onClick: () => doRepost(true) },
-      { label: 'Quote', icon: 'edit', onClick: () => quote(post) },
+        ? { label: 'Undo repost', onClick: () => doRepost(false) }
+        : { label: 'Repost', onClick: () => doRepost(true) },
+      { label: 'Quote', onClick: () => quote(post) },
     ]);
   });
   async function doRepost(on) {
     try {
       const { post: fresh } = on ? await api.post(`posts/${post.id}/repost`) : await api.del(`posts/${post.id}/repost`);
       Object.assign(post, { viewer: fresh.viewer, counts: fresh.counts });
-      btn.classList.toggle('reposted', post.viewer.reposted);
-      btn.querySelector('span').textContent = post.counts.reposts ? count(post.counts.reposts) : 'Repost';
-      btn.querySelector('span').className = post.counts.reposts ? '' : 'sr-only';
-      toast(on ? 'Reposted. Kevin was first.' : 'Repost withdrawn.');
+      btn.textContent = label();
+      btn.setAttribute('aria-pressed', post.viewer.reposted ? 'true' : 'false');
+      toast(on ? 'Reposted.' : 'Repost removed.');
     } catch (err) { toastError(err); }
   }
   return btn;
@@ -244,10 +237,10 @@ export async function quote(post) {
     actions: [],
     body: close => h('div',
       composer({
-        placeholder: 'Add a comment. Keep it compliant.',
+        placeholder: 'Add a comment',
         quoteOf: post,
         autofocus: true,
-        onPosted: () => { close(); toast('Quoted. The original author has been notified and logged.'); },
+        onPosted: () => { close(); toast('Posted.'); },
       }),
       h('div.quote', embeddedPost(post))),
   });
@@ -255,7 +248,7 @@ export async function quote(post) {
 
 /** The compact original inside a quote or repost. */
 function embeddedPost(post) {
-  if (!post) return h('p.deleted', 'This post is unavailable. It may have been deleted, or Kevin may simply prefer you not see it.');
+  if (!post) return h('p.deleted', 'This post is unavailable.');
   return h('div', { onclick: e => { if (!e.target.closest('a, button, video')) navigate(postUrl(post)); } },
     h('div.row', avatar(post.author, { size: 'xs', link: false }), userName(post.author), h('span.muted', `· ${timeAgo(post.created_at)}`)),
     post.title ? h('div.post-title', post.title) : null,
@@ -280,14 +273,14 @@ export function postCard(input, options = {}) {
   });
   el._postOptions = options;
   if (isRepost) {
-    el.append(h('div.post-context', icon('repost'), h('a', { href: `/@${input.author.handle}` }, input.author.name), ' reposted'));
+    el.append(h('div.post-context', h('a', { href: `/@${input.author.handle}` }, input.author.name), ' reposted'));
   } else if (input.reply_to && !compact) {
-    el.append(h('div.post-context', icon('comment'), 'Replying to ', input.reply_to.author
+    el.append(h('div.post-context', 'Replying to ', input.reply_to.author
       ? h('a', { href: `/@${input.reply_to.author.handle}` }, `@${input.reply_to.author.handle}`)
       : 'a post'));
   }
   if (post.deleted) {
-    el.append(h('p.deleted', 'This post was deleted. The deletion request was approved. A copy was retained.'));
+    el.append(h('p.deleted', 'This post was deleted.'));
     return el;
   }
   el.append(header(post, { onDeleted, onEdited }));
@@ -297,8 +290,8 @@ export function postCard(input, options = {}) {
   if (media) el.append(h('div.post-media', media));
   if (post.repost_of && post.body) el.append(h('div.quote', embeddedPost(post.repost_of)));
 
-  const commentBtn = h('button.icon-btn', { type: 'button', title: 'Comment' },
-    icon('comment'), post.counts.replies ? h('span', count(post.counts.replies)) : h('span.sr-only', 'Comment'));
+  const commentBtn = h('button.icon-btn', { type: 'button' },
+    post.counts.replies ? `Comment (${count(post.counts.replies)})` : 'Comment');
   commentBtn.addEventListener('click', e => {
     e.stopPropagation();
     if (onReply) onReply(post);
@@ -309,11 +302,11 @@ export function postCard(input, options = {}) {
     commentBtn,
     repostButton(post),
     (post.kind === 'video' || post.kind === 'short') && post.counts.views
-      ? h('span.icon-btn', { title: 'Views' }, icon('eye'), count(post.counts.views)) : null,
+      ? h('span.muted', `${count(post.counts.views)} views`) : null,
     h('span.spacer'),
     reactionSummary(post),
-    h('button.icon-btn.bm', { type: 'button', title: 'Bookmark', class: { bookmarked: post.viewer.bookmarked }, onclick: e => { e.stopPropagation(); toggleBookmark(post); } }, icon('bookmark')),
-    h('button.icon-btn', { type: 'button', title: 'Share', onclick: e => { e.stopPropagation(); share(postUrl(post)); } }, icon('share')),
+    h('button.icon-btn.bm', { type: 'button', onclick: e => { e.stopPropagation(); toggleBookmark(post); } }, post.viewer.bookmarked ? 'Saved' : 'Save'),
+    h('button.icon-btn', { type: 'button', onclick: e => { e.stopPropagation(); share(postUrl(post)); } }, 'Share'),
   ));
 
   if (link) {
@@ -326,12 +319,5 @@ export function postCard(input, options = {}) {
   return el;
 }
 
-/** First post celebration, used by the composer. */
-export function celebrateFirstPost() {
-  try {
-    if (localStorage.getItem('sb_first_post')) return;
-    localStorage.setItem('sb_first_post', '1');
-  } catch { return; }
-  confetti();
-  toast('Your first post. It will be retained permanently.');
-}
+/** Removed (it used to throw confetti). Kept so older call sites keep working. */
+export function celebrateFirstPost() {}

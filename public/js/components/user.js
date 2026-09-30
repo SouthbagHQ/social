@@ -1,7 +1,7 @@
 // People: avatars, names, follow buttons, user rows.
 
 import { api } from '../api.js';
-import { h, icon } from '../dom.js';
+import { h } from '../dom.js';
 import { login, store } from '../store.js';
 import { toast, toastError, confirm } from '../ui.js';
 
@@ -16,13 +16,7 @@ export function avatar(user, { size = '', round = false, link = true, ring = nul
     : h('span.avatar', { class: cls }, inner);
 }
 
-export const verifiedBadge = () => {
-  const el = icon('verified', 'verified');
-  el.setAttribute('aria-label', 'Southbag Verified™ (purchased)');
-  el.setAttribute('aria-hidden', 'false');
-  el.setAttribute('role', 'img');
-  return el;
-};
+export const verifiedBadge = () => h('span.verified', 'Verified');
 
 /** "Name ✓ @handle" */
 export function userName(user, { handle = true, link = true } = {}) {
@@ -34,22 +28,21 @@ export function userName(user, { handle = true, link = true } = {}) {
 }
 
 /**
- * Follow toggle ("Add to The Pile" / "In The Pile"). `user` needs { id, handle, is_following? }.
+ * Follow toggle ("Follow" / "Following"). `user` needs { id, handle, is_following? }.
  * Calls PUT/DELETE /api/users/:handle/follow.
  */
 export function followButton(user, { small = true, onChange } = {}) {
   let following = Boolean(user.is_following);
   const btn = h(small ? 'button.btn-small' : 'button.btn', { type: 'button' });
   const paint = () => {
-    btn.textContent = following ? 'In The Pile' : 'Add to The Pile';
+    btn.textContent = following ? 'Following' : 'Follow';
     btn.classList.toggle('outline', following);
-    btn.title = following ? 'Remove from The Pile' : `Follow @${user.handle}`;
   };
   paint();
   if (store.me?.id === user.id) return null;
   btn.addEventListener('click', async () => {
     if (!store.me) return login();
-    if (following && !(await confirm(`Remove @${user.handle} from The Pile? No removal process is documented, but we will try.`, { ok: 'Remove' }))) return;
+    if (following && !(await confirm(`Unfollow @${user.handle}?`, { title: 'Unfollow', ok: 'Unfollow' }))) return;
     btn.disabled = true;
     try {
       if (following) await api.del(`users/${user.handle}/follow`);
@@ -57,7 +50,7 @@ export function followButton(user, { small = true, onChange } = {}) {
       following = !following;
       user.is_following = following;
       paint();
-      if (following) toast(`@${user.handle} has been added to The Pile.`);
+      if (following) toast(`Following @${user.handle}.`);
       onChange?.(following);
     } catch (err) { toastError(err); }
     btn.disabled = false;

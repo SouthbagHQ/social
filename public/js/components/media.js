@@ -1,6 +1,6 @@
 // Rendering files from D1: photo grids, carousels, video players and thumbnails.
 
-import { h, icon } from '../dom.js';
+import { h } from '../dom.js';
 import { duration as fmtDuration } from '../format.js';
 import { lightbox } from '../ui.js';
 
@@ -22,15 +22,15 @@ export function photoGrid(media) {
 export function carousel(media) {
   const track = h('div.track', media.map(m => img(m, { onclick: () => lightbox(m.url, m.alt) })));
   if (media.length === 1) return h('div.carousel', track);
-  const dots = h('div.dots', media.map((_, i) => h('span', { class: { on: i === 0 } })));
+  const dots = h('div.dots', `1 / ${media.length}`);
   const go = dir => track.scrollBy({ left: dir * track.clientWidth, behavior: 'smooth' });
   track.addEventListener('scroll', () => {
     const i = Math.round(track.scrollLeft / track.clientWidth);
-    [...dots.children].forEach((d, j) => d.classList.toggle('on', i === j));
+    dots.textContent = `${i + 1} / ${media.length}`;
   }, { passive: true });
   return h('div.carousel', track, dots,
-    h('button.nav-btn.prev', { type: 'button', 'aria-label': 'Previous photo', onclick: e => { e.stopPropagation(); go(-1); } }, icon('chevron-left')),
-    h('button.nav-btn.next', { type: 'button', 'aria-label': 'Next photo', onclick: e => { e.stopPropagation(); go(1); } }, icon('chevron-right')));
+    h('button.nav-btn.prev', { type: 'button', onclick: e => { e.stopPropagation(); go(-1); } }, 'Previous'),
+    h('button.nav-btn.next', { type: 'button', onclick: e => { e.stopPropagation(); go(1); } }, 'Next'));
 }
 
 /** A <video> for a media item. Options pass through to the element (autoplay, muted, loop, controls…). */
@@ -51,7 +51,7 @@ export function videoThumb(m, { href, vertical = false } = {}) {
     : h('video', { src: `${m.url}#t=0.5`, preload: 'metadata', muted: true, playsInline: true });
   return h(href ? 'a.video-thumb' : 'div.video-thumb', { href, class: { vertical } },
     still,
-    h('span.play', icon('play')),
+    h('span.play', 'Play'),
     m.duration ? h('span.duration', fmtDuration(m.duration)) : null);
 }
 

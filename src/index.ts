@@ -27,9 +27,9 @@ const apiOrigins = new Set(['https://southbaghq.github.io', 'http://localhost:80
 app.onError((error, c) => {
   if (error instanceof HTTPException) return c.json({ error: error.message }, error.status);
   console.error(error);
-  return c.json({ error: 'Something went wrong. Kevin has been notified. He does not care.' }, 500);
+  return c.json({ error: 'Something went wrong.' }, 500);
 });
-app.notFound(c => c.json({ error: 'Not found. REF: SB-ERR-404' }, 404));
+app.notFound(c => c.json({ error: 'Not found.' }, 404));
 
 // ── Auth ──
 app.get('/auth/login', c => login(c.req.raw, c.env, safeReturnTo(c.req.query('next'))));

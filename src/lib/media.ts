@@ -79,7 +79,7 @@ export async function reserveShard(env: Env, size: number): Promise<string> {
     .map(name => ({ name, bytes: used.get(name) ?? 0 }))
     .sort((a, b) => a.bytes - b.bytes)[0];
   if (shard.bytes + size > SHARD_SOFT_LIMIT)
-    throw new Error('Southbag has run out of places to put your content. Bind another MEDIA_n database.');
+    throw new Error('Storage is full. Bind another MEDIA_n database.');
   await env.DB.prepare(`INSERT INTO media_shards (shard, bytes) VALUES (?, ?)
     ON CONFLICT(shard) DO UPDATE SET bytes = bytes + excluded.bytes`).bind(shard.name, size).run();
   return shard.name;

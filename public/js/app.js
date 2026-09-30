@@ -1,15 +1,13 @@
 // Southbag Social — boot, shell and route table.
 //
-// Shell (top to bottom), following Southbag Online Banking's signed-in pages:
-//   yellow promotional strip → header (logo + "Social", search, account) → [home only: "Welcome, name"
-//   + status line] → groove tab-strip nav → layout (main + announcements sidebar) → mobile bottom bar.
+// Shell (top to bottom): promotional strip, header (stretched logo, search, account), then the
+// layout: sidebar of links, the page, and a column of extras. Same furniture as Identity and Office.
 
-import { h, icon, mount } from './dom.js';
-import { applyTheme, privacyPanel, promoCarousel, promoStrip, scheduleInterruptions } from './gags.js';
+import { h, mount } from './dom.js';
+import { applyTheme, promoStrip } from './gags.js';
 import { navigate, route, startRouter } from './router.js';
 import { login, store } from './store.js';
 import { errorBox, loading, menu } from './ui.js';
-import { avatar } from './components/user.js';
 import { sidebar, footer } from './components/sidebar.js';
 
 // ── Routes ──────────────────────────────────────────────────────────────
@@ -49,90 +47,71 @@ route('/terms', () => import('./views/terms.js'));
 route('/404', () => import('./views/not-found.js'));
 
 // ── Shell ───────────────────────────────────────────────────────────────
+// Office's header (stretched logo, search, account) over Identity's dashboard: a sidebar of
+// plain underlined links, the page, and a column of extras.
 const sections = [
-  { href: '/', label: 'Feed', icon: 'home' },
-  { href: '/explore', label: 'Explore', icon: 'compass' },
-  { href: '/photos', label: 'Photos', icon: 'image' },
-  { href: '/videos', label: 'Videos', icon: 'video' },
-  { href: '/shorts', label: 'Shorts', icon: 'shorts' },
-  { href: '/groups', label: 'Groups', icon: 'users' },
-  { href: '/messages', label: 'Messages', icon: 'message', badge: 'messages', auth: true },
-  { href: '/notifications', label: 'Notifications', icon: 'bell', badge: 'notifications', auth: true },
+  { href: '/', label: 'Feed' },
+  { href: '/explore', label: 'Explore' },
+  { href: '/photos', label: 'Photos' },
+  { href: '/videos', label: 'Videos' },
+  { href: '/shorts', label: 'Shorts' },
+  { href: '/groups', label: 'Groups' },
+  { href: '/messages', label: 'Messages', badge: 'messages', auth: true },
+  { href: '/notifications', label: 'Notifications', badge: 'notifications', auth: true },
+  { href: '/friends', label: 'Friends', badge: 'friend_requests', auth: true },
+  { href: '/bookmarks', label: 'Bookmarks', auth: true },
+  { href: '/settings', label: 'Settings', auth: true },
 ];
 
 const app = document.getElementById('app');
 const shell = {
   promo: h('div'),
   header: h('header.site-header'),
-  welcome: h('div.welcome'),
-  nav: h('nav.south-nav', { 'aria-label': 'Southbag Social sections' }),
+  nav: h('nav.south-nav', { 'aria-label': 'Southbag Social' }),
   main: h('main', { id: 'main', tabIndex: -1 }),
   aside: h('aside'),
   footer: h('div'),
-  bottom: h('nav.bottom-bar', { 'aria-label': 'Quick navigation' }),
 };
-shell.layout = h('div.layout', shell.main, shell.aside);
+shell.layout = h('div.layout', shell.nav, shell.main, shell.aside);
 
 const isCurrent = (href, path) => href === '/' ? path === '/' : path === href || path.startsWith(href + '/') || (href === '/groups' && path.startsWith('/g/'));
 
 function renderHeader() {
   const me = store.me;
-  const search = h('input.input', {
-    type: 'search', name: 'q', placeholder: 'Search Southbag Social', 'aria-label': 'Search',
+  const search = h('input', {
+    type: 'search', name: 'q', placeholder: 'Search', 'aria-label': 'Search',
     value: location.pathname === '/search' ? new URLSearchParams(location.search).get('q') || '' : '',
   });
-  const accountBtn = me ? h('button.icon-btn', { type: 'button', 'aria-label': 'Account menu', style: 'padding:0' }, avatar(me, { size: 'sm', link: false })) : null;
+  const accountBtn = me ? h('button', { type: 'button' }, me.name) : null;
   accountBtn?.addEventListener('click', () => menu(accountBtn, [
-    { label: `@${me.handle}`, icon: 'user', href: `/@${me.handle}` },
-    { label: 'Friends', icon: 'users', href: '/friends' },
-    { label: 'Bookmarks', icon: 'bookmark', href: '/bookmarks' },
-    { label: 'Get verified ($8.00/week)', icon: 'verified', href: '/verified' },
-    { label: 'Settings', icon: 'settings', href: '/settings' },
-    'divider',
-    { label: 'Southbag Identity™', icon: 'lock', onClick: () => window.open('https://identity.southbag.cc/home', '_blank', 'noopener') },
-    { label: 'Log out', icon: 'log-out', onClick: () => { location.href = '/auth/logout'; } },
+    { label: 'Profile', href: `/@${me.handle}` },
+    { label: 'Settings', href: '/settings' },
+    { label: 'Southbag Identity', onClick: () => window.open('https://identity.southbag.cc/home', '_blank', 'noopener') },
+    { label: 'Sign out', onClick: () => { location.href = '/auth/logout'; } },
   ]));
   mount(shell.header,
-    h('a.brand', { href: '/', 'aria-label': 'Southbag Social home' },
-      h('img', { src: '/img/logo-112.png', alt: 'southbag', width: 129, height: 44 }),
+    h('a.brand', { href: '/', 'aria-label': 'Southbag Social' },
+      h('img', { src: '/img/logo-400.png', alt: 'southbag' }),
       h('h2', 'Social')),
     h('form.search', { role: 'search', onsubmit: e => { e.preventDefault(); if (search.value.trim()) navigate(`/search?q=${encodeURIComponent(search.value.trim())}`); } },
-      icon('search'), search),
+      search),
     h('div.account',
-      me ? h('a.btn-small', { href: '/upload', title: 'Upload a video' }, icon('upload'), h('span.label', 'Upload')) : null,
-      me ? accountBtn : h('button.btn-small', { type: 'button', onclick: () => login() }, 'Log in with Southbag Identity')));
+      me ? h('a.btn', { href: '/upload' }, 'Upload') : null,
+      me ? accountBtn : h('button', { type: 'button', onclick: () => login() }, 'Log in')));
 }
 
 function renderNav(path) {
   const me = store.me;
-  const items = [...sections.filter(s => !s.auth || me), me && { href: `/@${me.handle}`, label: 'Profile', icon: 'user' }].filter(Boolean);
+  const items = [...sections.filter(s => !s.auth || me), me && { href: `/@${me.handle}`, label: 'Profile' }].filter(Boolean);
   const badge = key => key && store.unread[key] ? h('span.badge', store.unread[key] > 99 ? '99+' : String(store.unread[key])) : null;
-  mount(shell.nav, h('ul', items.map(s => h('li', h('a', { href: s.href, 'aria-current': isCurrent(s.href, path) ? 'page' : null },
-    icon(s.icon), h('span.label', s.label), badge(s.badge))))));
-  const bottom = [
-    { href: '/', label: 'Feed', icon: 'home' },
-    { href: '/shorts', label: 'Shorts', icon: 'shorts' },
-    me ? { href: '/upload', label: 'Create', icon: 'plus', create: true } : { href: '/explore', label: 'Explore', icon: 'compass' },
-    { href: me ? '/messages' : '/videos', label: me ? 'Messages' : 'Videos', icon: me ? 'message' : 'video', badge: me && 'messages' },
-    me ? { href: '/notifications', label: 'Alerts', icon: 'bell', badge: 'notifications' } : { href: '/groups', label: 'Groups', icon: 'users' },
-  ];
-  mount(shell.bottom, bottom.map(s => h('a', { href: s.href, class: { create: s.create }, 'aria-current': isCurrent(s.href, path) ? 'page' : null, 'aria-label': s.label },
-    icon(s.icon), h('span', s.label), badge(s.badge))));
-}
-
-function renderWelcome(path) {
-  const me = store.me;
-  if (path !== '/' || !me) return mount(shell.welcome);
-  mount(shell.welcome,
-    h('h1', `Welcome, ${me.name}`),
-    h('p', 'Your engagement: ', h('span.stuck-loading')),
-    h('p.status', `@${me.handle} · ${me.follower_count} in The Pile · ${me.verified ? 'verified (purchased)' : 'unverified'} · shadowbanned · Bronze Minus`));
-}
-
-function paintChrome(path) {
-  renderHeader();
-  renderNav(path);
-  renderWelcome(path);
+  mount(shell.nav,
+    h('p.nav-title', 'Southbag Social'),
+    me ? h('p.nav-hello.tiny', `Hello, "${me.email || me.handle}" !`) : null,
+    h('ul', items.map(s => h('li', h('a', { href: s.href, 'aria-current': isCurrent(s.href, path) ? 'page' : null }, s.label, badge(s.badge))))),
+    h('div.nav-footer',
+      me ? h('button', { type: 'button', onclick: () => { location.href = '/auth/logout'; } }, 'Sign out')
+        : h('button', { type: 'button', onclick: () => login() }, 'Log in'),
+      h('p.tiny', 'Kevin is watching')));
 }
 
 store.on(() => { renderHeader(); renderNav(location.pathname); });
@@ -141,17 +120,18 @@ store.on(() => { renderHeader(); renderNav(location.pathname); });
 async function render(ctx, matched, controller, scroll) {
   const path = ctx.path;
   ctx.me = store.me;
-  paintChrome(path);
+  renderHeader();
+  renderNav(path);
   let layout = 'default';
   ctx.layout = kind => { layout = kind; shell.layout.className = `layout ${kind === 'default' ? '' : kind}`.trim(); };
   ctx.layout('default');
-  ctx.title = text => { document.title = text ? `${text} — Southbag Social` : 'Southbag Social'; };
+  ctx.title = text => { document.title = text ? `${text} - Southbag Social` : 'Southbag Social'; };
   ctx.title('');
   ctx.requireAuth = () => {
     if (store.me) return true;
-    mount(shell.main, h('div.south-card.flat',
-      h('h2', 'Southbag Identity is required.'),
-      h('p', 'You must log in with your Southbag account before you can post, watch or be watched.'),
+    mount(shell.main, h('div.south-card',
+      h('h2', 'Log in'),
+      h('p', 'You need a Southbag account to see this page.'),
       h('button.btn-large', { type: 'button', onclick: () => login() }, 'Log in with Southbag Identity')));
     return false;
   };
@@ -169,39 +149,29 @@ async function render(ctx, matched, controller, scroll) {
   } catch (err) {
     if (controller.signal.aborted || err.name === 'AbortError') return;
     console.error(err);
-    mount(shell.main, h('div.south-card.flat',
-      h('h2', 'Something went wrong.'),
-      errorBox(err),
-      h('p.muted', 'It has been logged. Kevin does not need to respond.')));
+    mount(shell.main, h('div.south-card', h('h2', 'Something went wrong'), errorBox(err)));
   }
   if (layout === 'default') mount(shell.aside, sidebar(ctx));
   else mount(shell.aside);
-  mount(shell.footer, layout === 'full' || layout === 'default' ? null : footer());
+  mount(shell.footer, layout === 'wide' ? footer() : null);
 }
 
 // ── Boot ────────────────────────────────────────────────────────────────
 async function boot() {
   applyTheme();
-  mount(app, loading('Loading...'));
+  mount(app, loading());
   await store.refresh();
   mount(shell.promo, promoStrip());
-  mount(app, shell.promo, shell.header, shell.welcome, shell.nav, shell.layout, shell.footer, shell.bottom);
+  mount(app, shell.promo, shell.header, shell.layout, shell.footer);
   const params = new URLSearchParams(location.search);
-  if (params.get('login_error')) {
+  if (params.get('login_error') || params.get('signed_out')) {
     const { toast } = await import('./ui.js');
-    toast(`Login failed (${params.get('login_error')}). Still probably secure.`, { error: true, timeout: 8000 });
-    history.replaceState({}, '', location.pathname);
-  }
-  if (params.get('signed_out')) {
-    const { toast } = await import('./ui.js');
-    toast('Signed out. Your data has not been.');
+    if (params.get('login_error')) toast(`Login failed (${params.get('login_error')}).`, { error: true, timeout: 8000 });
+    else toast('Signed out.');
     history.replaceState({}, '', location.pathname);
   }
   startRouter(render);
   if (store.me) {
-    promoCarousel();
-    document.body.append(privacyPanel());
-    scheduleInterruptions();
     // Poll unread counts once a minute (cheap: one query).
     setInterval(() => { if (document.visibilityState === 'visible') store.refresh(); }, 60000);
   }
