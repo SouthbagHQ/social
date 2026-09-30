@@ -389,7 +389,7 @@ aside .sticky { position: sticky; top: 64px; }
 .carousel { position: relative; border: 2px inset var(--sb-inset); background: #000; overflow: hidden; }
 .carousel .track { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
 .carousel .track::-webkit-scrollbar { display: none; }
-.carousel .track > * { flex: 0 0 100%; scroll-snap-align: center; aspect-ratio: 1; object-fit: cover; width: 100%; }
+.carousel .track > * { flex: 0 0 100%; scroll-snap-align: center; aspect-ratio: 1; object-fit: cover; width: 100%; height: auto; }
 .carousel .nav-btn {
   position: absolute; top: 50%; transform: translateY(-50%); width: 32px; height: 32px; border-radius: 50%; border: 0;
   background: rgba(255, 255, 255, 0.85); color: #000; cursor: pointer; display: flex; align-items: center; justify-content: center;
