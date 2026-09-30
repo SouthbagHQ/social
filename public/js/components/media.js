@@ -3,6 +3,7 @@
 import { h } from '../dom.js';
 import { duration as fmtDuration } from '../format.js';
 import { lightbox } from '../ui.js';
+import { playPostButton } from './player.js';
 
 const img = (m, extra = {}) => h('img', {
   src: m.url, alt: m.alt || '', loading: 'lazy', decoding: 'async',
@@ -67,6 +68,7 @@ export function postMedia(post, { inFeed = true } = {}) {
     return videoPlayer(video);
   }
   const audio = media.find(m => m.kind === 'audio');
-  if (audio) return h('audio', { src: audio.url, controls: true, preload: 'none', style: 'width:100%' });
+  // Audio plays in the global player at the bottom of the page, so it keeps going as you browse.
+  if (audio) return h('div.post-audio', playPostButton(post, audio), h('span.muted', audio.duration ? `Audio, ${fmtDuration(audio.duration)}` : 'Audio'));
   return post.kind === 'photo' ? carousel(media) : photoGrid(media);
 }
