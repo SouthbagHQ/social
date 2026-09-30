@@ -73,7 +73,7 @@ const shell = {
 };
 shell.layout = h('div.layout', shell.main, shell.aside);
 
-const isCurrent = (href, path) => href === '/' ? path === '/' : path === href || path.startsWith(href + '/');
+const isCurrent = (href, path) => href === '/' ? path === '/' : path === href || path.startsWith(href + '/') || (href === '/groups' && path.startsWith('/g/'));
 
 function renderHeader() {
   const me = store.me;
