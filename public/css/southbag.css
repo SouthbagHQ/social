@@ -415,6 +415,7 @@ aside .sticky { position: sticky; top: 64px; }
 /* ── Composer ────────────────────────────────────────────────────────── */
 .composer { display: flex; gap: 10px; }
 .composer .grow textarea { border: none; border-bottom: 1px solid #9e9e9e; resize: none; min-height: 3.2rem; font-size: 1.05rem; }
+.composer .grow textarea { display: block; width: 100%; background: transparent; }
 .composer .grow textarea:focus { border-bottom-color: var(--sb-teal); box-shadow: 0 1px 0 0 var(--sb-teal); }
 .composer .tools { display: flex; align-items: center; gap: 4px; margin-top: 8px; flex-wrap: wrap; }
 .composer .tools .spacer { flex: 1; }
