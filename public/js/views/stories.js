@@ -1,13 +1,15 @@
-// /stories/:handle — the full-screen story viewer (Instagram).
-//   GET /api/stories/:handle → { user, items }; GET /api/stories (tray order, to move on to the next person)
+// /stories/:handle - the full-screen story viewer.
+//   GET /api/stories/:handle -> { user, items }; GET /api/stories (tray order, to move on to the next person)
 //   POST /api/stories/:id/view; GET /api/stories/:id/viewers (own); DELETE /api/stories/:id (own)
+//   Replies are sent as a direct message (POST /api/messages).
 //
-// Tap right / left (or arrow keys) for next / previous, hold to pause, swipe down or Escape to close.
+// Every story is shown in the same fixed 9:16 box and stretched to fill it.
+// Click right / left (or arrow keys) for next / previous, hold to pause, swipe down or Escape to close.
 // Images show for 5 seconds; videos for their length. At the end of someone's stories the viewer
 // moves on to the next person in the tray without reloading the page.
 
 import { api } from '../api.js';
-import { h, icon, mount } from '../dom.js';
+import { h, mount } from '../dom.js';
 import { timeAgo } from '../format.js';
 import { navigate } from '../router.js';
 import { login, store } from '../store.js';
@@ -28,7 +30,7 @@ export default async function storiesView(ctx) {
   const canGoBack = Boolean(origin) && history.state !== null;
 
   const root = h('div.story-viewer', { role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Stories', tabIndex: -1 });
-  mount(root, h('div.story-stage', loading('Loading...')));
+  mount(root, h('div.story-stage', loading()));
   document.body.classList.add('story-viewer-open');
 
   let handle = ctx.params.handle.replace(/^@/, '');
@@ -57,7 +59,7 @@ export default async function storiesView(ctx) {
     document.body.classList.remove('story-viewer-open');
   });
 
-  // ── Loading reels ────────────────────────────────────────────────────
+  // Loading reels
   const reelCache = new Map();
   const fetchReel = h => {
     if (!reelCache.has(h)) reelCache.set(h, api.get(`stories/${encodeURIComponent(h)}`).catch(err => { reelCache.delete(h); throw err; }));
@@ -72,7 +74,7 @@ export default async function storiesView(ctx) {
       data = await fetchReel(handle);
     } catch (err) {
       if (closed) return;
-      mount(root, h('div.story-stage.story-message', errorBox(err), closeButton()));
+      mount(root, h('div.story-stage.story-message', closeButton(), errorBox(err)));
       return;
     }
     if (closed) return;
@@ -82,9 +84,9 @@ export default async function storiesView(ctx) {
       mount(root, h('div.story-stage.story-message',
         closeButton(),
         empty({
-          icon: 'camera', title: 'No live stories.',
-          text: `${reel.user.name} has nothing live right now. Their stories expired. They were retained.`,
-          action: store.me?.id === reel.user.id ? h('button.btn', { type: 'button', onclick: async () => { if (await openStoryComposer()) { reelCache.delete(handle); openReel(handle); } } }, 'Add to your story') : null,
+          title: 'No stories.',
+          text: `${reel.user.name} has no stories right now.`,
+          action: store.me?.id === reel.user.id ? h('button.btn', { type: 'button', onclick: async () => { if (await openStoryComposer()) { reelCache.delete(handle); openReel(handle); } } }, 'Add story') : null,
         })));
       return;
     }
@@ -117,93 +119,105 @@ export default async function storiesView(ctx) {
     else { elapsed = 0; if (video) video.currentTime = 0; startedAt = performance.now(); }
   }
 
-  // ── Building the frame ───────────────────────────────────────────────
-  let frame, media, head, captionEl, footer, progress, timeEl;
+  // Building the frame
+  // Layout, top to bottom: progress, who and controls, the 9:16 box, caption, then Previous / Pause /
+  // Next and the reply box (or "Seen by" on your own stories).
+  let frame, media, captionEl, footer, progress, timeEl;
 
   function closeButton() {
-    return h('button.icon-btn.story-close', { type: 'button', 'aria-label': 'Close stories', onclick: close }, icon('close'));
+    return h('button.btn-small.story-close', { type: 'button', onclick: close }, 'Close');
   }
 
   function build() {
     const own = store.me?.id === reel.user.id;
-    progress = h('div.story-progress', reel.items.map(() => h('span', h('i'))));
+    progress = h('div.story-progress', { 'aria-hidden': 'true' }, reel.items.map(() => h('span', h('i'))));
     bars = [...progress.children].map(s => s.firstChild);
     timeEl = h('span.story-time');
-    pauseBtn = h('button.icon-btn', { type: 'button', 'aria-label': 'Pause', onclick: e => { e.stopPropagation(); togglePause(); } }, icon('pause'));
-    const muteBtn = h('button.icon-btn.story-mute', { type: 'button', 'aria-label': muted ? 'Unmute' : 'Mute', onclick: e => {
+    pauseBtn = h('button.btn-small', { type: 'button', onclick: e => { e.stopPropagation(); togglePause(); } }, 'Pause');
+    const muteBtn = h('button.btn-small', { type: 'button', onclick: e => {
       e.stopPropagation();
       muted = !muted;
       if (video) video.muted = muted;
-      mount(muteBtn, icon(muted ? 'mute' : 'volume'));
-      muteBtn.setAttribute('aria-label', muted ? 'Unmute' : 'Mute');
-    } }, icon(muted ? 'mute' : 'volume'));
-    const moreBtn = h('button.icon-btn', { type: 'button', 'aria-label': 'More options' }, icon('more'));
+      muteBtn.textContent = muted ? 'Unmute' : 'Mute';
+    } }, muted ? 'Unmute' : 'Mute');
+    const moreBtn = h('button.btn-small', { type: 'button' }, 'More');
     moreBtn.addEventListener('click', e => {
       e.stopPropagation();
       hold();
       const story = reel.items[index];
       const m = menu(moreBtn, [
-        own ? { label: 'Delete story', icon: 'trash', danger: true, onClick: () => removeStory(story) } : null,
-        own ? { label: 'Add to your story', icon: 'plus', onClick: addMore } : null,
-        !own ? { label: 'Report to Kevin', icon: 'flag', onClick: () => toast('Reported. Kevin has already seen it.') } : null,
-        { label: 'Why am I seeing this?', icon: 'eye', onClick: () => dialog({ title: 'Algorithmic transparency', body: 'Kevin.' }) },
+        own ? { label: 'Add story', onClick: addMore } : null,
+        own ? { label: 'Delete', onClick: () => removeStory(story) } : null,
+        !own ? { label: 'Report', onClick: () => toast('Reported.') } : null,
       ]);
       // Resume once the menu is gone.
       const watch = new MutationObserver(() => { if (!m.isConnected) { watch.disconnect(); release(); } });
       watch.observe(document.body, { childList: true });
     });
-    head = h('div.story-head',
+    const head = h('div.story-head',
       progress,
       h('div.story-meta',
         h('a.story-who', { href: `/@${reel.user.handle}`, onclick: e => { e.preventDefault(); stop(); navigate(`/@${reel.user.handle}`); } },
-          avatar(reel.user, { size: 'sm', round: true, link: false }),
-          userName(reel.user, { handle: false, link: false }),
-          timeEl),
+          avatar(reel.user, { size: 'sm', link: false }),
+          h('span.grow', userName(reel.user, { handle: false, link: false }), ' ', timeEl)),
         h('span.spacer'),
-        muteBtn, pauseBtn, moreBtn, closeButton()));
+        muteBtn, moreBtn, closeButton()));
     media = h('div.story-media');
     captionEl = h('div.story-caption');
     footer = h('div.story-foot', own ? seenByButton() : replyBox());
-    frame = h('div.story-frame', media, h('div.story-shade'), head, captionEl, footer,
+    frame = h('div.story-frame', media,
       h('div.story-hit.prev', { 'aria-hidden': 'true' }), h('div.story-hit.next', { 'aria-hidden': 'true' }));
     bindGestures(frame);
     const prevUser = neighbour(-1), nextUser = neighbour(1);
     mount(root,
-      h('button.story-nav.prev', { type: 'button', 'aria-label': 'Previous story', onclick: prevStory }, icon('chevron-left')),
-      h('div.story-stage', frame),
-      h('button.story-nav.next', { type: 'button', 'aria-label': 'Next story', onclick: nextStory }, icon('chevron-right')),
       h('div.story-peek.prev', prevUser ? peek(prevUser) : null),
+      h('div.story-stage',
+        head,
+        frame,
+        captionEl,
+        h('div.story-controls',
+          h('button.btn-small', { type: 'button', onclick: prevStory }, 'Previous'),
+          pauseBtn,
+          h('button.btn-small', { type: 'button', onclick: nextStory }, 'Next')),
+        footer),
       h('div.story-peek.next', nextUser ? peek(nextUser) : null));
     root.focus({ preventScroll: true });
   }
 
-  const peek = item => h('button.story-peek-btn', { type: 'button', onclick: () => openReel(item.user.handle), 'aria-label': `Stories from ${item.user.name}` },
-    h('span.ring', { class: { live: true, seen: item.seen } }, avatar(item.user, { round: true, link: false })),
+  const peek = item => h('button.story-peek-btn', { type: 'button', onclick: () => openReel(item.user.handle) },
+    avatar(item.user, { link: false, ring: item.seen ? 'seen' : 'new' }),
     h('span', item.user.name));
 
   function seenByButton() {
-    const btn = h('button.story-seen', { type: 'button', onclick: e => { e.stopPropagation(); showViewers(reel.items[index]); } });
-    btn.paint = story => mount(btn, icon('eye'), `Seen by ${story.view_count || 0} and Kevin`);
+    const btn = h('button.btn-small', { type: 'button', onclick: e => { e.stopPropagation(); showViewers(reel.items[index]); } });
+    btn.paint = story => { btn.textContent = `Seen by ${story.view_count || 0}`; };
     return btn;
   }
 
   function replyBox() {
     if (!store.me) {
-      return h('button.story-seen', { type: 'button', onclick: e => { e.stopPropagation(); login(); } }, 'Log in to reply. Kevin will read it either way.');
+      return h('button.btn-small', { type: 'button', onclick: e => { e.stopPropagation(); login(); } }, 'Log in to reply');
     }
-    const input = h('input.story-reply-input', { placeholder: `Reply to ${reel.user.name}…`, maxLength: 500, 'aria-label': 'Reply' });
+    const input = h('input.story-reply-input', { placeholder: `Reply to ${reel.user.name}`, maxLength: 500, 'aria-label': 'Reply' });
+    const send = h('button.btn-small', { type: 'submit' }, 'Send');
     input.addEventListener('focus', hold);
     input.addEventListener('blur', release);
-    return h('form.story-reply', { onsubmit: e => {
+    return h('form.story-reply', { onsubmit: async e => {
       e.preventDefault();
-      if (!input.value.trim()) return;
-      input.value = '';
-      input.blur();
-      toast('Replies are forwarded to Kevin.');
-    } }, input, h('button.icon-btn', { type: 'submit', 'aria-label': 'Send reply' }, icon('send')));
+      const text = input.value.trim();
+      if (!text) return;
+      send.disabled = true;
+      try {
+        await api.post('messages', { handles: [reel.user.handle], body: `Replied to your story: ${text}` });
+        input.value = '';
+        input.blur();
+        toast('Reply sent.');
+      } catch (err) { toastError(err); }
+      send.disabled = false;
+    } }, input, send);
   }
 
-  // ── Showing one story ────────────────────────────────────────────────
+  // Showing one story
   function show() {
     stop();
     const story = reel.items[index];
@@ -211,7 +225,7 @@ export default async function storiesView(ctx) {
     video = null;
     bars.forEach((b, i) => { b.style.width = i < index ? '100%' : '0%'; });
     timeEl.textContent = timeAgo(story.created_at);
-    frame.style.background = storyBackground(story.background) || '#000';
+    frame.style.background = storyBackground(story.background) || '';
     const m = story.media;
     if (m.kind === 'video') {
       video = h('video', { src: m.url, poster: m.poster_url || undefined, playsInline: true, preload: 'auto', muted });
@@ -220,7 +234,7 @@ export default async function storiesView(ctx) {
       const el = video;
       video.addEventListener('error', () => {
         if (video !== el) return;
-        mount(captionEl, h('p', 'This video could not be played. It has been retained.'));
+        mount(captionEl, h('p', 'This video could not be played.'));
         video = null;
         duration = IMAGE_MS;
         startedAt = performance.now();
@@ -290,8 +304,7 @@ export default async function storiesView(ctx) {
 
   function paintPause() {
     if (!pauseBtn) return;
-    mount(pauseBtn, icon(paused ? 'play' : 'pause'));
-    pauseBtn.setAttribute('aria-label', paused ? 'Play' : 'Pause');
+    pauseBtn.textContent = paused ? 'Play' : 'Pause';
     root.classList.toggle('paused', paused || holds > 0);
   }
 
@@ -312,7 +325,7 @@ export default async function storiesView(ctx) {
     paintPause();
   }
 
-  // ── Gestures and keys ────────────────────────────────────────────────
+  // Gestures and keys
   function bindGestures(el) {
     let down = null, holdTimer = 0, held = false;
     el.addEventListener('pointerdown', e => {
@@ -354,7 +367,7 @@ export default async function storiesView(ctx) {
   }
   document.addEventListener('keydown', onKey);
 
-  // ── Owner actions ────────────────────────────────────────────────────
+  // Owner actions
   async function showViewers(story) {
     hold();
     await dialog({
@@ -364,18 +377,12 @@ export default async function storiesView(ctx) {
         api.get(`stories/${story.id}/viewers`).then(({ items, count }) => {
           story.view_count = count;
           footer.firstChild?.paint?.(story);
-          const real = items.filter(v => v.user.handle !== 'kevin');
-          const kevin = items.find(v => v.user.handle === 'kevin')?.user
-            || { id: 'kevin', handle: 'kevin', name: 'Kevin', avatar_url: null, verified: true };
           mount(list,
-            h('div.user-row.kevin',
-              avatar(kevin, { size: 'sm', round: true }),
-              h('div.grow', userName(kevin), h('div.bio', 'Seen before you posted it'))),
-            real.map(v => h('div.user-row',
-              avatar(v.user, { size: 'sm', round: true }),
+            items.map(v => h('div.user-row',
+              avatar(v.user, { size: 'sm' }),
               h('div.grow', userName(v.user)),
-              h('span.muted', { style: 'font-size:.84rem' }, timeAgo(v.created_at)))),
-            real.length ? null : h('p.muted', { style: 'margin:8px 0 0' }, 'Nobody else yet. Kevin is enough.'));
+              h('span.fine', timeAgo(v.created_at)))),
+            items.length ? null : h('p.muted', 'No views yet.'));
         }).catch(err => mount(list, errorBox(err)));
         return list;
       },
@@ -385,11 +392,11 @@ export default async function storiesView(ctx) {
 
   async function removeStory(story) {
     hold();
-    const ok = await confirm('Delete this story? It will expire early. A copy will be retained anyway.', { ok: 'Request deletion' });
+    const ok = await confirm('Delete this story?', { title: 'Delete story', ok: 'Delete' });
     if (!ok) return release();
     try {
       await api.del(`stories/${story.id}`);
-      toast('Story deleted. The deletion has been retained.');
+      toast('Story deleted.');
       window.dispatchEvent(new CustomEvent('stories:changed'));
       reel.items.splice(index, 1);
       reelCache.delete(handle);
@@ -414,7 +421,7 @@ export default async function storiesView(ctx) {
     } else release();
   }
 
-  // ── Go ───────────────────────────────────────────────────────────────
+  // Go
   api.get('stories', null, { signal: ctx.signal }).then(data => {
     tray = data.items || [];
     // Refresh the side peeks once we know the order.
