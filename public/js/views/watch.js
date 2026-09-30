@@ -221,6 +221,7 @@ export default async function watch(ctx) {
     }, 1000);
   });
   video.addEventListener('play', cancelUpNext);
+  video.addEventListener('seeking', () => { if (upNextTimer) cancelUpNext(); });
 
   // Start at ?t= seconds (shared links).
   const startAt = Number(ctx.query.get('t'));
