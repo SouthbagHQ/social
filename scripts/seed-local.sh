@@ -15,5 +15,5 @@ for who in alice bob carol kevin; do
   sql+="INSERT OR IGNORE INTO users (id, handle, name, bio, verified, created_at, updated_at) VALUES ('dev-$who', '$who', '$name Southbag', 'Test account. Retained permanently.', $verified, $now, $now);"
   sql+="INSERT OR REPLACE INTO sessions (token_hash, user_id, expires_at, created_at) VALUES ('$hash', 'dev-$who', 9999999999999, $now);"
 done
-npx wrangler d1 execute DB --local --command "$sql" > /dev/null
+npx wrangler d1 execute DB --local ${PERSIST_TO:+--persist-to "$PERSIST_TO"} --command "$sql" > /dev/null
 echo "Seeded. Cookies: southbag_social_session=dev-alice | dev-bob | dev-carol | dev-kevin"
