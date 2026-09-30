@@ -14,7 +14,8 @@ export type Visibility = 'public' | 'followers' | 'friends';
 export const reactionTypes = ['like', 'love', 'haha', 'wow', 'sad', 'angry', 'bag'] as const;
 export type ReactionType = (typeof reactionTypes)[number];
 
-export const MAX_BODY = 1000;
+export const MAX_BODY = 2200; // captions and video descriptions
+export const MAX_TEXT = 280; // text posts and comments
 export const MAX_TITLE = 120;
 export const MAX_IMAGES = 10;
 
@@ -230,7 +231,8 @@ export interface CreatePostInput {
 export async function createPost(env: Env, user: SessionUser, input: CreatePostInput): Promise<string> {
   const now = Date.now();
   const id = newId(now);
-  const body = typeof input.body === 'string' ? input.body.trim().slice(0, MAX_BODY) : '';
+  const body = typeof input.body === 'string' ? input.body.trim() : '';
+  if ([...body].length > MAX_BODY) fail(422, `That is ${[...body].length} characters. The limit is ${MAX_BODY}. Kevin counted.`);
   const title = typeof input.title === 'string' ? input.title.trim().slice(0, MAX_TITLE) : '';
   const visibility: Visibility = ['public', 'followers', 'friends'].includes(input.visibility as string)
     ? input.visibility as Visibility : 'public';
@@ -277,7 +279,10 @@ export async function createPost(env: Env, user: SessionUser, input: CreatePostI
       if (already) fail(409, 'You already reposted that. Once is plenty.');
     }
   }
-  if (!body && !mediaRows.length && !repostOf) fail(422, 'Say something. Anything. Southbag is listening.');
+  if (!body && !mediaRows.length && !repostOf)
+    fail(422, 'Kevin does not accept blank posts. He does accept fees. Fee assessed: $2.00 — Kevin tax.');
+  if (kind === 'text' && [...body].length > MAX_TEXT)
+    fail(422, `Posts are limited to ${MAX_TEXT} characters. Kevin counted. His count is authoritative.`);
 
   let groupId: string | null = null;
   if (input.group_id) {

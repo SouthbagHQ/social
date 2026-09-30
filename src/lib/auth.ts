@@ -195,7 +195,7 @@ async function upsertUser(env: Env, user: IdentityUser, now: number): Promise<{ 
   await env.DB.prepare(`INSERT INTO notifications (id, user_id, actor_id, type, body, created_at)
     VALUES (?, ?, NULL, 'system', ?, ?)`)
     .bind(newId(now), user.sub,
-      'Welcome to Southbag Social. Your attention is now a Southbag asset. — Kevin', now).run();
+      'Welcome to Southbag Social. Your attention is now a Southbag asset. Continued use constitutes acceptance.', now).run();
   return { created: true };
 }
 
