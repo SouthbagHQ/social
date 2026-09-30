@@ -1,9 +1,9 @@
 // Direct messages: /messages (conversation list) and /messages/:id (a conversation).
 //
-// Two panes on desktop (list left, conversation right); on phones it's the list OR the
-// conversation, which then takes the whole screen with a back button. The conversation pane uses
-// the banking support-chat shell (chat.html / chat.css): blue gradient header, #f8fafc message area,
-// 16px bubbles. Styles live in public/css/messages.css.
+// Two ridge-bordered panels on desktop (conversations left, the open conversation right), like
+// Identity's dashboard; on phones it's the list OR the conversation, which then takes the whole
+// screen with a "Back" button. Plain text only: every control is a word. Styles live in
+// public/css/messages.css.
 //
 // Extra entry points other features can link to:
 //   /messages?to=<handle>    find-or-create the 1:1 with that person and open it (profile "Message" button)
@@ -13,7 +13,7 @@
 // Free plan: there is no push, so an open conversation polls /api/messages/:id/poll. See POLL below.
 
 import { api } from '../api.js';
-import { h, icon, mount } from '../dom.js';
+import { h, mount } from '../dom.js';
 import { fullDate, timeAgo } from '../format.js';
 import { store } from '../store.js';
 import { confirm, dialog, empty, errorBox, lightbox, loading, menu, promptDialog, toast, toastError } from '../ui.js';
@@ -37,7 +37,7 @@ const cache = { items: null, next: null, error: null };
 
 const phoneQuery = matchMedia('(max-width: 640px)');
 
-// ── Small helpers ───────────────────────────────────────────────────────
+// -- Small helpers -------------------------------------------------------
 
 const me = () => store.me;
 const clock = ms => new Date(ms).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' });
@@ -60,31 +60,27 @@ function names(people, max = 3) {
 function convTitle(c) {
   if (c.is_support) return 'Southbag Support';
   if (c.title) return c.title;
-  if (!c.members?.length) return 'Just you and Kevin';
+  if (!c.members?.length) return 'Empty conversation';
   return c.is_group ? names(c.members) : c.members[0].name;
 }
 
-function supportAvatar(size = '') {
-  return h('span.avatar.round.dm-support-av', { class: { [size]: Boolean(size) } },
+function supportAvatar(size = 'sm') {
+  return h('span.avatar.dm-support-av', { class: { [size]: Boolean(size) } },
     h('img', { src: SUPPORT_AVATAR, alt: '' }));
 }
 
-/** Avatar for a conversation: the other person, two stacked faces for groups, the bag for Support. */
-function convAvatar(c, { online = false } = {}) {
-  let face;
-  if (c.is_support) face = supportAvatar();
-  else if (c.is_group && c.members.length > 1) {
-    face = h('span.dm-stack', avatar(c.members[0], { round: true, link: false, size: 'sm' }), avatar(c.members[1], { round: true, link: false, size: 'sm' }));
-  } else face = avatar(c.members[0] || { name: 'Kevin' }, { round: true, link: false });
-  return h('span.dm-face', face, online ? h('span.dm-online', { title: 'Online. Unfortunately.' }) : null);
+/** Avatar for a conversation: the other person, the first member for groups, the bag for Support. */
+function convAvatar(c) {
+  if (c.is_support) return supportAvatar();
+  return avatar(c.members?.[0] || { name: convTitle(c) }, { link: false, size: 'sm' });
 }
 
 function excerpt(item) {
   const m = item.last_message;
-  if (!m) return item.is_support ? 'We typically reply within a few seconds' : 'No messages yet. Say something compliant.';
+  if (!m) return item.is_support ? 'Help with your account' : 'No messages.';
   const who = m.sender_id && m.sender_id === me()?.id ? 'You: '
     : item.is_group && m.sender_id ? `${firstName(item.members.find(p => p.id === m.sender_id)?.name) || 'Someone'}: ` : '';
-  const text = m.body || (m.kind === 'post' ? 'Shared a post' : m.kind === 'media' ? 'Sent an attachment' : '');
+  const text = m.body || (m.kind === 'post' ? 'Shared a post' : m.kind === 'media' ? 'Sent a photo or video' : '');
   return who + text;
 }
 
@@ -97,7 +93,7 @@ function lastMessageSummary(m) {
   return { body: (m.body || '').slice(0, 140), sender_id: m.sender?.id ?? null, created_at: m.created_at, kind: m.post || m.post_unavailable ? 'post' : m.media ? 'media' : 'text' };
 }
 
-/** Finds a link to a post on this site in a message ("/post/…", "/watch/…", "/shorts/…"). */
+/** Finds a link to a post on this site in a message ("/post/...", "/watch/...", "/shorts/..."). */
 function findPostLink(text) {
   const re = /(?:https?:\/\/([^\s/]+))?\/(?:post|watch|shorts)\/([0-9a-z]{16})(?![\w/])/gi;
   for (const m of text.matchAll(re)) {
@@ -108,7 +104,7 @@ function findPostLink(text) {
   return null;
 }
 
-// ── The view ────────────────────────────────────────────────────────────
+// -- The view ------------------------------------------------------------
 
 export default async function view(ctx) {
   if (!ctx.requireAuth()) return null;
@@ -121,7 +117,13 @@ export default async function view(ctx) {
   const root = h('div.dm');
   const listPane = h('section.dm-list', { 'aria-label': 'Conversations' });
   const chatPane = h('section.dm-chat', { 'aria-label': 'Conversation' });
-  root.append(listPane, chatPane);
+  const panes = h('div.dm-panes', listPane, chatPane);
+  root.append(
+    h('div.page-head.dm-page-head',
+      h('h1', 'Messages'),
+      h('span.spacer'),
+      h('button', { type: 'button', onclick: () => newMessageDialog() }, 'New message')),
+    panes);
 
   // /messages?to=<handle>: find-or-create the 1:1 and open it.
   const to = ctx.query.get('to');
@@ -154,7 +156,7 @@ export default async function view(ctx) {
   const sharePost = ctx.query.get('share');
   if (sharePost) history.replaceState({}, '', openId ? `/messages/${openId}` : '/messages');
 
-  // ── List pane ──
+  // -- List pane --
 
   function upsertItem(item, { keepExisting = false } = {}) {
     if (!cache.items) return;
@@ -166,48 +168,48 @@ export default async function view(ctx) {
 
   function listItem(item) {
     const active = item.id === openId;
-    return h('li', h('a.dm-item', {
-      href: `/messages/${item.id}`, class: { unread: item.unread, active }, 'aria-current': active ? 'page' : null,
-      onclick: e => openFromList(e, item.id),
-    },
-    convAvatar(item),
-    h('span.dm-item-main',
-      h('span.dm-item-top',
-        h('span.dm-item-name', convTitle(item)),
-        h('time.dm-item-time', { datetime: new Date(item.last_message_at).toISOString(), title: fullDate(item.last_message_at) }, timeAgo(item.last_message_at))),
-      h('span.dm-item-excerpt', excerpt(item))),
-    item.unread ? h('span.dm-dot', h('span.sr-only', 'Unread')) : null));
+    return h('li.dm-item', { class: { unread: item.unread, active } },
+      convAvatar(item),
+      h('div.dm-item-main',
+        h('div.dm-item-top',
+          h('a.dm-item-name', {
+            href: `/messages/${item.id}`, 'aria-current': active ? 'page' : null,
+            onclick: e => openFromList(e, item.id),
+          }, convTitle(item)),
+          item.unread ? h('span.dm-unread', 'Unread') : null,
+          h('time.dm-item-time', { datetime: new Date(item.last_message_at).toISOString(), title: fullDate(item.last_message_at) }, timeAgo(item.last_message_at))),
+        h('div.dm-item-excerpt', excerpt(item))));
   }
 
   function supportEntry() {
     const item = cache.items?.find(i => i.is_support);
     const active = item && item.id === openId;
-    return h('a.dm-item.dm-pinned', {
-      href: item ? `/messages/${item.id}` : '/messages/support', class: { unread: item?.unread, active }, 'aria-current': active ? 'page' : null,
-      onclick: e => openSupport(e),
-    },
-    convAvatar({ is_support: true }, { online: true }),
-    h('span.dm-item-main',
-      h('span.dm-item-top', h('span.dm-item-name', 'Southbag Support'), h('span.dm-pin', 'Pinned')),
-      h('span.dm-item-excerpt', item?.last_message ? excerpt(item) : 'Live support. We typically reply within a few seconds.')),
-    item?.unread ? h('span.dm-dot', h('span.sr-only', 'Unread')) : null);
+    return h('li.dm-item.dm-pinned', { class: { unread: item?.unread, active } },
+      convAvatar({ is_support: true }),
+      h('div.dm-item-main',
+        h('div.dm-item-top',
+          h('a.dm-item-name', {
+            href: item ? `/messages/${item.id}` : '/messages/support', 'aria-current': active ? 'page' : null,
+            onclick: e => openSupport(e),
+          }, 'Southbag Support'),
+          item?.unread ? h('span.dm-unread', 'Unread') : null,
+          h('span.dm-pin', 'Pinned')),
+        h('div.dm-item-excerpt', item?.last_message ? excerpt(item) : 'Help with your account')));
   }
 
   function renderList() {
     const rest = (cache.items || []).filter(i => !i.is_support);
     let body;
-    if (cache.error && !cache.items) body = h('div.dm-pad', errorBox(cache.error), h('button.btn-small.outline', { type: 'button', onclick: refreshList }, 'Try again'));
+    if (cache.error && !cache.items) body = h('div.dm-pad', errorBox(cache.error), h('button.btn-small', { type: 'button', onclick: refreshList }, 'Try again'));
     else if (!cache.items) body = loading();
-    else if (!rest.length) body = empty({ icon: 'message', title: 'No messages.', text: 'All future messages will be retained.' });
+    else if (!rest.length) body = empty({ title: 'No messages.' });
     else body = h('ul.dm-items', rest.map(listItem));
     mount(listPane,
-      h('div.dm-list-head',
-        h('h1', 'Messages'),
-        h('button.btn-small.blue', { type: 'button', onclick: () => newMessageDialog() }, icon('plus'), 'New message')),
+      h('div.dm-list-head', h('h2', 'Conversations')),
       h('div.dm-list-scroll',
-        h('ul.dm-items.pinned', h('li', supportEntry())),
+        h('ul.dm-items.pinned', supportEntry()),
         body,
-        cache.next ? h('div.dm-pad.center', h('button.btn-small.outline', { type: 'button', onclick: loadMoreList }, 'Load more')) : null));
+        cache.next ? h('div.dm-pad.center', h('button.btn-small', { type: 'button', onclick: loadMoreList }, 'Load more')) : null));
   }
 
   async function refreshList() {
@@ -236,7 +238,7 @@ export default async function view(ctx) {
     } catch (err) { if (err.name !== 'AbortError') toastError(err); }
   }
 
-  // ── Opening conversations without a full route re-render ──
+  // -- Opening conversations without a full route re-render --
 
   function openFromList(e, id) {
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
@@ -283,10 +285,9 @@ export default async function view(ctx) {
     if (!id) {
       ctx.title('Messages');
       mount(chatPane, h('div.dm-placeholder',
-        h('span.dm-placeholder-icon', icon('message')),
-        h('h2', 'Your messages'),
-        h('p', 'Select a conversation. Or don’t. Kevin is reading them either way.'),
-        h('button.btn.blue', { type: 'button', onclick: () => newMessageDialog() }, 'New message')));
+        h('h2', 'No conversation selected'),
+        h('p', 'Choose a conversation, or start a new one.'),
+        h('button', { type: 'button', onclick: () => newMessageDialog() }, 'New message')));
       return;
     }
     chat = conversationPane(id, {
@@ -318,19 +319,19 @@ export default async function view(ctx) {
     mount(chatPane, chat.el);
   }
 
-  // ── New message dialog ──
+  // -- New message dialog --
 
   function newMessageDialog({ postId = null } = {}) {
     const selected = new Map();
     let searchBroken = false, timer = null, seq = 0;
     const input = h('input.input.boxed', {
-      type: 'search', placeholder: 'Search people, or type a handle', 'aria-label': 'Search people', autocomplete: 'off',
+      type: 'search', placeholder: 'Name or handle', 'aria-label': 'Search people', autocomplete: 'off',
     });
     const results = h('div.dm-results', { role: 'list', 'aria-label': 'People' });
     const chips = h('div.dm-chips', { 'aria-live': 'polite' });
-    const titleInput = h('input.input.boxed', { maxLength: 60, placeholder: 'The Pile', 'aria-label': 'Group name (optional)' });
+    const titleInput = h('input.input.boxed', { maxLength: 60, placeholder: 'Group name', 'aria-label': 'Group name (optional)' });
     const titleField = h('label.field.hidden', h('span', 'Group name (optional)'), titleInput);
-    const startBtn = h('button.btn.blue', { type: 'submit', disabled: true }, 'Start conversation');
+    const startBtn = h('button', { type: 'submit', disabled: true }, postId ? 'Send' : 'Start conversation');
     const note = h('p.fine', { style: 'margin:6px 0 0' });
 
     const recent = () => {
@@ -340,19 +341,23 @@ export default async function view(ctx) {
     };
 
     function renderChips() {
-      mount(chips, [...selected.values()].map(p => h('button.dm-chip', {
-        type: 'button', 'aria-label': `Remove ${p.name}`, onclick: () => { selected.delete(p.handle.toLowerCase()); renderChips(); search(); input.focus(); },
-      }, p.name && p.name !== `@${p.handle}` ? p.name : `@${p.handle}`, icon('close'))));
+      const label = p => (p.name && p.name !== `@${p.handle}` ? p.name : `@${p.handle}`);
+      mount(chips, selected.size ? h('span.dm-chips-to', 'To:') : null, [...selected.values()].map(p => h('span.dm-chip',
+        h('span', label(p)),
+        h('button.btn-small', {
+          type: 'button', 'aria-label': `Remove ${label(p)}`,
+          onclick: () => { selected.delete(p.handle.toLowerCase()); renderChips(); search(); input.focus(); },
+        }, 'Remove'))));
       titleField.classList.toggle('hidden', selected.size < 2);
       startBtn.disabled = !selected.size;
-      startBtn.textContent = selected.size > 1 ? 'Start group chat' : 'Start conversation';
+      startBtn.textContent = postId ? 'Send' : selected.size > 1 ? 'Start group chat' : 'Start conversation';
     }
 
     function toggle(p) {
       const key = p.handle.toLowerCase();
       if (selected.has(key)) selected.delete(key);
       else {
-        if (selected.size >= 19) { toast('Group chats are limited to 20 people, including you. Kevin is not counted.'); return; }
+        if (selected.size >= 19) { toast('Group chats are limited to 20 people, including you.'); return; }
         selected.set(key, p);
       }
       renderChips();
@@ -365,10 +370,10 @@ export default async function view(ctx) {
       resultsFor = query;
       const rows = people.filter(p => p.id !== me()?.id).map(p => {
         const on = selected.has(p.handle.toLowerCase());
-        return h('button.dm-result', { type: 'button', role: 'listitem', 'aria-pressed': String(on), onclick: () => toggle(p) },
-          avatar(p, { round: true, link: false, size: 'sm' }),
-          h('span.grow', h('span.dm-result-name', p.name), h('span.dm-result-handle', `@${p.handle}`)),
-          h('span.dm-check', on ? icon('check') : null));
+        return h('div.dm-result', { role: 'listitem', class: { on } },
+          avatar(p, { link: false, size: 'xs' }),
+          h('span.grow', h('span.dm-result-name', p.name), ' ', h('span.dm-result-handle', `@${p.handle}`)),
+          h('button.btn-small', { type: 'button', 'aria-pressed': String(on), 'aria-label': `${on ? 'Remove' : 'Add'} ${p.name}`, onclick: () => toggle(p) }, on ? 'Remove' : 'Add'));
       });
       mount(results, heading ? h('p.eyebrow', heading) : null, rows.length ? rows : null);
     }
@@ -425,7 +430,7 @@ export default async function view(ctx) {
         const item = itemFromConversation(res.conversation);
         if (res.message) { item.last_message = lastMessageSummary(res.message); item.last_message_at = res.message.created_at; }
         upsertItem(item, { keepExisting: !res.message });
-        if (postId) toast('Shared. Recipients have been logged.');
+        if (postId) toast('Sent.');
         history.pushState({ dmFromList: true }, '', `/messages/${res.conversation.id}`);
         openConversation(res.conversation.id);
       } catch (err) {
@@ -440,18 +445,18 @@ export default async function view(ctx) {
       body: close => {
         closeDialog = close;
         return h('form.dm-picker', { onsubmit: e => { e.preventDefault(); start(); } },
-          postId ? h('p', { style: 'margin:0 0 8px' }, 'Pick who should receive this post. They will be logged.') : null,
-          h('label.field', { style: 'margin-bottom:6px' }, h('span', 'To'), input),
+          postId ? h('p', { style: 'margin:0 0 8px' }, 'Choose who to send this post to.') : null,
+          h('label.field', { style: 'margin-bottom:6px' }, h('span', 'Add people'), input),
           chips, note, results, titleField,
           h('div.row', { style: 'justify-content:flex-end;margin-top:12px;gap:8px' },
-            h('button.btn-small.outline', { type: 'button', onclick: () => close() }, 'Cancel'),
+            h('button', { type: 'button', onclick: () => close() }, 'Cancel'),
             startBtn));
       },
       onOpen: () => { input.focus(); search(); },
     });
   }
 
-  // ── Wiring ──
+  // -- Wiring --
 
   renderList();
   openConversation(openId);
@@ -463,7 +468,7 @@ export default async function view(ctx) {
   }, POLL.list);
 
   const measure = () => {
-    const top = root.getBoundingClientRect().top + window.scrollY;
+    const top = panes.getBoundingClientRect().top + window.scrollY;
     root.style.setProperty('--dm-top', `${Math.max(0, Math.round(top))}px`);
   };
   const onViewport = () => {
@@ -494,12 +499,12 @@ export default async function view(ctx) {
   return root;
 }
 
-// ── One open conversation ───────────────────────────────────────────────
+// -- One open conversation -----------------------------------------------
 
 function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLeft }) {
   const controller = new AbortController();
   let conv = null;
-  let server = []; // confirmed messages, oldest → newest
+  let server = []; // confirmed messages, oldest -> newest
   let pending = []; // optimistic sends not yet confirmed
   let next = null; // cursor for older messages
   let after = ''; // newest confirmed id, for polling
@@ -512,18 +517,19 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLef
   const olderStatus = h('div.dm-older');
   const list = h('div.dm-msgs');
   const typing = h('div.dm-row.theirs.first.last.dm-typing.hidden', { 'aria-live': 'polite' },
-    h('div.dm-av', supportAvatar('sm')),
-    h('div.dm-col', h('div.dm-bubble', h('span.dm-dots', h('i'), h('i'), h('i')), h('em', 'Loud audible sigh…'))));
+    h('div.dm-av', supportAvatar()),
+    h('div.dm-col', h('div.dm-bubble', h('em', 'Typing'))));
   const topSentinel = h('div.dm-sentinel');
   const scroller = h('div.dm-scroll', { role: 'log', 'aria-label': 'Messages', tabIndex: 0 }, topSentinel, olderStatus, list, typing);
-  const jump = h('button.dm-jump.hidden', { type: 'button', onclick: () => { scrollToBottom(true); jump.classList.add('hidden'); } }, icon('chevron-down'), 'New messages');
+  const jump = h('button.dm-jump.hidden', { type: 'button', onclick: () => { scrollToBottom(true); jump.classList.add('hidden'); } }, 'New messages');
   const composer = buildComposer();
   const el = h('div.dm-conv', head, h('div.dm-scroll-wrap', scroller, jump), composer.el);
 
-  mount(head, h('button.dm-back', { type: 'button', 'aria-label': 'Back to conversations', onclick: onBack }, icon('back')), h('span.dm-head-loading', 'Loading...'));
+  const backBtn = () => h('button.dm-back', { type: 'button', 'aria-label': 'Back to conversations', onclick: onBack }, 'Back');
+  mount(head, backBtn(), h('span.dm-head-loading', 'Loading'));
   mount(list, loading());
 
-  // ── Rendering ──
+  // -- Rendering --
 
   const all = () => [...server, ...pending];
   const mine = m => Boolean(m.sender && m.sender.id === me()?.id);
@@ -533,41 +539,42 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLef
   const scrollToBottom = smooth => scroller.scrollTo({ top: scroller.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
 
   function renderHead() {
-    const back = h('button.dm-back', { type: 'button', 'aria-label': 'Back to conversations', onclick: onBack }, icon('back'));
-    let who, sub, actions = [];
+    let title, sub;
+    const actions = [];
     if (conv.is_support) {
-      who = h('span.dm-head-who', convAvatar(conv, { online: true }), h('span.dm-head-text', h('strong', 'Southbag Support'),
-        h('span.dm-head-sub', h('span.dm-pulse'), 'We typically reply within a few seconds')));
-      actions.push(h('button.dm-pill', { type: 'button', onclick: () => toast('New chat started. The previous chat has been retained.') }, 'New chat'));
+      title = h('h2.dm-title', 'Southbag Support');
+      sub = 'Help with your account';
     } else if (!conv.is_group && conv.members[0]) {
       const p = conv.members[0];
-      who = h('a.dm-head-who', { href: `/@${p.handle}`, title: `View @${p.handle}` }, convAvatar(conv),
-        h('span.dm-head-text', h('strong', p.name), h('span.dm-head-sub', `@${p.handle} · Monitored`)));
+      title = h('h2.dm-title', h('a', { href: `/@${p.handle}` }, p.name));
+      sub = `@${p.handle}`;
     } else {
-      who = h('span.dm-head-who', convAvatar(conv), h('span.dm-head-text', h('strong', convTitle(conv)),
-        h('span.dm-head-sub', `${conv.member_count} ${conv.member_count === 1 ? 'member' : 'members'} · Kevin is also here`)));
+      title = h('h2.dm-title', convTitle(conv));
+      sub = `${conv.member_count} ${conv.member_count === 1 ? 'member' : 'members'}`;
     }
     if (!conv.is_support) {
-      const more = h('button.dm-head-btn', { type: 'button', 'aria-label': 'Conversation options' }, icon('more'));
+      const more = h('button.dm-more', { type: 'button', 'aria-label': 'Conversation options' }, 'More');
       more.addEventListener('click', () => menu(more, conv.is_group ? [
-        { label: 'Rename chat', icon: 'edit', onClick: rename },
-        ...conv.members.map(p => ({ label: `${p.name} (@${p.handle})`, icon: 'user', href: `/@${p.handle}` })),
+        { label: 'Rename chat', onClick: rename },
+        ...conv.members.map(p => ({ label: `${p.name} (@${p.handle})`, href: `/@${p.handle}` })),
         'divider',
-        { label: 'Leave chat', icon: 'log-out', danger: true, onClick: leave },
+        { label: 'Leave chat', onClick: leave },
       ] : [
-        conv.members[0] ? { label: 'View profile', icon: 'user', href: `/@${conv.members[0].handle}` } : null,
-        { label: 'Report to Kevin', icon: 'flag', onClick: () => toast('Reported. Kevin has already read the whole conversation.') },
+        conv.members[0] ? { label: 'View profile', href: `/@${conv.members[0].handle}` } : null,
       ]));
       actions.push(more);
     }
-    mount(head, back, who, h('span.dm-head-actions', actions));
+    mount(head, backBtn(), h('div.dm-head-text', title, h('div.dm-head-sub', sub)), h('div.dm-head-actions', actions));
   }
 
   function mediaNode(m, onLoad) {
     if (m.kind === 'image') {
       const img = h('img', { src: m.url, alt: m.alt || 'Photo', width: m.width || undefined, height: m.height || undefined, decoding: 'async' });
       img.addEventListener('load', onLoad, { once: true });
-      return h('button.dm-img', { type: 'button', 'aria-label': 'Enlarge photo', onclick: () => lightbox(m.url, m.alt) }, img);
+      return h('a.dm-img', {
+        href: m.url, 'aria-label': 'Open photo',
+        onclick: e => { if (e.metaKey || e.ctrlKey || e.shiftKey) return; e.preventDefault(); lightbox(m.url, m.alt); },
+      }, img);
     }
     if (m.kind === 'video') {
       const v = videoEl(m, { preload: 'metadata' });
@@ -579,15 +586,15 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLef
 
   function sharedPost(m) {
     const p = m.post;
-    if (!p) return h('div.dm-post.unavailable', icon('lock'), h('span', 'This post is unavailable. It may have been deleted, or Kevin may simply prefer you not see it.'));
+    if (!p) return h('div.dm-post.unavailable', 'This post is unavailable.');
     const thumb = p.media?.[0];
     const still = thumb ? (thumb.kind === 'image' ? thumb.url : thumb.poster_url) : null;
     return h('a.dm-post', { href: postUrl(p) },
-      h('span.dm-post-head', avatar(p.author, { size: 'xs', link: false }), h('strong', p.author.name), h('span.muted', `@${p.author.handle}`)),
+      h('span.dm-post-head', h('strong', p.author.name), h('span.muted', `@${p.author.handle}`)),
       p.title ? h('span.dm-post-title', p.title) : null,
       p.body ? h('span.dm-post-body', p.body) : null,
-      still ? h('span.dm-post-thumb', h('img', { src: still, alt: '', loading: 'lazy' }), thumb.kind === 'video' ? h('span.dm-post-play', icon('play')) : null) : null,
-      h('span.dm-post-foot', p.kind === 'video' ? 'Watch video' : p.kind === 'short' ? 'Watch short' : 'View post', icon('chevron-right')));
+      still ? h('span.dm-post-thumb', h('img', { src: still, alt: '', loading: 'lazy' }), thumb.kind === 'video' ? h('span.dm-post-play', 'Video') : null) : null,
+      h('span.dm-post-foot', p.kind === 'video' ? 'Watch video' : p.kind === 'short' ? 'Watch short' : 'View post'));
   }
 
   function rowFor(m) {
@@ -602,7 +609,7 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLef
       const parts = [];
       if (m.media) parts.push(mediaNode(m.media, wasNear));
       if (m.post || m.post_unavailable) parts.push(sharedPost(m));
-      else if (m.pending && m.payload?.post_id) parts.push(h('div.dm-post.unavailable', icon('share'), h('span', 'Sharing a post…')));
+      else if (m.pending && m.payload?.post_id) parts.push(h('div.dm-post.unavailable', 'Sharing a post'));
       if (m.body) parts.push(h('div.dm-text', richText(m.body)));
       const bubble = h('div.dm-bubble', { class: { 'media-only': Boolean(m.media && !m.body && !m.post && !m.post_unavailable) } },
         h('span.sr-only', own ? 'You: ' : `${m.sender ? m.sender.name : 'Southbag Support'}: `), parts);
@@ -610,11 +617,11 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLef
       let status = null;
       if (m.failed) {
         status = h('div.dm-status.failed', `Not sent. ${m.error || ''} `,
-          h('button', { type: 'button', onclick: () => retry(m) }, 'Retry'),
-          h('button', { type: 'button', onclick: () => discard(m) }, 'Discard'));
-      } else if (m.pending) status = h('div.dm-status', 'Sending…');
+          h('button.btn-small', { type: 'button', onclick: () => retry(m) }, 'Retry'), ' ',
+          h('button.btn-small', { type: 'button', onclick: () => discard(m) }, 'Discard'));
+      } else if (m.pending) status = h('div.dm-status', 'Sending');
       row = h('div.dm-row', { class: { mine: own, theirs: !own, pending: m.pending, failed: m.failed } },
-        own ? null : h('div.dm-av', m.sender ? avatar(m.sender, { round: true, size: 'sm' }) : supportAvatar('sm')),
+        own ? null : h('div.dm-av', m.sender ? avatar(m.sender, { size: 'sm' }) : supportAvatar()),
         h('div.dm-col',
           !own && conv.is_group ? h('div.dm-name', m.sender?.name || 'Southbag') : null,
           h('div.dm-line', bubble, time),
@@ -628,9 +635,10 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLef
   const seenEl = h('div.dm-seen');
 
   function seenText(m) {
-    if (conv.is_support) return 'Seen by Kevin. Filed in The Pile.';
+    if (conv.is_support) return '';
     const by = conv.members.filter(p => (conv.read?.[p.id] ?? 0) >= m.created_at);
-    return by.length ? `Seen by ${names([...by, { name: 'Kevin' }], 4)}` : 'Seen by Kevin';
+    if (!by.length) return '';
+    return conv.is_group ? `Seen by ${names(by, 4)}` : 'Seen';
   }
 
   function render() {
@@ -648,12 +656,12 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLef
         row.classList.toggle('last', !nxt || !sameGroup(m, nxt));
       }
       out.push(row);
-      if (m === lastMine && !pending.length) { seenEl.textContent = seenText(m); out.push(seenEl); }
+      if (m === lastMine && !pending.length) { seenEl.textContent = seenText(m); if (seenEl.textContent) out.push(seenEl); }
     });
-    if (!msgs.length) out.push(h('div.dm-empty', icon('message'), h('p', 'Say something compliant.'), h('p.fine', 'Messages are private between you, them and Kevin.')));
+    if (!msgs.length) out.push(h('div.dm-empty', h('p', 'No messages.')));
     list.replaceChildren(...out);
-    mount(olderStatus, loadingOlder ? loading('Loading older messages...')
-      : !next && server.length ? h('p', 'Start of conversation. Everything since has been retained.') : null);
+    mount(olderStatus, loadingOlder ? loading('Loading older messages')
+      : !next && server.length ? h('p', 'Start of conversation.') : null);
   }
 
   function addServer(items) {
@@ -666,7 +674,7 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLef
     return fresh;
   }
 
-  // ── Loading ──
+  // -- Loading --
 
   async function load() {
     try {
@@ -686,7 +694,7 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLef
       schedule();
     } catch (err) {
       if (err.name === 'AbortError' || destroyed) return;
-      mount(head, h('button.dm-back', { type: 'button', 'aria-label': 'Back to conversations', onclick: onBack }, icon('back')), h('strong', 'Conversation unavailable'));
+      mount(head, backBtn(), h('div.dm-head-text', h('h2.dm-title', 'Conversation unavailable')));
       mount(list, h('div.dm-pad', errorBox(err)));
       composer.disable();
     }
@@ -721,7 +729,7 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLef
     if (atBottomOnLoad) jump.classList.add('hidden');
   }, { passive: true });
 
-  // ── Polling (see POLL at the top for the budget) ──
+  // -- Polling (see POLL at the top for the budget) --
 
   function delay() {
     const idle = Date.now() - lastActivity;
@@ -756,15 +764,16 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLef
         onMessage(newest);
         // Someone joined, left or renamed: refresh the member list.
         if (fresh.some(m => !m.sender) && conv.is_group) refreshMeta();
-      } else if (seenEl.isConnected) {
+      } else {
+        // Read positions may have moved: repaint if "Seen" changed.
         const lastMine = [...server].reverse().find(mine);
-        if (lastMine) seenEl.textContent = seenText(lastMine);
+        if (lastMine && !pending.length && seenText(lastMine) !== seenEl.textContent) render();
       }
       more = data.more;
     } catch (err) {
       if (err.name === 'AbortError' || destroyed) return;
       if (err.status === 404) {
-        composer.disable('You are no longer in this conversation. Your messages are retained.');
+        composer.disable('You are no longer in this conversation.');
         return;
       }
     }
@@ -799,7 +808,7 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLef
   };
   document.addEventListener('visibilitychange', onVisibility);
 
-  // ── Sending ──
+  // -- Sending --
 
   async function sendPending(m) {
     m.pending = true; m.failed = false; m.error = '';
@@ -816,18 +825,17 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLef
       if (m.localMedia && sent.media) sent.media = { ...sent.media, url: m.localMedia.url };
       addServer([sent]);
       if (res.reply) {
-        // Southbag Support: sigh audibly for a moment, then reply.
+        // Southbag Support: show "Typing" for a moment, then the reply.
         if (res.reply.id > after) after = res.reply.id;
         render();
         scrollToBottom(true);
         onMessage(sent);
-        await sigh();
+        await typingPause();
         if (destroyed) return;
         addServer([res.reply]);
         render();
         scrollToBottom(true);
         onMessage(res.reply);
-        maybeComplain();
       } else {
         render();
         scrollToBottom(true);
@@ -835,7 +843,7 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLef
       }
     } catch (err) {
       if (destroyed) return;
-      m.pending = false; m.failed = true; m.error = err.status && err.status < 500 ? err.message : 'Kevin dropped it.';
+      m.pending = false; m.failed = true; m.error = err.status && err.status < 500 ? err.message : 'Check your connection and try again.';
       rows.delete(m._key);
       render();
       scrollToBottom(true);
@@ -844,22 +852,15 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLef
     }
   }
 
-  let sighing = 0;
-  function sigh() {
-    sighing++;
+  let typingCount = 0;
+  function typingPause() {
+    typingCount++;
     typing.classList.remove('hidden');
     scrollToBottom(true);
     return new Promise(resolve => setTimeout(() => {
-      if (--sighing <= 0) typing.classList.add('hidden');
+      if (--typingCount <= 0) typing.classList.add('hidden');
       resolve();
     }, 900 + Math.random() * 600));
-  }
-
-  let lastComplaint = 0;
-  function maybeComplain() {
-    if (Math.random() > 0.15 || Date.now() - lastComplaint < 120000) return;
-    lastComplaint = Date.now();
-    setTimeout(() => { if (!destroyed) dialog({ title: 'Southbag Alert', body: 'Your complaint has been noted and ignored' }); }, 500);
   }
 
   function retry(m) { sendPending(m); }
@@ -887,15 +888,15 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLef
     return true;
   }
 
-  // ── Composer ──
+  // -- Composer --
 
   function buildComposer() {
     let attachment = null; // { file, localUrl, kind, media, controller }
-    const textarea = h('textarea.dm-input', { rows: 1, placeholder: 'Say something compliant.', 'aria-label': 'Message', maxLength: MAX_MESSAGE, disabled: true });
+    const textarea = h('textarea.dm-input', { rows: 1, placeholder: 'Write a message', 'aria-label': 'Message', maxLength: MAX_MESSAGE, disabled: true });
     const counter = h('span.dm-counter.hidden');
     const preview = h('div.dm-attachment.hidden');
-    const attachBtn = h('button.dm-attach', { type: 'button', 'aria-label': 'Attach a photo or video', title: 'Attach a photo or video', disabled: true }, icon('image'));
-    const sendBtn = h('button.dm-send', { type: 'submit', 'aria-label': 'Send', disabled: true }, icon('send'), h('span.dm-send-label', 'Send'));
+    const attachBtn = h('button.dm-attach', { type: 'button', title: 'Attach a photo or video', disabled: true }, 'Attach');
+    const sendBtn = h('button.dm-send', { type: 'submit', disabled: true }, 'Send');
     const notice = h('div.dm-composer-note.hidden');
     const form = h('form.dm-composer', { onsubmit: e => { e.preventDefault(); send(); } },
       preview, notice,
@@ -918,16 +919,16 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLef
     function renderPreview() {
       if (!attachment) { preview.classList.add('hidden'); mount(preview); update(); return; }
       preview.classList.remove('hidden');
-      const bar = h('div.dm-progress', h('div', { style: { width: `${Math.round((attachment.progress || 0) * 100)}%` } }));
+      const bar = h('div.progress-bar.dm-progress', h('div', { style: { width: `${Math.round((attachment.progress || 0) * 100)}%` } }));
       mount(preview,
         h('div.dm-attachment-thumb', attachment.kind === 'video'
           ? h('video', { src: attachment.localUrl, muted: true, playsInline: true, preload: 'metadata' })
           : h('img', { src: attachment.localUrl, alt: '' })),
         h('div.grow',
           h('div.dm-attachment-name', attachment.file.name || 'Photo'),
-          attachment.media ? h('div.fine', 'Ready. It will be retained permanently.') : h('div.fine', 'Uploading to D1…'),
+          attachment.media ? h('div.fine', 'Ready to send.') : h('div.fine', 'Uploading'),
           attachment.media ? null : bar),
-        h('button.icon-btn', { type: 'button', 'aria-label': 'Remove attachment', onclick: clearAttachment }, icon('close')));
+        h('button.btn-small', { type: 'button', 'aria-label': 'Remove attachment', onclick: () => clearAttachment() }, 'Remove'));
       attachment.bar = bar.firstChild;
       update();
     }
@@ -941,7 +942,7 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLef
 
     async function attachFile(file) {
       if (!file) return;
-      if (!/^(image|video)\//.test(file.type)) { toast('Photos and videos only. Kevin has opinions about PDFs.', { error: true }); return; }
+      if (!/^(image|video)\//.test(file.type)) { toast('Only photos and videos can be attached.', { error: true }); return; }
       clearAttachment();
       const a = { file, localUrl: URL.createObjectURL(file), kind: file.type.startsWith('video/') ? 'video' : 'image', media: null, progress: 0, controller: new AbortController() };
       attachment = a;
@@ -963,7 +964,7 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLef
 
     function send() {
       if (!enabled || (attachment && !attachment.media)) return;
-      if ([...textarea.value].length > MAX_MESSAGE) { toast(`Messages are limited to ${MAX_MESSAGE} characters. Kevin counted.`, { error: true }); return; }
+      if ([...textarea.value].length > MAX_MESSAGE) { toast(`Messages are limited to ${MAX_MESSAGE} characters.`, { error: true }); return; }
       const sent = submit({ body: textarea.value, attachment });
       if (!sent) return;
       textarea.value = '';
@@ -990,7 +991,6 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLef
         enabled = true;
         textarea.disabled = false;
         attachBtn.disabled = false;
-        textarea.placeholder = c.is_support ? 'Type your message below I guess' : 'Say something compliant.';
         notice.classList.add('hidden');
         update();
       },
@@ -1005,26 +1005,26 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLef
     };
   }
 
-  // ── Group actions ──
+  // -- Group actions --
 
   async function rename() {
-    const title = await promptDialog('Group name', { title: 'Rename chat', value: conv.title || '', placeholder: 'The Pile', ok: 'Rename' });
+    const title = await promptDialog('Group name', { title: 'Rename chat', value: conv.title || '', placeholder: 'Group name', ok: 'Rename' });
     if (title === null) return;
     try {
       const data = await api.patch(`messages/${id}`, { title });
       conv = { ...conv, ...data.conversation };
       renderHead();
       onConversation(conv);
-      toast('Renamed. The old name is retained.');
+      toast('Renamed.');
       poll();
     } catch (err) { toastError(err); }
   }
 
   async function leave() {
-    if (!(await confirm('Leave this chat? Your messages stay behind. They are retained.', { ok: 'Leave chat' }))) return;
+    if (!(await confirm('You will stop receiving messages from this chat.', { title: 'Leave chat?', ok: 'Leave' }))) return;
     try {
       await api.del(`messages/${id}/members/me`);
-      toast('You left the chat. The chat has not left you.');
+      toast('Left the chat.');
       onLeft();
     } catch (err) { toastError(err); }
   }
