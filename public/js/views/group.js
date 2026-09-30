@@ -62,6 +62,7 @@ export default async function groupView(ctx) {
       buttons.push(b);
     }
     buttons.push(h('button.btn-small', { type: 'button', onclick: () => share(`/g/${group.slug}`, group.name) }, 'Invite'));
+    buttons.push(h('a.btn-small', { href: `/events?group=${encodeURIComponent(group.slug)}` }, 'Events'));
     if (isAdmin(role)) buttons.push(h('button.btn-small', { type: 'button', onclick: edit }, 'Edit'));
     mount(joinArea, buttons);
   }

@@ -21,7 +21,7 @@ import videos from './routes/videos';
 import polls from './routes/polls';
 import pins from './routes/pins';
 import communities from './routes/communities';
-import events from './routes/events';
+import events, { sendEventReminders } from './routes/events';
 import audio from './routes/audio';
 import servers from './routes/servers';
 import careers from './routes/careers';
@@ -117,5 +117,7 @@ export default {
   fetch: app.fetch,
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(janitor(env));
+    // Events: remind people going to events that start in the next 24 hours (once each).
+    ctx.waitUntil(sendEventReminders(env).catch(err => console.error('event reminders', err)));
   },
 } satisfies ExportedHandler<Env>;

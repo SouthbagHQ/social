@@ -1,1 +1,78 @@
-/* events styles */
+/* Events: lists of event rows, the event page and the create/edit form.
+   Covers are a fixed 16:9 box and the picture is stretched into it. Buttons use the shared style. */
+
+.events-sub { margin: -6px 0 12px; color: var(--sb-muted); }
+
+/* ── Rows ───────────────────────────────────────────────────────────── */
+.event-list { display: grid; gap: 12px; box-shadow: none; }
+.event-row {
+  display: grid; grid-template-columns: 208px minmax(0, 1fr); gap: 12px; align-items: start;
+  color: var(--sb-ink); text-decoration: none;
+}
+.event-row:hover { background: var(--sb-paper); font-weight: inherit; }
+.event-row:nth-child(4n + 2) { transform: rotate(-0.3deg); }
+.event-row.cancelled .event-row-title { text-decoration: line-through; }
+.event-row-body { min-width: 0; box-shadow: none; }
+.event-row-title { font-size: 1.1rem; margin: 2px 0 4px; }
+.event-row-line { margin: 0 0 2px; font-size: 0.88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.event-row .chip { margin-top: 4px; }
+
+/* "SAT 12 OCT" in plain text. */
+.event-date { margin: 0; font-weight: 700; font-size: 0.8rem; letter-spacing: 2px; color: var(--sb-ink); }
+
+.event-cover { position: relative; aspect-ratio: 16 / 9; width: 100%; background: var(--sb-hairline); border: 2px inset var(--sb-bevel); overflow: hidden; }
+.event-cover img { display: block; width: 100%; height: 100%; box-shadow: none; }
+.event-cover-empty { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--sb-muted); font-size: 0.8rem; box-shadow: none; }
+.event-cover.large { margin: 0 0 12px; }
+
+@media (max-width: 560px) {
+  .event-row { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ── Event page ─────────────────────────────────────────────────────── */
+.event-head .notice { margin-bottom: 12px; }
+.event-title { margin: 6px 0 8px; max-width: none; overflow-wrap: anywhere; }
+.event-when, .event-where { margin: 2px 0; }
+.event-counts { color: var(--sb-muted); font-size: 0.9rem; }
+.event-rsvp { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0 8px; box-shadow: none; }
+.event-state { margin: 0; font-weight: 700; }
+.event-actions { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #999; }
+
+.event-facts { margin: 0; display: grid; gap: 10px; }
+.event-fact { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 8px; box-shadow: none; }
+.event-fact dt { font-weight: 700; }
+.event-fact dd { margin: 0; min-width: 0; overflow-wrap: anywhere; box-shadow: none; }
+.event-fact dd > div { box-shadow: none; }
+.event-link { color: var(--sb-blue); }
+.event-hosts { display: flex; flex-wrap: wrap; gap: 6px 14px; box-shadow: none; }
+.event-host { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+@media (max-width: 560px) {
+  .event-fact { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}
+
+.event-tab-body { box-shadow: none; }
+.event-description { white-space: pre-wrap; overflow-wrap: anywhere; }
+.event-faces { margin-top: 14px; box-shadow: none; }
+.event-faces .row { gap: 6px; }
+
+.event-comment-form { margin: 0 0 12px; box-shadow: none; }
+.event-comment-form .row { margin-top: 8px; }
+.event-comments { box-shadow: none; }
+.event-comment { display: flex; gap: 10px; padding: 10px 0; box-shadow: none; }
+.event-comment + .event-comment { border-top: 1px dashed #999; }
+.event-comment .grow, .event-comment .row { box-shadow: none; }
+.event-comment-body { white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0; }
+.event-attendees { box-shadow: none; }
+
+.event-invite-list { display: grid; gap: 2px; max-height: 240px; overflow: auto; margin: 0 0 12px; padding: 4px 8px; border: 2px inset var(--sb-bevel); background: var(--sb-paper); }
+.event-invite-list .checkbox { align-items: center; box-shadow: none; }
+
+/* ── Form ───────────────────────────────────────────────────────────── */
+.event-form { max-width: 720px; }
+.event-form-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; box-shadow: none; }
+.event-form-pair .field { margin-bottom: 4px; }
+.event-cover-field .event-cover { max-width: 480px; margin-bottom: 6px; }
+.event-form [hidden], .event-cover-field [hidden] { display: none !important; }
+@media (max-width: 560px) {
+  .event-form-pair { grid-template-columns: minmax(0, 1fr); gap: 0; }
+}
