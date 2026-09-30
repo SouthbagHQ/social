@@ -1,11 +1,11 @@
 // Thread page (/post/:id). Works for every kind of post, including videos and shorts.
-//   ancestors (compact, joined by a thread line) → the focused post, large, with its full date,
-//   reaction breakdown and counts → reply composer (focused when the URL hash is #reply) →
+//   ancestors (compact, joined by a thread line) -> the focused post, large, with its full date,
+//   reaction breakdown and counts -> reply composer (focused when the URL hash is #reply) ->
 //   replies (Top / New) with "View N replies" links to go deeper.
-//   GET /api/posts/:id → { post, ancestors }      GET /api/posts/:id/replies?sort=top|new&cursor
+//   GET /api/posts/:id -> { post, ancestors }      GET /api/posts/:id/replies?sort=top|new&cursor
 
 import { api } from '../api.js';
-import { h, icon, mount } from '../dom.js';
+import { h, mount } from '../dom.js';
 import { count, fullDate, plural } from '../format.js';
 import { store } from '../store.js';
 import { dialog, empty, errorBox, infiniteList, loading, tabs } from '../ui.js';
@@ -20,12 +20,9 @@ const SORT_KEY = 'sb_replies_sort';
 function notFound(ctx) {
   ctx.title('Post not found');
   return h('div.south-card.flat.thread-missing',
-    h('p.eyebrow', 'REF: SB-ERR-404'),
-    h('h1', 'Kevin has closed this post.'),
-    h('p', 'It may have been deleted, made private, or simply withheld. This attempt is on record.'),
-    h('p.mono', 'Fee — $12.00 — Policy curiosity'),
-    h('p.fine', 'Do not request this post again. The Pile does not forget.'),
-    h('a.btn', { href: '/' }, 'Return to the feed'));
+    h('h1', 'Post not found.'),
+    h('p', 'It may have been deleted or made private.'),
+    h('a.btn', { href: '/' }, 'Back to feed'));
 }
 
 /** Records one view per post per browser session. Videos count when they start playing instead. */
@@ -41,15 +38,15 @@ function countView(post) {
   }).catch(() => {});
 }
 
-/** Who reacted, in a retro dialog. */
+/** Who reacted, in a dialog. */
 async function showReactions(post, type) {
   const body = h('div.reactions-dialog', loading());
-  dialog({ title: type ? `${REACTIONS[type]?.label || 'Reactions'} (${REACTIONS[type]?.emoji || ''})` : 'Reactions', body, wide: false });
+  dialog({ title: type ? REACTIONS[type]?.label || 'Reactions' : 'Reactions', body, wide: false });
   try {
     const { items } = await api.get(`posts/${post.id}/reactions`, { type });
     mount(body, items.length
-      ? items.map(({ user, type: t }) => userRow(user, { bio: false, action: h('span.reaction-emoji', { title: REACTIONS[t]?.label }, REACTIONS[t]?.emoji || '') }))
-      : h('p.muted', 'Nobody. The reactions have been retained anyway.'));
+      ? items.map(({ user, type: t }) => userRow(user, { bio: false, action: h('span.reaction-word', REACTIONS[t]?.label || t) }))
+      : h('p.muted', 'No reactions yet.'));
   } catch (err) { mount(body, errorBox(err)); }
 }
 
@@ -72,23 +69,24 @@ function focusedPost(post, { onReply }) {
     }
   }
 
+  const audience = post.visibility === 'followers' ? 'Followers' : post.visibility === 'friends' ? 'Friends' : 'Everyone';
   const details = h('div.post-details',
     h('div.when',
       h('time', { datetime: new Date(post.created_at).toISOString() }, fullDate(post.created_at)),
-      post.edited_at ? h('span', ` · amended ${fullDate(post.edited_at)}. The original is retained.`) : null,
-      h('span', ` · ${post.visibility === 'public' ? 'Visible to everyone (and Kevin)' : post.visibility === 'followers' ? 'Visible to The Pile' : 'Visible to friends'}`)),
+      post.edited_at ? h('span', `Edited ${fullDate(post.edited_at)}`) : null,
+      h('span', `Visible to: ${audience}`)),
     h('div.stats',
       h('span', h('strong', { dataset: { viewsFor: post.id } }, count(post.counts.views)), ` ${post.counts.views === 1 ? 'view' : 'views'}`),
       h('span', h('strong', count(post.counts.reposts)), ` ${post.counts.reposts === 1 ? 'repost' : 'reposts'}`),
       h('span', h('strong', count(post.counts.replies)), ` ${post.counts.replies === 1 ? 'reply' : 'replies'}`),
-      h('button.link-btn', { type: 'button', onclick: () => showReactions(post) },
-        h('strong', count(post.counts.reactions)), ` ${post.counts.reactions === 1 ? 'reaction' : 'reactions'} (fees apply)`)),
+      h('span', h('strong', count(post.counts.reactions)), ` ${post.counts.reactions === 1 ? 'reaction' : 'reactions'}`)),
     post.reactions.length ? h('div.reaction-breakdown', { 'aria-label': 'Reactions by type' },
-      post.reactions.map(([type, n]) => h('button.chip', {
-        type: 'button', title: `See who reacted with ${REACTIONS[type]?.label}`, onclick: () => showReactions(post, type),
-      }, h('span.emo', REACTIONS[type]?.emoji || ''), `${REACTIONS[type]?.label || type} ${count(n)}`))) : null,
+      h('button.btn-small', { type: 'button', onclick: () => showReactions(post) }, 'All reactions'),
+      post.reactions.map(([type, n]) => h('button.btn-small', {
+        type: 'button', 'aria-label': `See who reacted with ${REACTIONS[type]?.label || type}`, onclick: () => showReactions(post, type),
+      }, `${REACTIONS[type]?.label || type} ${count(n)}`))) : null,
     post.kind === 'video' || post.kind === 'short'
-      ? h('p.fine', h('a', { href: post.kind === 'short' ? `/shorts/${post.id}` : `/watch/${post.id}` }, post.kind === 'short' ? 'Open in Shorts' : 'Open in the video player'))
+      ? h('p.fine', h('a', { href: post.kind === 'short' ? `/shorts/${post.id}` : `/watch/${post.id}` }, post.kind === 'short' ? 'Open in Shorts' : 'Open in Videos'))
       : null);
 
   // Put the details between the body/media and the action bar.
@@ -109,16 +107,16 @@ export default async function thread(ctx) {
   }
   const { post, ancestors = [] } = data;
   const name = post.author?.name || 'Someone';
-  ctx.title(post.deleted ? 'Deleted post' : `${name}: “${(post.title || post.body || 'Post').slice(0, 50)}”`);
+  ctx.title(post.deleted ? 'Deleted post' : `${name}: ${(post.title || post.body || 'Post').slice(0, 50)}`);
   if (!post.deleted && post.kind !== 'video' && post.kind !== 'short') countView(post);
 
-  // ── Ancestors ──
+  // -- Ancestors --
   const earliest = ancestors[0];
   const context = ancestors.length ? h('div.thread-ancestors',
-    earliest?.reply_to ? h('a.thread-more', { href: `/post/${post.root_id || earliest.reply_to.id}` }, icon('chevron-up'), 'View earlier posts in this thread') : null,
+    earliest?.reply_to ? h('a.thread-more', { href: `/post/${post.root_id || earliest.reply_to.id}` }, 'Show earlier posts') : null,
     ancestors.map(a => h('div.thread-ancestor', postCard(a, { compact: true, card: false })))) : null;
 
-  // ── Reply composer ──
+  // -- Reply composer --
   let replyForm = null;
   let list = null;
   const replyCount = h('span');
@@ -130,13 +128,13 @@ export default async function thread(ctx) {
     replyForm.focus();
   };
   const replyBox = post.deleted
-    ? h('p.muted.thread-closed', 'Replies are closed. The post was deleted. The replies were retained.')
+    ? h('p.muted.thread-closed', 'Replies are closed.')
     : store.me
       ? h('div.south-card.flat.reply-box', { id: 'reply' },
           replyForm = composer({
             replyTo: post,
             compact: false,
-            placeholder: `Reply to @${post.author.handle}. Say something compliant.`,
+            placeholder: `Reply to @${post.author.handle}`,
             onPosted: reply => {
               post.counts.replies++;
               paintCount();
@@ -146,7 +144,7 @@ export default async function thread(ctx) {
           }))
       : replyForm = composer({ replyTo: post });
 
-  // ── Replies ──
+  // -- Replies --
   let sort = pref.get(SORT_KEY, 'top') === 'new' ? 'new' : 'top';
   let controller = null;
   const sortBar = h('div');
@@ -160,7 +158,7 @@ export default async function thread(ctx) {
     const card = postCard(reply, { compact: true });
     if (!card) return null;
     const more = reply.counts.replies
-      ? h('a.view-replies', { href: `/post/${reply.id}` }, icon('comment'), `View ${plural(reply.counts.replies, 'reply', 'replies')}`)
+      ? h('a.view-replies', { href: `/post/${reply.id}` }, `View ${plural(reply.counts.replies, 'reply', 'replies')}`)
       : null;
     return h('div.reply-item', card, more);
   }
@@ -174,7 +172,7 @@ export default async function thread(ctx) {
       className: 'thread-replies',
       load: cursor => api.get(`posts/${post.id}/replies`, { sort, cursor }, { signal }),
       render: replyNode,
-      empty: empty({ icon: 'comment', title: 'No comments.', text: 'The silence is compliant.' }),
+      empty: empty({ title: 'No replies yet.' }),
     });
     mount(listHost, list);
   }

@@ -1,13 +1,13 @@
 // Feeds (Twitter / Facebook core). Mounted at /api/feed.
 //
-//   GET /api/feed?tab=following|foryou&cursor&limit → { items: PostJson[], next, tab, fallback? }
+//   GET /api/feed?tab=following|foryou&cursor&limit -> { items: PostJson[], next, tab, fallback? }
 //       following: top-level posts (and reposts) by people the viewer follows, the viewer's own posts,
 //                  posts on the viewer's wall and posts in groups the viewer belongs to. Newest first,
 //                  keyset paging by id. If the viewer follows nobody, the for-you feed is returned
 //                  instead with `fallback: true` (and its offset cursor).
 //       foryou:    recent top-level posts ranked by engagement with a time decay. Offset paging
 //                  (`next` is a stringified number). Signed-out visitors always get this.
-//   GET /api/feed/bookmarks?cursor&limit → { items, next }   newest bookmark first
+//   GET /api/feed/bookmarks?cursor&limit -> { items, next }   newest bookmark first
 //
 // `rankedPosts()` is exported for the search/explore routes.
 
@@ -58,7 +58,7 @@ export interface RankOptions {
 
 /**
  * Visible top-level posts ranked by a cheap engagement score with a time decay:
- *   (reactions + 2·replies + 3·reposts + 1) / (age in hours + 2)^1.5
+ *   (reactions + 2*replies + 3*reposts + 1) / (age in hours + 2)^1.5
  * Candidates are the newest CANDIDATES posts of the last WINDOW, plus the newest FLOOR top-level
  * posts whatever their age (so a quiet network still has a feed). Plain reposts are left out (the
  * original is ranked instead). Returns up to size + 1 rows so callers can tell if there is more.
