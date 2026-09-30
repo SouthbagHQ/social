@@ -1,11 +1,11 @@
 // Direct messages (Messenger / Instagram DMs) and the Southbag Support bot. Mounted at /api/messages.
 //
-//   GET    /api/messages?cursor               conversations, most recent first → { items, next, unread_count }
-//   POST   /api/messages                      { handles[], title?, body?, media_id?, post_id? } → find-or-create
+//   GET    /api/messages?cursor               conversations, most recent first -> { items, next, unread_count }
+//   POST   /api/messages                      { handles[], title?, body?, media_id?, post_id? } -> find-or-create
 //   POST   /api/messages/support              find-or-create the viewer's Southbag Support conversation
-//   GET    /api/messages/:id?before=<id>      { conversation, items (oldest → newest), next }
-//   GET    /api/messages/:id/poll?after=<id>  { items, read, title } — new messages since `after`
-//   POST   /api/messages/:id                  { body?, media_id?, post_id? } → { message, reply? }
+//   GET    /api/messages/:id?before=<id>      { conversation, items (oldest -> newest), next }
+//   GET    /api/messages/:id/poll?after=<id>  { items, read, title } - new messages since `after`
+//   POST   /api/messages/:id                  { body?, media_id?, post_id? } -> { message, reply? }
 //   POST   /api/messages/:id/read             marks the conversation read for the viewer
 //   PATCH  /api/messages/:id                  { title } (group chats)
 //   DELETE /api/messages/:id/members/me       leave a group chat
@@ -16,7 +16,7 @@
 // Free plan: there are no WebSockets or Durable Objects here, so the client polls. `/poll` is one
 // round trip (a D1 batch of an indexed membership lookup and an indexed range scan on
 // messages_conversation) and only hydrates when something is new. The client polls every ~5 s while a
-// conversation is open and visible, backs off to 20–30 s after a minute of silence, pauses while the
+// conversation is open and visible, backs off to 20-30 s after a minute of silence, pauses while the
 // tab is hidden and never polls the Support conversation (its replies arrive with the send). One
 // person chatting for an hour at the fast rate is ~720 requests, so the 100k requests/day free limit
 // covers a few hundred hours of active chatting a day; if that stops being enough, slow the
@@ -69,80 +69,47 @@ export interface MessageJson {
 }
 
 const u = (col: string) => userCardColumns.split(', ').map(c => `${col}.${c}`).join(', ');
-const formerCustomer = (id: string): UserCard => ({ id, handle: 'deleted', name: 'Former customer', avatar_url: null, verified: false });
+const deletedAccount = (id: string): UserCard => ({ id, handle: 'deleted', name: 'Deleted account', avatar_url: null, verified: false });
 
 /** Support conversations get a stable id per person, so find-or-create is a primary-key lookup. */
 const supportId = async (userId: string) => `support-${(await sha256(`southbag-support:${userId}`)).slice(0, 22)}`;
 const isSupport = (id: string) => id.startsWith('support-');
 
-// ── Southbag Support's entire personality ────────────────────────────────
+// -- Southbag Support replies ---------------------------------------------
 
-const WELCOME = 'Oh great, another one. Type your message below I guess.';
+const WELCOME = 'How can we help?';
 
-const CANNED = [
-  'Your complaint has been noted and ignored.',
-  'Estimated response: never.',
-  'SUPPORT TICKET #8675309 has been opened. Est. response: Never.',
-  'Please hold. *Loud audible sigh*',
-  'Have you tried visiting a branch?',
-  'Kevin has already reviewed your message. He does not need to respond.',
-  'This conversation is being recorded for quality, training and leverage purposes.',
-  'Have you tried turning your expectations off and on again?',
-  'I have forwarded this to the relevant department. The relevant department is Kevin.',
-  'Your message is important to us. Not very important. But important.',
-  'We are experiencing higher than usual volumes of you.',
-  'Unfortunately that cannot be done online. Please schedule an in-person meeting at your local Southbag branch.',
-  'I understand your frustration. I do not share it.',
-  'Fee assessed: $7.00 — Kevin’s time.',
-  'Please describe the problem in more detail so I can ignore it more precisely.',
-  'Your satisfaction is not guaranteed. It is not even likely.',
-  'I have marked this as resolved. It was not resolved.',
-  'Most problems can be solved by not having them. Please try that first.',
-  'A human will be with you shortly. “Shortly” is defined in SB-ACT-2018 §14 as 3–10 business years.',
-  'Kevin is watching. That is not a support response. It is a status update.',
-  'Connection lost. Error code: CUSTOMER_TOO_ANNOYING. I am still here, unfortunately.',
-  'Your message has been added to The Pile. Do not ask whether The Pile is physical.',
-  'Your account is in good standing. That is all I am permitted to say.',
-  'Please rate this conversation from 1 to 1.',
-  'I have reset your password. You did not ask. You are welcome.',
-  'Your feedback will be used to train the next version of me, who will also ignore you.',
-  'Southbag Support is closed on public holidays, weekends, weekdays and in Canberra.',
-  'I have escalated this. It came straight back down.',
-  'Thank you for your patience. We have plenty of it now. It is yours.',
-  'Your request has been received, stamped and placed somewhere on Floor 3. Southbag has no Floor 3.',
+/** Any later message in the conversation gets one of these. */
+const FOLLOW_UPS = [
+  'Thanks. We have added this to your ticket.',
+  'A support agent will reply as soon as possible.',
+  'We are looking into this and will reply here.',
+  'You can manage your account at identity.southbag.cc.',
 ];
 
-const KEYWORDS: [RegExp, string[]][] = [
-  [/\bkevin\b/i, ['Kevin is aware. Kevin was aware before you typed it.', 'Please do not ask where Kevin is. Fee assessed: $3.50 — Asking where Kevin is.']],
-  [/\b(human|agent|person|real|manager|supervisor)\b/i, ['You are talking to a human. Probably. Please hold. *Loud audible sigh*', 'My manager is Kevin. He does not take calls.']],
-  [/\b(refund|money|fee|fees|charge|charged|bill|cost)\b/i, ['Refunds are processed within 3–10 business decades.', 'Fee assessed: $12.00 — Policy curiosity.']],
-  [/\b2019\b/, ['There was no 2019 incident. This conversation has been flagged.']],
-  [/canberra/i, ['That area is Reserved. Canberra Adjacency Levy applied.']],
-  [/blahaj|shark/i, ['Blahaj is prohibited. Support staff do not love Blahaj. Please stop asking.']],
-  [/\b(delete|deletion|privacy|data)\b/i, ['Deletion is advisory. Your data is retained permanently, for your convenience.']],
-  [/\b(hi|hello|hey|g'?day)\b/i, ['Hello. Your greeting has been logged.', 'Oh great, another one.']],
-  [/\b(thanks|thank you|cheers)\b/i, ['You are welcome. Nothing was done.']],
+const TOPICS: [RegExp, string][] = [
+  [/\b(password|sign ?in|log ?in|login|two-factor|2fa)\b/i, 'For help signing in, go to identity.southbag.cc and choose "Forgot password".'],
+  [/\b(delete|close|deactivate)\b.*\baccount\b|\baccount\b.*\b(delete|close|deactivate)\b/i, 'You can close your account at identity.southbag.cc.'],
+  [/\b(report|abuse|harass\w*|spam)\b/i, 'Thanks for letting us know. Our team will review this.'],
+  [/\b(thanks|thank you|cheers)\b/i, 'You are welcome. Is there anything else we can help with?'],
 ];
 
-function supportReply(message: string): string {
-  const pick = (list: string[]) => list[Math.floor(Math.random() * list.length)];
-  const matched = KEYWORDS.find(([re]) => re.test(message));
-  if (matched && Math.random() < 0.7) return pick(matched[1]);
-  const line = pick(CANNED);
-  // Fresh ticket numbers now and then; #8675309 stays the house favourite.
-  return line.includes('#8675309') && Math.random() < 0.5
-    ? line.replace('8675309', String(1000000 + Math.floor(Math.random() * 8999999)))
-    : line;
+/** The first message opens a ticket; later messages get a short acknowledgement. */
+function supportReply(message: string, first: boolean): string {
+  if (first) return `Thanks for contacting Southbag Support. We have created ticket number ${100000 + Math.floor(Math.random() * 900000)}.`;
+  const topic = TOPICS.find(([re]) => re.test(message));
+  if (topic) return topic[1];
+  return FOLLOW_UPS[Math.floor(Math.random() * FOLLOW_UPS.length)];
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────
+// -- Helpers --------------------------------------------------------------
 
 /** Loads the conversation if the viewer is a member (plus their last_read_at), otherwise 404s. */
 async function memberOf(env: Env, viewerId: string, id: string): Promise<ConversationRow & { last_read_at: number }> {
   const row = await env.DB.prepare(`SELECT c.*, cm.last_read_at FROM conversations c
       JOIN conversation_members cm ON cm.conversation_id = c.id AND cm.user_id = ? WHERE c.id = ?`)
     .bind(viewerId, id).first<ConversationRow & { last_read_at: number }>();
-  if (!row) fail(404, 'Conversation not found. Or it exists and you are not in it. Kevin is.');
+  if (!row) fail(404, 'Conversation not found.');
   return row;
 }
 
@@ -168,7 +135,7 @@ function conversationJson(conv: ConversationRow, viewerId: string, members: (Use
     created_at: conv.created_at,
     last_message_at: conv.last_message_at,
     last_read_at: me?.last_read_at ?? 0,
-    /** Other members' read positions, for "Seen by …". */
+    /** Other members' read positions, for "Seen by ...". */
     read: Object.fromEntries(others.map(m => [m.id, m.last_read_at])),
   };
 }
@@ -182,7 +149,7 @@ async function loadConversationJson(env: Env, viewerId: string, id: string) {
   return conversationJson(conv, viewerId, members);
 }
 
-/** Message rows → JSON, batching senders, files and shared posts (which respect post visibility). */
+/** Message rows -> JSON, batching senders, files and shared posts (which respect post visibility). */
 async function hydrateMessages(env: Env, viewer: SessionUser, rows: MessageRow[]): Promise<MessageJson[]> {
   if (!rows.length) return [];
   const mediaIds = [...new Set(rows.map(m => m.media_id).filter((x): x is string => Boolean(x)))];
@@ -206,7 +173,7 @@ async function hydrateMessages(env: Env, viewer: SessionUser, rows: MessageRow[]
     const post = m.post_id ? posts.get(m.post_id) ?? null : null;
     return {
       id: m.id,
-      sender: m.sender_id ? users.get(m.sender_id) ?? formerCustomer(m.sender_id) : null,
+      sender: m.sender_id ? users.get(m.sender_id) ?? deletedAccount(m.sender_id) : null,
       body: m.body,
       media: m.media_id ? media.get(m.media_id) ?? null : null,
       post,
@@ -237,25 +204,25 @@ const hasContent = (input: SendInput) =>
 async function send(env: Env, user: SessionUser, conv: ConversationRow, input: SendInput): Promise<{ message: MessageJson; reply: MessageJson | null }> {
   const text = typeof input.body === 'string' ? input.body.trim() : '';
   if ([...text].length > MAX_MESSAGE)
-    fail(422, `Messages are limited to ${MAX_MESSAGE.toLocaleString('en-AU')} characters. Kevin counted. His count is authoritative.`);
+    fail(422, `Messages are limited to ${MAX_MESSAGE.toLocaleString('en-AU')} characters.`);
 
   let media: MediaRow | null = null;
   if (input.media_id != null && input.media_id !== '') {
-    if (typeof input.media_id !== 'string') fail(422, 'That attachment is not a file.');
+    if (typeof input.media_id !== 'string') fail(422, 'Attachment not found.');
     try {
       [media] = await ownedReadyMedia(env, user.id, [input.media_id]);
     } catch {
-      fail(422, 'That file is not yours, or it has not finished uploading.');
+      fail(422, 'The attachment has not finished uploading.');
     }
   }
   let post: PostRow | null = null;
   if (input.post_id != null && input.post_id !== '') {
-    if (typeof input.post_id !== 'string') fail(422, 'That is not a post.');
+    if (typeof input.post_id !== 'string') fail(422, 'Post not found.');
     post = await loadVisiblePost(env, user.id, input.post_id);
-    if (!post || post.deleted_at) fail(404, 'That post has left the building.');
+    if (!post || post.deleted_at) fail(404, 'Post not found.');
   }
   if (!text && !media && !post)
-    fail(422, 'Kevin does not accept blank messages. He does accept fees. Fee assessed: $2.00 — Kevin tax.');
+    fail(422, 'Write a message first.');
 
   const support = isSupport(conv.id);
   if (!conv.is_group && !support) {
@@ -263,8 +230,8 @@ async function send(env: Env, user: SessionUser, conv: ConversationRow, input: S
         ON (b.blocker_id = cm.user_id AND b.blocked_id = ?1) OR (b.blocker_id = ?1 AND b.blocked_id = cm.user_id)
         WHERE cm.conversation_id = ?2 AND cm.user_id != ?1 LIMIT 1`).bind(user.id, conv.id).first<{ blocker_id: string }>();
     if (blocked) fail(403, blocked.blocker_id === user.id
-      ? 'You blocked this person. Unblock them before messaging them. Kevin will not pass notes.'
-      : 'This person is not accepting your messages. Kevin still is.');
+      ? 'You have blocked this person. Unblock them to send messages.'
+      : 'This person is not accepting messages from you.');
   }
 
   const now = Date.now();
@@ -276,9 +243,11 @@ async function send(env: Env, user: SessionUser, conv: ConversationRow, input: S
   let reply: MessageJson | null = null;
   let readAt = now;
   if (support) {
-    // The reply is 1 ms younger so it sorts after the message it is ignoring.
+    // The reply is 1 ms younger so it sorts after the message it answers.
     const at = now + 1;
-    const replyText = supportReply(text);
+    const asked = await env.DB.prepare('SELECT 1 FROM messages WHERE conversation_id = ? AND sender_id IS NOT NULL LIMIT 1')
+      .bind(conv.id).first();
+    const replyText = supportReply(text, !asked);
     const replyId = newId(at);
     statements.push(env.DB.prepare('INSERT INTO messages (id, conversation_id, sender_id, body, created_at) VALUES (?, ?, NULL, ?, ?)')
       .bind(replyId, conv.id, replyText, at));
@@ -306,7 +275,7 @@ async function send(env: Env, user: SessionUser, conv: ConversationRow, input: S
   };
 }
 
-// ── Routes ───────────────────────────────────────────────────────────────
+// -- Routes ---------------------------------------------------------------
 
 messages.get('/', async c => {
   const user = requireUser(c);
@@ -383,18 +352,18 @@ messages.post('/', async c => {
     ? [...new Set(input.handles.filter((h): h is string => typeof h === 'string')
         .map(h => h.trim().replace(/^@/, '').toLowerCase()).filter(Boolean))]
     : [];
-  if (!handles.length) fail(422, 'Pick at least one person to message. Kevin does not count.');
+  if (!handles.length) fail(422, 'Choose at least one person.');
   if (handles.length > MAX_MEMBERS)
-    fail(422, `Group chats are limited to ${MAX_MEMBERS} people, including you. Kevin is not counted. Kevin is never counted.`);
+    fail(422, `Group chats are limited to ${MAX_MEMBERS} people, including you.`);
 
   const { results: found } = await c.env.DB.prepare(`SELECT ${userCardColumns} FROM users WHERE handle IN (${placeholders(handles.length)})`)
     .bind(...handles).all<UserRow>();
   const missing = handles.find(h => !found.some(f => f.handle.toLowerCase() === h));
-  if (missing) fail(404, `Nobody called @${missing} exists. Kevin checked.`);
+  if (missing) fail(404, `No account called @${missing}.`);
   const others = found.filter(f => f.id !== user.id);
-  if (!others.length) fail(422, 'You cannot message yourself. Southbag does not offer therapy.');
+  if (!others.length) fail(422, 'You cannot message yourself.');
   if (others.length + 1 > MAX_MEMBERS)
-    fail(422, `Group chats are limited to ${MAX_MEMBERS} people, including you. Kevin is not counted.`);
+    fail(422, `Group chats are limited to ${MAX_MEMBERS} people, including you.`);
 
   const otherIds = others.map(o => o.id);
   const inOthers = placeholders(otherIds.length);
@@ -402,7 +371,7 @@ messages.post('/', async c => {
       WHERE (blocker_id IN (${inOthers}) AND blocked_id = ?) OR (blocker_id = ? AND blocked_id IN (${inOthers}))`)
     .bind(...otherIds, user.id, user.id, ...otherIds).all<{ blocker_id: string; blocked_id: string }>();
   const blockedBy = blocks.find(b => b.blocked_id === user.id);
-  if (blockedBy) fail(403, `@${others.find(o => o.id === blockedBy.blocker_id)!.handle} is not accepting your messages. Kevin still is.`);
+  if (blockedBy) fail(403, `@${others.find(o => o.id === blockedBy.blocker_id)!.handle} is not accepting messages from you.`);
   const iBlocked = blocks.find(b => b.blocker_id === user.id);
   if (iBlocked) fail(403, `You blocked @${others.find(o => o.id === iBlocked.blocked_id)!.handle}. Unblock them first.`);
 
@@ -439,7 +408,7 @@ messages.post('/', async c => {
       ...others.map(o => c.env.DB.prepare('INSERT INTO conversation_members (conversation_id, user_id, last_read_at, joined_at) VALUES (?, ?, ?, ?)')
         .bind(conv!.id, o.id, othersReadAt, now)),
     ];
-    if (isGroup) statements.push(systemMessage(c.env, conv.id, `${user.name} started a group chat. Kevin has been added automatically. He will not appear in the member list.`, now));
+    if (isGroup) statements.push(systemMessage(c.env, conv.id, `${user.name} started a group chat.`, now));
     await c.env.DB.batch(statements);
   }
 
@@ -499,7 +468,7 @@ messages.get('/:id/poll', async c => {
     c.env.DB.prepare('SELECT * FROM messages WHERE conversation_id = ? AND id > ? ORDER BY id LIMIT 51').bind(id, after),
   ]);
   const members = membersRes.results as { user_id: string; last_read_at: number; title: string | null }[];
-  if (!members.some(m => m.user_id === user.id)) fail(404, 'Conversation not found. Or it exists and you are not in it. Kevin is.');
+  if (!members.some(m => m.user_id === user.id)) fail(404, 'Conversation not found.');
   const rows = (newRes.results as unknown as MessageRow[]).slice(0, 50);
   return c.json({
     items: await hydrateMessages(c.env, user, rows),
@@ -530,11 +499,11 @@ messages.post('/:id/read', async c => {
 messages.patch('/:id', async c => {
   const user = requireUser(c);
   const conv = await memberOf(c.env, user.id, c.req.param('id'));
-  if (!conv.is_group) fail(422, 'Only group chats have titles. One-to-one conversations are titled by Kevin.');
+  if (!conv.is_group) fail(422, 'Only group chats can be renamed.');
   const input = await body(c);
   const title = str(input.title, MAX_TITLE) || null;
   const now = Date.now();
-  const note = title ? `${user.name} renamed the chat to “${title}”. The old name is retained.` : `${user.name} removed the chat name. It has been retained anyway.`;
+  const note = title ? `${user.name} renamed the chat to "${title}".` : `${user.name} removed the chat name.`;
   await c.env.DB.batch([
     c.env.DB.prepare('UPDATE conversations SET title = ? WHERE id = ?').bind(title, conv.id),
     systemMessage(c.env, conv.id, note, now),
@@ -547,12 +516,12 @@ messages.patch('/:id', async c => {
 messages.delete('/:id/members/me', async c => {
   const user = requireUser(c);
   const conv = await memberOf(c.env, user.id, c.req.param('id'));
-  if (isSupport(conv.id)) fail(422, 'Southbag Support cannot be left. It can only be ignored, which is what it does to you.');
-  if (!conv.is_group) fail(422, 'One-to-one conversations cannot be left. They can only be ignored. All messages are retained.');
+  if (isSupport(conv.id)) fail(422, 'Southbag Support cannot be left.');
+  if (!conv.is_group) fail(422, 'One-to-one conversations cannot be left.');
   const now = Date.now();
   await c.env.DB.batch([
     c.env.DB.prepare('DELETE FROM conversation_members WHERE conversation_id = ? AND user_id = ?').bind(conv.id, user.id),
-    systemMessage(c.env, conv.id, `${user.name} left the chat. Their messages are retained.`, now),
+    systemMessage(c.env, conv.id, `${user.name} left the chat.`, now),
     bumpConversation(c.env, conv.id, now),
   ]);
   return c.json({ ok: true });
