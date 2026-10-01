@@ -13,6 +13,7 @@
 import { Hono } from 'hono';
 import type { AppEnv, Ctx } from '../env';
 import { cursor, fail, limit } from '../lib/http';
+import { track } from '../lib/palantir';
 import { hydrate, visibleTo, type PostRow } from '../lib/posts';
 import { userCard, userCardColumns, type UserRow } from '../lib/users';
 import { rankedPosts } from './feed';
@@ -126,18 +127,27 @@ search.get('/', async c => {
     if (type === 'top') return c.json({ people: [], tags: [], posts: { items: [], next: null } });
     return c.json({ items: [], next: null });
   }
+  // Analytics get the shape of a search (type, query length, result count), never the query text.
+  const searched = (count: number) => { if (!after) track(c, 'social_search_performed', { type, query_length: q.length, result_count: count }); };
   switch (type) {
-    case 'posts': return c.json(await searchPosts(c, q, size, after));
-    case 'videos': return c.json(await searchPosts(c, q, size, after, true));
-    case 'people': return c.json(await searchPeople(c, q, size, offsetOf(after)));
-    case 'tags': return c.json(await searchTags(c, q, size, offsetOf(after)));
-    case 'groups': return c.json(await searchGroups(c, q, size, offsetOf(after)));
+    case 'posts': case 'videos': {
+      const result = await searchPosts(c, q, size, after, type === 'videos');
+      searched(result.items.length);
+      return c.json(result);
+    }
+    case 'people': case 'tags': case 'groups': {
+      const run = { people: searchPeople, tags: searchTags, groups: searchGroups }[type];
+      const result = await run(c, q, size, offsetOf(after));
+      searched(result.items.length);
+      return c.json(result);
+    }
     default: {
       const [people, tags, posts] = await Promise.all([
         searchPeople(c, q, 5, 0),
         searchTags(c, q, 5, 0),
         searchPosts(c, q, size, after),
       ]);
+      searched(people.items.length + tags.items.length + posts.items.length);
       return c.json({ people: people.items, tags: tags.items, posts });
     }
   }

@@ -23,6 +23,7 @@ import { body, cursor, fail, limit, page, placeholders, requireUser, str } from 
 import { newId } from '../lib/ids';
 import { deleteUnusedMedia, getMedia } from '../lib/media';
 import { notifyStatement } from '../lib/notify';
+import { track } from '../lib/palantir';
 import { hydrate, visibleTo, type PostRow } from '../lib/posts';
 import { userByHandle, userCard, userCardColumns, type UserRow } from '../lib/users';
 
@@ -150,6 +151,7 @@ groups.post('/', async c => {
     c.env.DB.prepare(`INSERT INTO group_members (group_id, user_id, role, created_at) VALUES (?, ?, 'owner', ?)`).bind(id, user.id, now),
   ]);
   const group = await c.env.DB.prepare('SELECT * FROM groups WHERE id = ?').bind(id).first<GroupRow>();
+  track(c, 'social_group_created', { group_id: id, privacy, has_avatar: Boolean(avatarId), has_banner: Boolean(bannerId) });
   return c.json({ group: groupJson(group!, 'owner') }, 201);
 });
 
@@ -226,6 +228,7 @@ groups.patch('/:slug', async c => {
   statements.push(c.env.DB.prepare(`UPDATE groups SET ${sets.join(', ')} WHERE id = ?`).bind(...values, group.id));
   await c.env.DB.batch(statements);
   await dropUnused(c.env, replaced);
+  track(c, 'social_group_updated', { group_id: group.id, fields: sets.map(part => part.split(' ')[0]), opened_up: openedUp });
   const fresh = await c.env.DB.prepare('SELECT * FROM groups WHERE id = ?').bind(group.id).first<GroupRow>();
   return c.json({ group: groupJson(fresh!, role) });
 });
@@ -246,6 +249,7 @@ groups.delete('/:slug', async c => {
     c.env.DB.prepare('DELETE FROM groups WHERE id = ?').bind(group.id),
   ]);
   await dropUnused(c.env, [group.avatar_media_id, group.banner_media_id, ...files.map(f => f.media_id)]);
+  track(c, 'social_group_deleted', { group_id: group.id, member_count: group.member_count, post_count: group.post_count });
   return c.json({ ok: true });
 });
 
@@ -262,6 +266,7 @@ groups.post('/:slug/join', async c => {
         .bind(group.id, user.id, now),
       c.env.DB.prepare('UPDATE groups SET member_count = member_count + 1 WHERE id = ?').bind(group.id),
     ]);
+    track(c, 'social_group_joined', { group_id: group.id, privacy: group.privacy });
     return c.json({ viewer: { role: 'member' } });
   }
   const { results: admins } = await c.env.DB.prepare(`SELECT user_id FROM group_members WHERE group_id = ? AND role IN ('owner', 'admin') LIMIT 20`)
@@ -275,6 +280,7 @@ groups.post('/:slug/join', async c => {
     if (s) statements.push(s);
   }
   await c.env.DB.batch(statements);
+  track(c, 'social_group_join_requested', { group_id: group.id });
   return c.json({ viewer: { role: 'pending' } });
 });
 
@@ -286,6 +292,7 @@ groups.delete('/:slug/join', async c => {
   const statements = [c.env.DB.prepare('DELETE FROM group_members WHERE group_id = ? AND user_id = ?').bind(group.id, user.id)];
   if (role !== 'pending') statements.push(c.env.DB.prepare('UPDATE groups SET member_count = MAX(0, member_count - 1) WHERE id = ?').bind(group.id));
   await c.env.DB.batch(statements);
+  track(c, role === 'pending' ? 'social_group_join_withdrawn' : 'social_group_left', { group_id: group.id, role });
   return c.json({ viewer: { role: null } });
 });
 
@@ -317,6 +324,7 @@ groups.post('/:slug/members/:handle', async c => {
   const action = (await body(c)).action;
   const now = Date.now();
   const card = userCard(target);
+  const managed = () => track(c, 'social_group_member_managed', { group_id: group.id, action, target_user_id: target.id, from_role: membership.role });
   const setRole = (next: Role) => c.env.DB.prepare('UPDATE group_members SET role = ? WHERE group_id = ? AND user_id = ?').bind(next, group.id, target.id);
 
   if (target.id === user.id && action !== 'approve') fail(409, 'You cannot do that to yourself.');
@@ -329,16 +337,19 @@ groups.post('/:slug/members/:handle', async c => {
       const note = notifyStatement(c.env, { userId: target.id, actorId: user.id, type: 'group_join', groupId: group.id, body: 'approved' }, now);
       if (note) statements.push(note);
       await c.env.DB.batch(statements);
+      managed();
       return c.json({ member: { user: card, role: 'member' } });
     }
     case 'promote':
       if (membership.role !== 'member') fail(409, membership.role === 'pending' ? 'Approve the request first.' : 'They are already an admin.');
       await setRole('admin').run();
+      managed();
       return c.json({ member: { user: card, role: 'admin' } });
     case 'demote':
       if (role !== 'owner') fail(403, 'Only the owner can demote admins.');
       if (membership.role !== 'admin') fail(409, 'They are not an admin.');
       await setRole('member').run();
+      managed();
       return c.json({ member: { user: card, role: 'member' } });
     case 'remove': {
       if (membership.role === 'admin' && role !== 'owner') fail(403, 'Only the owner can remove admins.');
@@ -346,6 +357,7 @@ groups.post('/:slug/members/:handle', async c => {
       if (membership.role !== 'pending')
         statements.push(c.env.DB.prepare('UPDATE groups SET member_count = MAX(0, member_count - 1) WHERE id = ?').bind(group.id));
       await c.env.DB.batch(statements);
+      managed();
       return c.json({ member: null });
     }
     default:

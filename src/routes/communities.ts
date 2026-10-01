@@ -42,6 +42,7 @@ import { body, cursor, fail, limit, placeholders, requireUser, str } from '../li
 import { newId } from '../lib/ids';
 import { deleteUnusedMedia, getMedia } from '../lib/media';
 import { notifyStatement } from '../lib/notify';
+import { track } from '../lib/palantir';
 import { userByHandle, userCard, userCardColumns, type UserRow } from '../lib/users';
 
 const communities = new Hono<AppEnv>();
@@ -349,6 +350,7 @@ communities.post('/', async c => {
     throw err;
   }
   const row = await c.env.DB.prepare('SELECT * FROM communities WHERE id = ?').bind(id).first<CommunityRow>();
+  track(c, 'social_community_created', { community_id: id, has_icon: Boolean(iconId), has_banner: Boolean(bannerId) });
   return c.json({ community: communityJson(row!, 'owner') }, 201);
 });
 
@@ -404,6 +406,7 @@ communities.put('/votes', async c => {
     await c.env.DB.prepare('UPDATE threads SET hot = ? WHERE id = ? AND score = ?')
       .bind(hotScore(row.score, row.created_at), target.id, row.score).run();
   }
+  track(c, 'social_vote_cast', { target_type: type, target_id: target.id, value });
   return c.json({ target_type: type, target_id: target.id, score: row.score, upvotes: row.upvotes, downvotes: row.downvotes, vote: value });
 });
 
@@ -459,6 +462,7 @@ communities.post('/:name/join', async c => {
     c.env.DB.prepare(`INSERT OR IGNORE INTO community_members (community_id, user_id, role, created_at) VALUES (?, ?, 'member', ?)`)
       .bind(community.id, user.id, Date.now()),
   ]);
+  track(c, 'social_community_joined', { community_id: community.id });
   return c.json({ viewer: { role: 'member' }, member_count: (fresh.results[0] as { member_count: number }).member_count });
 });
 
@@ -473,6 +477,7 @@ communities.delete('/:name/join', async c => {
     c.env.DB.prepare('SELECT member_count FROM communities WHERE id = ?').bind(community.id),
     c.env.DB.prepare('DELETE FROM community_members WHERE community_id = ? AND user_id = ?').bind(community.id, user.id),
   ]);
+  track(c, 'social_community_left', { community_id: community.id, role });
   return c.json({ viewer: { role: null }, member_count: (fresh.results[0] as { member_count: number }).member_count });
 });
 
@@ -571,6 +576,7 @@ communities.post('/:name/threads', async c => {
     c.env.DB.prepare('UPDATE communities SET thread_count = thread_count + 1 WHERE id = ?').bind(community.id),
   ]);
   const row = await c.env.DB.prepare(`${THREAD_SELECT} WHERE t.id = ?`).bind(id).first<ThreadFullRow>();
+  track(c, 'social_thread_created', { thread_id: id, community_id: community.id, kind });
   return c.json({ thread: threadJson(row!, 1, user.id, isMod(role)) }, 201);
 });
 
@@ -740,6 +746,7 @@ communities.post('/:name/threads/:id/comments', async c => {
   }, now);
   if (note) statements.push(note);
   await c.env.DB.batch(statements);
+  track(c, 'social_thread_comment_created', { comment_id: id, thread_id: thread.id, community_id: thread.community_id, reply: Boolean(parent), depth: parent ? parent.depth + 1 : 0 });
   const row = await c.env.DB.prepare(`${COMMENT_SELECT} WHERE tc.id = ?`).bind(id)
     .first<CommentRow & { u_id: string | null; u_handle: string | null; u_name: string | null; u_avatar: string | null; u_picture: string | null; u_verified: number | null }>();
   return c.json({ comment: commentJson(row!, 1, user.id, mod) }, 201);

@@ -7,6 +7,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../env';
 import { body, fail, requireUser, str } from '../lib/http';
 import { hydrate, hydrateIds, loadVisiblePost, type PostRow } from '../lib/posts';
+import { track } from '../lib/palantir';
 
 const pins = new Hono<AppEnv>();
 
@@ -21,12 +22,14 @@ pins.put('/', async c => {
   if (post.repost_of_id && !post.body) fail(422, 'Reposts cannot be pinned.');
   if (post.group_id) fail(422, 'Group posts cannot be pinned.');
   await c.env.DB.prepare('UPDATE users SET pinned_post_id = ?, updated_at = ? WHERE id = ?').bind(post.id, Date.now(), user.id).run();
+  track(c, 'social_post_pinned', { post_id: post.id, kind: post.kind });
   return c.json({ post: (await hydrateIds(c.env, user, [post.id]))[0] });
 });
 
 pins.delete('/', async c => {
   const user = requireUser(c);
   await c.env.DB.prepare('UPDATE users SET pinned_post_id = NULL, updated_at = ? WHERE id = ?').bind(Date.now(), user.id).run();
+  track(c, 'social_post_unpinned');
   return c.json({ ok: true });
 });
 

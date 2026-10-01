@@ -39,6 +39,7 @@ import { body, fail, limit, placeholders, requireUser, str } from '../lib/http';
 import { newId } from '../lib/ids';
 import { getMedia } from '../lib/media';
 import { notifyStatement, type NotificationType } from '../lib/notify';
+import { track } from '../lib/palantir';
 import { userCard, userCardColumns, userCards, type UserCard, type UserRow } from '../lib/users';
 
 const events = new Hono<AppEnv>();
@@ -424,6 +425,7 @@ events.post('/', async c => {
     if (note) statements.push(note);
   }
   await c.env.DB.batch(statements);
+  track(c, 'social_event_created', { event_id: id, privacy, group_id: group?.id ?? null, online: Boolean(fields.online_url), has_cover: Boolean(fields.cover_media_id), capacity: fields.capacity, cohost_count: cohosts.length });
   return c.json({ event: await detail(c, id) }, 201);
 });
 
@@ -556,6 +558,7 @@ events.delete('/:id', async c => {
       if (note) statements.push(note);
     }
     await c.env.DB.batch(statements);
+    track(c, 'social_event_cancelled', { event_id: event.id, notified_count: people.length });
   }
   return c.json({ event: await detail(c, event.id) });
 });
@@ -592,6 +595,7 @@ events.put('/:id/rsvp', async c => {
     c.env.DB.prepare(countsSql).bind(event.id),
   ]);
   if (!write.meta.changes) fail(409, 'This event is full.');
+  track(c, 'social_event_rsvp_set', { event_id: event.id, status });
   return c.json({ rsvp: status, ...(await counts(c.env, event.id)) });
 });
 
@@ -602,6 +606,7 @@ events.delete('/:id/rsvp', async c => {
     c.env.DB.prepare('DELETE FROM event_rsvps WHERE event_id = ? AND user_id = ?').bind(event.id, user.id),
     c.env.DB.prepare(countsSql).bind(event.id),
   ]);
+  track(c, 'social_event_rsvp_removed', { event_id: event.id });
   return c.json({ rsvp: null, ...(await counts(c.env, event.id)) });
 });
 
@@ -660,6 +665,7 @@ events.post('/:id/invite', async c => {
     if (note) statements.push(note);
   }
   if (statements.length) await c.env.DB.batch(statements);
+  track(c, 'social_event_invites_sent', { event_id: event.id, invited_count: invited.length, already_count: already.length });
   return c.json({ invited, already });
 });
 
@@ -708,6 +714,7 @@ events.post('/:id/comments', async c => {
   if (note) statements.push(note);
   await c.env.DB.batch(statements);
   const row: CommentRow = { id, event_id: event.id, author_id: user.id, body: bodyText, created_at: now, deleted_at: null };
+  track(c, 'social_event_comment_created', { comment_id: id, event_id: event.id });
   return c.json({ comment: commentJson(row, userCard(user), true) }, 201);
 });
 

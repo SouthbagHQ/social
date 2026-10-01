@@ -10,6 +10,7 @@ import { Hono } from 'hono';
 import type { AppEnv, Ctx } from '../env';
 import { body, fail, requireUser, str } from '../lib/http';
 import { newId } from '../lib/ids';
+import { track } from '../lib/palantir';
 import {
   CHUNK_SIZE, allowedTypes, deleteMedia, getMedia, limits, mediaInUse, mediaJson, reserveShard, shardDb, type MediaRow,
 } from '../lib/media';
@@ -48,6 +49,7 @@ media.post('/', async c => {
     .bind(id, user.id, kind, contentType, size, CHUNK_SIZE, chunkCount, shard,
       num(input.width, 20000), num(input.height, 20000), num(input.duration, 86400), posterId,
       str(input.alt, 500), Date.now()).run();
+  track(c, 'social_upload_started', { media_id: id, kind, content_type: contentType, size, chunk_count: chunkCount });
   return c.json({ id, chunk_size: CHUNK_SIZE, chunk_count: chunkCount }, 201);
 });
 
@@ -78,6 +80,7 @@ media.post('/:id/complete', async c => {
     .bind(row.id).first<{ n: number }>();
   if ((count?.n ?? 0) !== row.chunk_count) fail(409, `Still waiting on ${row.chunk_count - (count?.n ?? 0)} chunk(s).`);
   await c.env.DB.prepare(`UPDATE media SET status = 'ready', chunks_received = chunk_count WHERE id = ?`).bind(row.id).run();
+  track(c, 'social_upload_completed', { media_id: row.id, kind: row.kind, content_type: row.content_type, size: row.size, chunk_count: row.chunk_count, duration: row.duration ?? null });
   return c.json(mediaJson({ ...row, status: 'ready' }));
 });
 

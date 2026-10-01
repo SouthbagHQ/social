@@ -23,6 +23,7 @@ import { Hono } from 'hono';
 import type { AppEnv, Ctx, SessionUser } from '../env';
 import { body, cursor, fail, limit, placeholders, requireUser, str } from '../lib/http';
 import { newId } from '../lib/ids';
+import { track } from '../lib/palantir';
 import { hydrate, visibleTo, type PostRow } from '../lib/posts';
 import { userCard, userCardColumns, type UserRow } from '../lib/users';
 
@@ -157,6 +158,7 @@ users.post('/me/verify', async c => {
   }
   await c.env.DB.prepare(`INSERT INTO notifications (id, user_id, actor_id, type, body, created_at) VALUES (?, ?, NULL, 'system', ?, ?)`)
     .bind(newId(), me.id, 'Your Southbag Verified subscription is active.', Date.now()).run();
+  track(c, 'social_verified_subscribed', { charged: VERIFIED_CENTS });
   return c.json({
     verified: true, tier: 'standard', charged: VERIFIED_CENTS, bag_balance: row.bag_balance,
     message: 'Subscribed to Southbag Verified.',
@@ -168,6 +170,7 @@ users.delete('/me/verify', async c => {
   const row = await c.env.DB.prepare('UPDATE users SET verified = 0, updated_at = ? WHERE id = ? AND verified = 1 RETURNING bag_balance')
     .bind(Date.now(), me.id).first<{ bag_balance: number }>();
   if (!row) fail(409, 'You are not subscribed.');
+  track(c, 'social_verified_cancelled');
   return c.json({
     verified: false, charged: 0, bag_balance: row.bag_balance,
     message: 'Subscription cancelled.',
@@ -244,6 +247,7 @@ users.put('/:handle/follow', async c => {
     c.env.DB.prepare('INSERT OR IGNORE INTO follows (follower_id, followee_id, created_at) VALUES (?, ?, ?)').bind(me.id, them.id, now),
   ]);
   const row = await c.env.DB.prepare('SELECT follower_count FROM users WHERE id = ?').bind(them.id).first<{ follower_count: number }>();
+  track(c, 'social_user_followed', { target_user_id: them.id });
   return c.json({ is_following: true, follower_count: row?.follower_count ?? 0 });
 });
 
@@ -260,6 +264,7 @@ function unfollowStatements(c: Ctx, follower: string, followee: string): D1Prepa
 users.delete('/:handle/follow', async c => {
   const { me, them } = await actOn(c, 'You cannot unfollow yourself.');
   await c.env.DB.batch(unfollowStatements(c, me.id, them.id));
+  track(c, 'social_user_unfollowed', { target_user_id: them.id });
   const row = await c.env.DB.prepare('SELECT follower_count FROM users WHERE id = ?').bind(them.id).first<{ follower_count: number }>();
   return c.json({ is_following: false, follower_count: row?.follower_count ?? 0 });
 });
@@ -305,6 +310,7 @@ users.put('/:handle/friend', async c => {
       c.env.DB.prepare(`INSERT INTO notifications (id, user_id, actor_id, type, created_at) SELECT ?, ?, ?, 'friend_accept', ?
         WHERE changes() > 0`).bind(newId(now), them.id, me.id, now),
     ]);
+    track(c, 'social_friend_request_accepted', { target_user_id: them.id });
     return c.json({ friendship: 'friends' });
   }
   await c.env.DB.batch([
@@ -318,6 +324,7 @@ users.put('/:handle/friend', async c => {
   const row = await c.env.DB.prepare(`SELECT requester_id, status FROM friendships
       WHERE (requester_id = ? AND addressee_id = ?) OR (requester_id = ? AND addressee_id = ?)`)
     .bind(me.id, them.id, them.id, me.id).first<{ requester_id: string; status: string }>();
+  track(c, 'social_friend_request_sent', { target_user_id: them.id });
   return c.json({ friendship: friendshipState(row, me.id) });
 });
 
@@ -325,6 +332,7 @@ users.delete('/:handle/friend', async c => {
   const { me, them } = await actOn(c, 'You cannot unfriend yourself.');
   await c.env.DB.prepare(`DELETE FROM friendships WHERE (requester_id = ? AND addressee_id = ?) OR (requester_id = ? AND addressee_id = ?)`)
     .bind(me.id, them.id, them.id, me.id).run();
+  track(c, 'social_friend_removed', { target_user_id: them.id });
   return c.json({ friendship: 'none' });
 });
 
@@ -354,12 +362,14 @@ users.put('/:handle/block', async c => {
     c.env.DB.prepare(`DELETE FROM friendships WHERE (requester_id = ? AND addressee_id = ?) OR (requester_id = ? AND addressee_id = ?)`)
       .bind(me.id, them.id, them.id, me.id),
   ]);
+  track(c, 'social_user_blocked', { target_user_id: them.id });
   return c.json({ blocked: true });
 });
 
 users.delete('/:handle/block', async c => {
   const { me, them } = await actOn(c, 'You cannot unblock yourself.');
   await c.env.DB.prepare('DELETE FROM blocks WHERE blocker_id = ? AND blocked_id = ?').bind(me.id, them.id).run();
+  track(c, 'social_user_unblocked', { target_user_id: them.id });
   return c.json({ blocked: false });
 });
 

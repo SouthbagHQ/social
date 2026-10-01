@@ -67,6 +67,7 @@ import { body, fail, limit, placeholders, requireUser, str } from '../lib/http';
 import { newId } from '../lib/ids';
 import { mediaJson, ownedReadyMedia, type MediaJson, type MediaRow } from '../lib/media';
 import { notifyStatement } from '../lib/notify';
+import { track } from '../lib/palantir';
 import { userCard, userCardColumns, type UserCard, type UserRow } from '../lib/users';
 
 const servers = new Hono<AppEnv>();
@@ -537,6 +538,7 @@ servers.post('/', async c => {
         VALUES (?, ?, ?, 'general', '', 'text', 0, ?)`).bind(channelId, id, categoryId, now),
   ]);
   const server = await c.env.DB.prepare('SELECT * FROM servers WHERE id = ?').bind(id).first<ServerRow>();
+  track(c, 'social_server_created', { server_id: id, has_icon: Boolean(iconId) });
   return c.json({ server: serverJson(server!), channel_id: channelId }, 201);
 });
 
@@ -575,6 +577,7 @@ servers.post('/join/:code', async c => {
     c.env.DB.prepare('INSERT OR REPLACE INTO server_presence (server_id, user_id, last_seen_at) VALUES (?, ?, ?)').bind(s.id, user.id, now),
   ]);
   const server = await c.env.DB.prepare('SELECT * FROM servers WHERE id = ?').bind(s.id).first<ServerRow>();
+  track(c, 'social_server_joined', { server_id: s.id, member_count: server?.member_count ?? null });
   return c.json({ server: serverJson(server!), joined: true });
 });
 
@@ -643,6 +646,7 @@ servers.delete('/:id', async c => {
   const a = await access(c.env, user.id, c.req.param('id'));
   if (!a.isOwner) fail(403, 'Only the owner can delete the server.');
   await c.env.DB.prepare('DELETE FROM servers WHERE id = ?').bind(a.server.id).run();
+  track(c, 'social_server_deleted', { server_id: a.server.id, member_count: a.server.member_count });
   return c.json({ ok: true });
 });
 
@@ -660,6 +664,7 @@ servers.post('/:id/leave', async c => {
   const a = await access(c.env, user.id, c.req.param('id'));
   if (a.isOwner) fail(422, 'Owners cannot leave. Delete the server instead.');
   await c.env.DB.batch(removeMember(c.env, a.server.id, user.id));
+  track(c, 'social_server_left', { server_id: a.server.id });
   return c.json({ ok: true });
 });
 
@@ -820,6 +825,7 @@ servers.put('/:id/bans/:userId', async c => {
       .bind(a.server.id, userId, user.id, str(input.reason, 200), Date.now()),
     ...removeMember(c.env, a.server.id, userId),
   ]);
+  track(c, 'social_server_member_banned', { server_id: a.server.id, target_user_id: userId, has_reason: Boolean(str(input.reason, 200)) });
   return c.json({ ok: true });
 });
 
@@ -963,6 +969,7 @@ servers.post('/:id/channels', async c => {
     bump(c.env, a.server.id, now),
   ]);
   const ch = await c.env.DB.prepare('SELECT * FROM channels WHERE id = ?').bind(id).first<ChannelRow>();
+  track(c, 'social_channel_created', { server_id: a.server.id, channel_id: id, kind });
   return c.json({ channel: channelJson(ch!) }, 201);
 });
 
@@ -1143,6 +1150,7 @@ servers.post('/:id/channels/:cid/messages', async c => {
     }
   }
   await c.env.DB.batch(statements);
+  track(c, 'social_channel_message_sent', { server_id: a.server.id, channel_id: ch.id, message_id: id, reply: Boolean(replyTo), has_photo: Boolean(media), mention_count: everyone ? null : mentioned.length, mention_everyone: everyone, length: [...text].length });
   const row: MessageRow = {
     id, channel_id: ch.id, author_id: user.id, body: text, reply_to_id: replyTo, media_id: media?.id ?? null,
     mention_everyone: everyone ? 1 : 0, pinned: 0, pinned_at: null, edited_at: null, deleted_at: null, updated_at: null, created_at: now,
@@ -1215,6 +1223,7 @@ async function react(c: Ctx, on: boolean) {
       : c.env.DB.prepare('DELETE FROM channel_reactions WHERE message_id = ? AND user_id = ? AND reaction = ?').bind(row.id, user.id, word),
     c.env.DB.prepare('UPDATE channel_messages SET updated_at = ? WHERE id = ?').bind(now, row.id),
   ]);
+  track(c, on ? 'social_channel_reaction_added' : 'social_channel_reaction_removed', { server_id: a.server.id, channel_id: a.channel!.id, message_id: row.id, reaction: word });
   return c.json({ message: await oneMessage(c.env, user, a.server.id, a.channel!.id, row.id) });
 }
 servers.put('/:id/channels/:cid/messages/:mid/reactions/:reaction', c => react(c, true));
