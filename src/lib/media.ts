@@ -208,6 +208,8 @@ export const MEDIA_IN_USE = `(
   OR EXISTS (SELECT 1 FROM servers WHERE icon_media_id = m.id)
   OR EXISTS (SELECT 1 FROM channel_messages WHERE media_id = m.id AND deleted_at IS NULL)
   OR EXISTS (SELECT 1 FROM companies WHERE logo_media_id = m.id)
+  OR EXISTS (SELECT 1 FROM wiki_spaces WHERE logo_media_id = m.id)
+  OR EXISTS (SELECT 1 FROM wiki_files WHERE media_id = m.id)
 )`;
 
 /** True while anything still refers to the file. */

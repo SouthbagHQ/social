@@ -1,1 +1,214 @@
-/* wiki styles */
+/* Wikis (Fandom / Wikipedia style). Uses the tokens and furniture in southbag.css: greyscale, square
+   corners, ridge panels, dashed dividers. Buttons are never styled here. Southbag blue only for links in
+   article text, the current sidebar link and added lines in a diff. Images sit in fixed boxes and are
+   stretched to fill them. */
+
+.wk-page [hidden], .wk-home [hidden] { display: none !important; }
+
+/* -- /wiki ---------------------------------------------------------------- */
+.wk-home { max-width: 1000px; box-shadow: none; }
+.wk-find { margin: 0 0 14px; gap: 8px; }
+.wk-find input { flex: 1; min-width: 0; }
+.wk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; box-shadow: none; }
+.wk-card { display: flex; gap: 12px; align-items: flex-start; margin: 0; min-width: 0; }
+.wk-card:nth-child(3n + 2) { transform: rotate(-0.3deg); }
+.wk-card-logo { flex-shrink: 0; box-shadow: none; }
+.wk-card-logo:hover { background: none; }
+.wk-card-main { min-width: 0; box-shadow: none; }
+.wk-card h3 { margin: 2px 0 6px; overflow-wrap: anywhere; }
+.wk-card-desc { margin: 0 0 6px; font-size: 0.9rem; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.wk-form { max-width: 640px; }
+.wk-form select { width: auto; min-width: 220px; max-width: 100%; }
+
+/* -- Logo: a fixed box, stretched ----------------------------------------- */
+.wk-logo { width: 44px; height: 44px; flex-shrink: 0; display: inline-block; border: 1px solid #111; background: #ddd; overflow: hidden; vertical-align: middle; }
+.wk-logo.lg { width: 72px; height: 72px; }
+.wk-logo img { width: 100%; height: 100%; display: block; box-shadow: none; }
+.wk-logo .initial { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; color: #111; font-weight: 700; font-size: 1.6rem; box-shadow: none; }
+
+/* -- Frame: wiki sidebar and main column ---------------------------------- */
+.wk-page { max-width: 1120px; box-shadow: none; }
+.wk-body { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 18px; align-items: start; box-shadow: none; }
+.wk-main { min-width: 0; box-shadow: none; }
+.wk-side { position: sticky; top: 96px; margin: 0; min-width: 0; }
+.wk-side-brand { display: flex; flex-direction: column; gap: 6px; text-decoration: none; box-shadow: none; margin: 0 0 8px; }
+.wk-side-brand:hover { background: none; }
+.wk-side-brand .wk-logo { width: 100%; height: 84px; }
+.wk-side-brand .wk-logo .initial { font-size: 3rem; }
+.wk-side-title { font-weight: 700; font-size: 1.1rem; overflow-wrap: anywhere; text-decoration: underline; }
+.wk-side-community { margin: 0 0 8px; }
+.wk-side-search { display: flex; flex-direction: column; gap: 6px; margin: 0 0 10px; box-shadow: none; }
+.wk-side-links { list-style: none; margin: 0 0 10px; padding: 10px 0 0; border-top: 2px dashed #000; display: flex; flex-direction: column; gap: 6px; box-shadow: none; }
+:root[data-theme='dark'] .wk-side-links { border-top-color: #666; }
+.wk-side-links li { box-shadow: none; }
+.wk-side-links a { display: block; padding: 1px 4px; box-shadow: none; }
+.wk-side-links a[aria-current='page'] { background: var(--sb-button); color: var(--sb-blue); font-weight: 700; }
+.wk-side-stats { margin: 0; }
+
+@media (max-width: 900px) {
+  .wk-body { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .wk-side { position: static; }
+  .wk-side-brand { flex-direction: row; align-items: center; }
+  .wk-side-brand .wk-logo { width: 140px; height: 44px; }
+  .wk-side-brand .wk-logo .initial { font-size: 1.6rem; }
+  .wk-side-search { flex-direction: row; }
+  .wk-side-search input { flex: 1; min-width: 0; }
+  .wk-side-links { flex-direction: row; flex-wrap: wrap; gap: 4px 12px; }
+}
+
+/* -- Page head and tabs --------------------------------------------------- */
+.wk-head { margin: 4px 0 12px; box-shadow: none; }
+.wk-title { max-width: none; margin: 6px 0 8px; font-size: clamp(1.8rem, 5vw, 3rem); overflow-wrap: anywhere; }
+.wk-sub { margin: 0; color: var(--sb-muted); font-size: 0.9rem; overflow-wrap: anywhere; }
+.wk-tabbar { display: flex; align-items: flex-end; gap: 8px 12px; flex-wrap: wrap; border-bottom: 2px dashed #000; margin: 0 0 14px; padding: 0 0 6px; box-shadow: none; }
+:root[data-theme='dark'] .wk-tabbar { border-bottom-color: #666; }
+.wk-tabbar .tabs { border: 0; margin: 0; padding: 0; flex: 1; min-width: 0; }
+.wk-actions { display: flex; gap: 6px; align-items: center; box-shadow: none; }
+.wk-redirected, .wk-protected { margin: -6px 0 10px; }
+.wk-foot { margin: 0 0 20px; }
+.wk-foot a { margin-left: 4px; }
+.wk-missing p { margin: 0 0 10px; }
+.wk-missing .btn { margin: 0 0 12px; }
+
+/* -- Article content ------------------------------------------------------ */
+.wk-article { padding: 1rem 1.1rem; overflow-wrap: anywhere; }
+.wk-article::after { content: ''; display: block; clear: both; }
+.wiki-content { line-height: 1.55; box-shadow: none; }
+.wiki-content :is(div, ul, ol, li, aside, nav, table, tbody, tr, span) { box-shadow: none; }
+.wiki-content p { margin: 0 0 0.8rem; }
+.wiki-content ul, .wiki-content ol { margin: 0 0 0.8rem; padding-left: 1.6rem; }
+.wiki-content li > ul, .wiki-content li > ol { margin: 0.2rem 0 0.2rem; }
+.wiki-content .wiki-heading { margin: 1.4rem 0 0.6rem; scroll-margin-top: 100px; animation: none; }
+.wiki-content h2.wiki-heading { font-size: 1.6rem; padding-bottom: 4px; border-bottom: 2px dashed #000; }
+:root[data-theme='dark'] .wiki-content h2.wiki-heading { border-bottom-color: #666; }
+.wiki-content h3.wiki-heading { font-size: 1.25rem; }
+.wiki-content h4.wiki-heading { font-size: 1.05rem; }
+.wiki-content > :first-child { margin-top: 0; }
+.wiki-content a.wiki-link, .wiki-content a.wiki-ext { color: var(--sb-blue); }
+.wiki-red { color: var(--sb-muted); text-decoration-style: dashed; }
+.wiki-red-note { font-size: 0.75em; color: var(--sb-faint); }
+.wiki-indent { margin: 0 0 0.5rem; }
+.wiki-redirect { border: 4px double #111; padding: 10px 12px; }
+:root[data-theme='dark'] .wiki-redirect { border-color: #999; }
+
+/* Table of contents */
+.wiki-toc { display: inline-block; min-width: 220px; max-width: 100%; margin: 0.4rem 0 1rem; padding: 8px 14px 10px; border: 2px inset var(--sb-bevel); background: var(--sb-paper); }
+.wiki-toc-title { font-weight: 700; margin: 0 0 6px; text-align: center; }
+.wiki-toc ul { list-style: none; margin: 0; padding: 0; }
+.wiki-toc li { margin: 2px 0; }
+.wiki-toc li.wiki-toc-1 { padding-left: 1.2em; }
+.wiki-toc li.wiki-toc-2 { padding-left: 2.4em; }
+.wiki-toc-number { color: var(--sb-muted); margin-right: 4px; }
+
+/* Images: a fixed 4:3 box, the file stretched into it. */
+.wiki-thumb { float: right; clear: right; display: block; width: 240px; margin: 0 0 12px 16px; padding: 4px; border: 2px ridge var(--sb-ridge); background: var(--sb-paper); }
+.wiki-thumb-box { display: block; width: 100%; aspect-ratio: 4 / 3; background: #000; overflow: hidden; }
+.wiki-thumb-box img { display: block; width: 100%; height: 100%; box-shadow: none; }
+.wiki-thumb-missing { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; background: var(--sb-hairline); color: var(--sb-ink); font-size: 0.85rem; }
+.wiki-caption { display: block; padding: 4px 2px 0; font-size: 0.82rem; color: var(--sb-muted); line-height: 1.3; }
+
+/* Tables */
+.wiki-table-wrap { max-width: 100%; overflow-x: auto; margin: 0 0 1rem; }
+.wiki-table { border-collapse: collapse; background: var(--sb-paper); }
+.wiki-table caption { font-weight: 700; padding: 4px; text-align: left; }
+.wiki-table th, .wiki-table td { border: 1px solid #999; padding: 4px 8px; text-align: left; vertical-align: top; }
+.wiki-table th { background: var(--sb-button); }
+
+/* Infobox */
+.wiki-infobox { float: right; clear: right; width: 260px; margin: 0 0 12px 16px; padding: 6px; border: 2px ridge var(--sb-ridge); background: var(--sb-paper); font-size: 0.88rem; }
+.wiki-infobox-title { margin: 0 0 6px; font-weight: 700; font-size: 1.05rem; text-align: center; }
+.wiki-infobox .wiki-thumb { float: none; width: 100%; margin: 0 0 6px; border: 0; padding: 0; }
+.wiki-infobox table { width: 100%; border-collapse: collapse; }
+.wiki-infobox th, .wiki-infobox td { text-align: left; vertical-align: top; padding: 3px 4px; border-top: 1px dashed #999; }
+.wiki-infobox th { width: 40%; }
+
+@media (max-width: 640px) {
+  .wiki-thumb, .wiki-infobox { float: none; width: 100%; margin: 0 0 12px; }
+  .wk-article { padding: 0.75rem; }
+}
+
+/* -- Editor --------------------------------------------------------------- */
+.wk-editor { box-shadow: none; }
+.wk-editor .tabs { margin-bottom: 10px; }
+.wk-write { box-shadow: none; }
+.wk-toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 8px; box-shadow: none; }
+.wk-upload-status { margin-left: 4px; }
+.wk-textarea { min-height: 24rem; line-height: 1.45; transform: none; }
+.wk-source { transform: none; }
+.wk-help { margin: 6px 0 2px; overflow-wrap: anywhere; }
+.wk-preview { min-height: 12rem; }
+.wk-preview::after { content: ''; display: block; clear: both; }
+.wk-summary { display: block; max-width: 640px; margin-top: 14px; }
+.wk-publish { gap: 14px; margin-top: 6px; }
+.wk-conflict { margin-top: 14px; }
+.wk-new-note { margin: -4px 0 10px; }
+
+/* -- History -------------------------------------------------------------- */
+.wk-compare { margin: 0 0 12px; gap: 12px; }
+.wk-revs { display: grid; box-shadow: none; list-style: none; margin: 0; padding: 0; }
+.wk-rev { display: flex; gap: 10px; align-items: flex-start; padding: 8px 4px; box-shadow: none; list-style: none; }
+.wk-rev + .wk-rev { border-top: 1px dashed #999; }
+.wk-rev input[type=checkbox] { margin-top: 4px; }
+.wk-rev-main { flex: 1; min-width: 0; box-shadow: none; }
+.wk-rev-line { margin: 0; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+.wk-rev-summary { margin: 2px 0 0; font-style: italic; color: var(--sb-muted); overflow-wrap: anywhere; }
+.wk-rev-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; box-shadow: none; }
+.wk-delta { font-size: 0.8rem; color: var(--sb-muted); }
+.wk-delta.big { font-weight: 700; color: var(--sb-ink); }
+@media (max-width: 640px) {
+  .wk-rev { flex-wrap: wrap; }
+  .wk-rev-actions { width: 100%; justify-content: flex-start; padding-left: 26px; }
+}
+
+/* -- Diff ----------------------------------------------------------------- */
+.wk-diff-head { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.wk-diff-side { min-width: 0; box-shadow: none; }
+.wk-diff-side p { margin: 0 0 4px; overflow-wrap: anywhere; }
+.wk-diff-label { font-weight: 700; }
+.wk-diff-stats { margin: 0 0 10px; }
+.wk-diff { border: 2px inset var(--sb-bevel); background: var(--sb-paper); padding: 6px 0; overflow-wrap: anywhere; }
+.wk-diff > div { white-space: pre-wrap; padding: 1px 10px 1px 14px; box-shadow: none; min-height: 1.4em; }
+.wk-diff del, .wk-diff ins { text-decoration: none; }
+.wk-diff-del { color: var(--sb-muted); border-left: 4px dashed var(--sb-hairline); }
+.wk-diff-del del { text-decoration: line-through; }
+.wk-diff-add { color: var(--sb-ink); border-left: 4px solid var(--sb-blue); }
+.wk-diff-same { color: var(--sb-faint); border-left: 4px solid transparent; }
+.wk-diff-skip { color: var(--sb-muted); font-style: italic; font-size: 0.85rem; padding: 4px 14px !important; border-top: 1px dashed #999; border-bottom: 1px dashed #999; margin: 2px 0; }
+.wk-old p { margin: 0 0 6px; }
+@media (max-width: 640px) { .wk-diff-head { grid-template-columns: 1fr; } }
+
+/* -- Talk ----------------------------------------------------------------- */
+.wk-new-topic textarea { min-height: 5rem; }
+.wk-talk { box-shadow: none; }
+.wk-comment { padding: 8px 0 0; box-shadow: none; }
+.wk-talk > .wk-comment + .wk-comment { border-top: 2px dashed #000; margin-top: 8px; }
+:root[data-theme='dark'] .wk-talk > .wk-comment + .wk-comment { border-top-color: #666; }
+.wk-comment-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; box-shadow: none; }
+.wk-comment-body { margin: 4px 0 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.wk-comment.deleted > .wk-comment-body { color: var(--sb-muted); font-style: italic; }
+.wk-comment-actions { display: flex; gap: 6px; box-shadow: none; }
+.wk-replies { margin-left: 18px; padding-left: 12px; border-left: 2px dashed #999; box-shadow: none; }
+.wk-replies:empty { display: none; }
+.wk-reply { margin: 8px 0; box-shadow: none; }
+.wk-reply .row { margin-top: 6px; }
+@media (max-width: 640px) { .wk-replies { margin-left: 6px; padding-left: 8px; } }
+
+/* -- Lists: all pages, links, recent changes, search, members ------------- */
+.wk-list { list-style: none; padding: 0.75rem 1rem; display: grid; gap: 4px; }
+.wk-list > div, .wk-list li { box-shadow: none; }
+.wk-columns { columns: 2 220px; column-gap: 24px; box-shadow: none; }
+.wk-columns > li { list-style: none; margin: 0 0 4px; break-inside: avoid; box-shadow: none; }
+.wk-changes { display: grid; box-shadow: none; }
+.wk-change { list-style: none; display: flex; gap: 10px; align-items: baseline; padding: 4px 0; box-shadow: none; }
+.wk-change + .wk-change { border-top: 1px dashed #999; }
+.wk-change-when { flex: 0 0 64px; }
+.wk-change-main { min-width: 0; overflow-wrap: anywhere; }
+.wk-results { padding-left: 1.4rem; }
+.wk-results li { margin: 0 0 12px; box-shadow: none; }
+.wk-result-title { font-weight: 700; color: var(--sb-blue); }
+.wk-results p { margin: 2px 0 0; }
+.wk-members { list-style: none; padding: 0.5rem 0.9rem; margin: 0 0 1rem; }
+.wk-members .user-row { flex-wrap: wrap; }
+.wk-members .grow p { margin: 0; }
+.wk-add-member .row { align-items: flex-end; gap: 10px; }
+.wk-add-member select { width: auto; }
