@@ -54,6 +54,16 @@ route('/audio/:section', () => import('./views/audio.js'));
 route('/audio/:section/:id', () => import('./views/audio.js'));
 route('/jobs', () => import('./views/jobs.js'));
 route('/jobs/:jobId', () => import('./views/jobs.js'));
+// Marketplace, boards (Pinterest), wiki (Fandom), dating
+route('/marketplace', () => import('./views/marketplace.js'));
+route('/marketplace/:listingId', () => import('./views/marketplace.js'));
+route('/boards', () => import('./views/boards.js'));
+route('/boards/:boardId', () => import('./views/boards.js'));
+route('/wiki', () => import('./views/wiki.js'));
+route('/wiki/:space', () => import('./views/wiki.js'));
+route('/wiki/:space/:page', () => import('./views/wiki.js'));
+route('/wiki/:space/:page/:action', () => import('./views/wiki.js'));
+route('/dating', () => import('./views/dating.js'));
 // Messages
 route('/messages', () => import('./views/messages.js'));
 route('/messages/:id', () => import('./views/messages.js'));
@@ -76,6 +86,10 @@ const sections = [
   { href: '/events', label: 'Events' },
   { href: '/audio', label: 'Podcasts and music' },
   { href: '/jobs', label: 'Jobs' },
+  { href: '/marketplace', label: 'Marketplace' },
+  { href: '/boards', label: 'Boards' },
+  { href: '/wiki', label: 'Wiki' },
+  { href: '/dating', label: 'Dating', auth: true },
   { href: '/messages', label: 'Messages', badge: 'messages', auth: true },
   { href: '/notifications', label: 'Notifications', badge: 'notifications', auth: true },
   { href: '/friends', label: 'Friends', badge: 'friend_requests', auth: true },

@@ -87,4 +87,13 @@ signed in without Identity. Mutating API calls need `origin: http://localhost:87
 
 Migration numbers are reserved per feature so parallel work never collides:
 `0003_polls_pins.sql`, `0004_communities.sql`, `0005_events.sql`, `0006_audio.sql`,
-`0007_servers.sql`, `0008_careers.sql`. Never edit an applied migration; add a new one.
+`0007_servers.sql`, `0008_careers.sql`, `0009_notification_links.sql`, `0010_marketplace.sql`,
+`0011_boards.sql`, `0012_streaks.sql`, `0013_wiki.sql`, `0014_dating.sql`. Never edit an applied
+migration; add a new one.
+
+## Analytics
+
+Palantir (PostHog behind `palantir.southbag.cc`) is shared by every Southbag app. Record events with
+`track(c, 'event_name', props)` from `src/lib/palantir.ts` on the server and `track('event_name', props)`
+from `public/js/analytics.js` in the browser. Event names are `social_<noun>_<past-tense verb>`,
+e.g. `social_post_created`, `social_listing_sold`.

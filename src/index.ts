@@ -25,6 +25,11 @@ import events, { sendEventReminders } from './routes/events';
 import audio from './routes/audio';
 import servers from './routes/servers';
 import careers from './routes/careers';
+import marketplace from './routes/marketplace';
+import boards from './routes/boards';
+import streaks, { streaksCron } from './routes/streaks';
+import wiki from './routes/wiki';
+import dating from './routes/dating';
 
 const app = new Hono<AppEnv>();
 
@@ -94,6 +99,11 @@ app.route('/api/events', events);
 app.route('/api/audio', audio);
 app.route('/api/servers', servers);
 app.route('/api/careers', careers);
+app.route('/api/marketplace', marketplace);
+app.route('/api/boards', boards);
+app.route('/api/streaks', streaks);
+app.route('/api/wiki', wiki);
+app.route('/api/dating', dating);
 
 /** Hourly: expire stories, drop abandoned uploads and dead sessions. */
 async function janitor(env: Env): Promise<void> {
@@ -122,5 +132,7 @@ export default {
     ctx.waitUntil(janitor(env));
     // Events: remind people going to events that start in the next 24 hours (once each).
     ctx.waitUntil(sendEventReminders(env).catch(err => console.error('event reminders', err)));
+    // Streaks: warn people whose message streaks are about to run out.
+    ctx.waitUntil(streaksCron(env).catch(err => console.error('streaks', err)));
   },
 } satisfies ExportedHandler<Env>;
