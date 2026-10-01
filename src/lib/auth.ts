@@ -5,6 +5,7 @@
 
 import type { Env, SessionUser } from '../env';
 import { newId, randomToken, sha256 } from './ids';
+import { tracker, type Waiter } from './palantir';
 
 export const issuer = 'https://identity.southbag.cc';
 const oauth = {
@@ -104,11 +105,16 @@ export async function login(request: Request, env: Env, returnTo: string | null)
 }
 
 /** Sends people back to the landing page with a reason the UI can show. */
-const failed = (origin: string, reason: string) =>
+const loginFailed = (origin: string, reason: string) =>
   redirect(`${origin}/?login_error=${encodeURIComponent(reason)}`, cookie(stateCookie, '', 0));
 
-export async function callback(request: Request, env: Env): Promise<Response> {
+export async function callback(request: Request, env: Env, ctx: Waiter | null = null): Promise<Response> {
   const url = new URL(request.url);
+  const track = tracker(request, env, ctx);
+  const failed = (origin: string, reason: string) => {
+    track.capture('social_login_failed', { reason });
+    return loginFailed(origin, reason);
+  };
   const state = url.searchParams.get('state');
   if (!state || state !== getCookie(request, stateCookie)) return failed(url.origin, 'invalid_state');
 
@@ -145,17 +151,22 @@ export async function callback(request: Request, env: Env): Promise<Response> {
 
   const now = Date.now();
   const { created } = await upsertUser(env, profile, now);
+  const destination = created ? '/welcome' : safeReturnTo(pending.return_to) || '/';
+  track.identify(profile.sub, { email: profile.email || null, name: profile.name || null });
+  const signedIn = tracker(request, env, ctx, { id: profile.sub });
+  signedIn.capture('social_login_completed', { new_account: created, return_to: destination });
+  if (created) signedIn.capture('social_account_created', { via: 'web' });
   const token = randomToken();
   await env.DB.prepare('INSERT INTO sessions (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)')
     .bind(await sha256(token), profile.sub, now + sessionDays * 86400000, now).run();
-  const destination = created ? '/welcome' : safeReturnTo(pending.return_to) || '/';
   return redirect(pending.origin + destination,
     cookie(sessionCookie, token, sessionDays * 86400), cookie(stateCookie, '', 0));
 }
 
-export async function logout(request: Request, env: Env): Promise<Response> {
+export async function logout(request: Request, env: Env, ctx: Waiter | null = null): Promise<Response> {
   const token = getCookie(request, sessionCookie);
-  if (token) await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(await sha256(token)).run();
+  const ended = token ? await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ? RETURNING user_id').bind(await sha256(token)).first<{ user_id: string }>() : null;
+  tracker(request, env, ctx, ended ? { id: ended.user_id } : null).capture('social_logout', { had_session: Boolean(ended) });
   return redirect(new URL(request.url).origin + '/?signed_out=1', cookie(sessionCookie, '', 0));
 }
 
@@ -215,7 +226,7 @@ async function loadSession(env: Env, tokenHash: string): Promise<SessionUser | n
 }
 
 /** Cookie session for the website; Identity bearer token for apps. */
-export async function session(request: Request, env: Env): Promise<SessionUser | null> {
+export async function session(request: Request, env: Env, ctx: Waiter | null = null): Promise<SessionUser | null> {
   const cookieToken = getCookie(request, sessionCookie);
   if (cookieToken) return loadSession(env, await sha256(cookieToken));
 
@@ -228,7 +239,8 @@ export async function session(request: Request, env: Env): Promise<SessionUser |
   const profile = await fetchIdentityUser(bearer);
   if (!profile) return null;
   const now = Date.now();
-  await upsertUser(env, profile, now);
+  const { created } = await upsertUser(env, profile, now);
+  if (created) tracker(request, env, ctx, { id: profile.sub }).capture('social_account_created', { via: 'mobile' });
   await env.DB.prepare('INSERT OR REPLACE INTO sessions (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)')
     .bind(tokenHash, profile.sub, now + bearerSessionMs, now).run();
   const loaded = await loadSession(env, tokenHash);

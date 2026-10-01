@@ -45,9 +45,9 @@ app.notFound(c => c.json({ error: 'Not found.' }, 404));
 
 // ── Auth ──
 app.get('/auth/login', c => login(c.req.raw, c.env, safeReturnTo(c.req.query('next'))));
-app.get('/auth/callback', c => callback(c.req.raw, c.env));
-app.get('/auth/logout', c => logout(c.req.raw, c.env));
-app.post('/auth/logout', c => logout(c.req.raw, c.env));
+app.get('/auth/callback', c => callback(c.req.raw, c.env, c.executionCtx));
+app.get('/auth/logout', c => logout(c.req.raw, c.env, c.executionCtx));
+app.post('/auth/logout', c => logout(c.req.raw, c.env, c.executionCtx));
 
 // ── Files (public, immutable) ──
 app.on(['GET', 'HEAD'], '/media/:id', c => serveMedia(c.req.raw, c.env, c.executionCtx, c.req.param('id')));
@@ -68,7 +68,7 @@ app.use('/api/*', async (c, next) => {
       } : {},
     });
   }
-  const user = await session(c.req.raw, c.env);
+  const user = await session(c.req.raw, c.env, c.executionCtx);
   c.set('user', user);
   // Cookie sessions need a same-origin check against CSRF; a bearer token is proof by itself.
   if (!['GET', 'HEAD'].includes(c.req.method) && user && !user.bearer && origin !== new URL(c.req.url).origin)

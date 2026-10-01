@@ -12,6 +12,10 @@
 //   ctx.requireAuth()  returns true if signed in, otherwise renders the sign-in prompt and returns false
 //
 // Links: any <a href="/..."> is intercepted automatically. Use navigate(path) in code.
+//
+// Analytics: navigate() and popstate need no pageview call. /palantir.js starts PostHog with
+// capture_pageview: "history_change", which records a $pageview whenever pushState, replaceState or
+// popstate changes the path. Capturing one here as well would count every navigation twice.
 
 import { store } from './store.js';
 
