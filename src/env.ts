@@ -2,8 +2,6 @@ import type { Context } from 'hono';
 
 export interface Env {
   DB: D1Database;
-  /** Chunk store. Extra stores can be bound as MEDIA_1, MEDIA_2, … (see lib/media.ts). */
-  MEDIA: D1Database;
   ASSETS: Fetcher;
   [binding: string]: unknown;
 }

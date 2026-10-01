@@ -12,7 +12,7 @@ import { body, fail, requireUser, str } from '../lib/http';
 import { newId } from '../lib/ids';
 import { track } from '../lib/palantir';
 import {
-  CHUNK_SIZE, allowedTypes, deleteMedia, getMedia, limits, mediaInUse, mediaJson, reserveShard, shardDb, type MediaRow,
+  CHUNK_SIZE, allowedTypes, checkSpace, deleteMedia, getMedia, limits, mediaInUse, mediaJson, type MediaRow,
 } from '../lib/media';
 
 const media = new Hono<AppEnv>();
@@ -41,12 +41,12 @@ media.post('/', async c => {
     posterId = poster.id;
   }
 
-  const shard = await reserveShard(c.env, size).catch(e => fail(503, (e as Error).message));
+  await checkSpace(c.env, size).catch(e => fail(503, (e as Error).message));
   const id = newId();
   const chunkCount = Math.ceil(size / CHUNK_SIZE);
-  await c.env.DB.prepare(`INSERT INTO media (id, owner_id, kind, content_type, size, chunk_size, chunk_count, shard,
-    width, height, duration, poster_id, alt, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .bind(id, user.id, kind, contentType, size, CHUNK_SIZE, chunkCount, shard,
+  await c.env.DB.prepare(`INSERT INTO media (id, owner_id, kind, content_type, size, chunk_size, chunk_count,
+    width, height, duration, poster_id, alt, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .bind(id, user.id, kind, contentType, size, CHUNK_SIZE, chunkCount,
       num(input.width, 20000), num(input.height, 20000), num(input.duration, 86400), posterId,
       str(input.alt, 500), Date.now()).run();
   track(c, 'social_upload_started', { media_id: id, kind, content_type: contentType, size, chunk_count: chunkCount });
@@ -68,7 +68,7 @@ media.put('/:id/chunks/:idx', async c => {
   const expected = idx === row.chunk_count - 1 ? row.size - idx * row.chunk_size : row.chunk_size;
   const data = await c.req.arrayBuffer();
   if (data.byteLength !== expected) fail(422, `Chunk ${idx} should be ${expected} bytes, got ${data.byteLength}.`);
-  await shardDb(c.env, row.shard).prepare('INSERT OR REPLACE INTO chunks (media_id, idx, data) VALUES (?, ?, ?)')
+  await c.env.DB.prepare('INSERT OR REPLACE INTO chunks (media_id, idx, data) VALUES (?, ?, ?)')
     .bind(row.id, idx, data).run();
   return c.json({ ok: true, idx });
 });
@@ -76,7 +76,7 @@ media.put('/:id/chunks/:idx', async c => {
 media.post('/:id/complete', async c => {
   const row = await ownUpload(c, c.req.param('id'));
   if (row.status === 'ready') return c.json(mediaJson(row));
-  const count = await shardDb(c.env, row.shard).prepare('SELECT COUNT(*) AS n FROM chunks WHERE media_id = ?')
+  const count = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM chunks WHERE media_id = ?')
     .bind(row.id).first<{ n: number }>();
   if ((count?.n ?? 0) !== row.chunk_count) fail(409, `Still waiting on ${row.chunk_count - (count?.n ?? 0)} chunk(s).`);
   await c.env.DB.prepare(`UPDATE media SET status = 'ready', chunks_received = chunk_count WHERE id = ?`).bind(row.id).run();

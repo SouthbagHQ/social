@@ -1,11 +1,14 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "southbag-social",
+  "account_id": "1044a3131c99356eba069325d3be3788",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-15",
   "workers_dev": true,
-  // Uncomment once the domain is ready:
-  // "routes": [{ "pattern": "social.southbag.cc", "custom_domain": true }],
+  "routes": [{ "pattern": "social.southbag.cc", "custom_domain": true }],
+  // Otherwise `wrangler dev` rewrites request URLs to the route's host, which breaks local sign-in
+  // and the localhost-only test endpoints.
+  "dev": { "host": "localhost:8787" },
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
@@ -13,22 +16,14 @@
     "run_worker_first": ["/api/*", "/auth/*", "/media/*"],
     "not_found_handling": "single-page-application"
   },
-  // Everything — posts, profiles, and every photo and video byte — lives in D1.
-  // DB holds the social graph and file metadata. MEDIA holds file chunks. The free plan caps a
-  // D1 database at 500 MB (10 databases per account), so extra chunk stores can be added as
-  // MEDIA_1, MEDIA_2, … and new uploads spread across them automatically (see src/lib/media.ts).
+  // Everything — posts, profiles, and every photo and video byte — lives in one D1 database.
+  // The free plan caps it at 500 MB; files may use 400 MB of that (see src/lib/media.ts).
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "southbag-social",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "7048f8ef-bf7d-440e-83bd-838bbe9e2ac8",
       "migrations_dir": "migrations"
-    },
-    {
-      "binding": "MEDIA",
-      "database_name": "southbag-social-media",
-      "database_id": "00000000-0000-0000-0000-000000000001",
-      "migrations_dir": "migrations-media"
     }
   ],
   "triggers": {

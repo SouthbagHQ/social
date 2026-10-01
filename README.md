@@ -11,10 +11,9 @@ It signs in with **Southbag Identity™** and follows the look of the other Sout
 - **One Worker** (`src/`, [Hono](https://hono.dev)) plus **Workers Assets** for the frontend
   (`public/`, plain ES modules, no build step). Only `/api/*`, `/auth/*` and `/media/*` wake the
   Worker; every other request is a free static file.
-- **D1 for everything, including files.** There is no R2. Photos and videos are split into
-  1.5 MiB chunks and stored as BLOB rows (a D1 row tops out at 2 MB). Chunks live in a separate
-  `MEDIA` database. A free-plan database holds 500 MB, so you can bind more chunk stores as
-  `MEDIA_1` … `MEDIA_9`, and new uploads go to the emptiest one.
+- **One D1 database for everything, including files.** There is no R2. Photos and videos are
+  split into 1.5 MiB chunks and stored as BLOB rows (a D1 row tops out at 2 MB). A free-plan
+  database holds 500 MB; files may use 400 MB of it, and uploads past that are refused.
 - Files are served with HTTP Range support, one chunk per request, so seeking a video costs one
   query. Chunks are immutable and cached with the Cache API on custom domains.
 - The browser shrinks photos to 2048 px WebP before uploading and grabs a poster frame from videos.
@@ -74,14 +73,12 @@ Social reports to Palantir, the PostHog instance every Southbag app uses (`palan
 ## Deploy
 
 ```sh
-npx wrangler d1 create southbag-social
-npx wrangler d1 create southbag-social-media
-# Put both database_id values in wrangler.jsonc, and uncomment the social.southbag.cc route.
-npm run deploy         # applies migrations to both databases, then deploys
+npm run deploy         # applies migrations, then deploys
 ```
 
-To add storage later: create another database, apply `migrations-media/` to it, and bind it as
-`MEDIA_1` in `wrangler.jsonc`.
+It deploys to the Southbag account (`account_id` in `wrangler.jsonc`) at `social.southbag.cc`,
+with the `southbag-social` D1 database. For a fresh account, run
+`npx wrangler d1 create southbag-social` and put its `database_id` in `wrangler.jsonc` first.
 
 To list Southbag Social on the Identity dashboard, add
 `{ name: 'Southbag Social', href: 'https://social.southbag.cc/auth/login' }` to the "Your apps"

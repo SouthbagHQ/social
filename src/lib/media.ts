@@ -1,14 +1,14 @@
-// Files live in D1, not R2. A D1 row is capped at 2 MB and a free-plan database at 500 MB, so:
-//  • files are split into CHUNK_SIZE chunks, one row each, uploaded one request per chunk;
-//  • chunks go to a "shard" database — MEDIA, plus MEDIA_1 … MEDIA_9 if you bind more —
-//    and new uploads pick the emptiest shard, so storage grows by adding databases.
+// Files live in D1, not R2, in the same database as everything else. A D1 row is capped at 2 MB
+// and a free-plan database at 500 MB, so:
+//  • files are split into CHUNK_SIZE chunks, one row each in `chunks`, uploaded one request per chunk;
+//  • files may take up to FILES_SOFT_LIMIT in total, leaving the rest for posts, users and so on.
 // Serving honours Range requests one chunk at a time (a video seek costs one query), and
 // chunks are immutable, so they are kept in the Cache API as well.
 
 import type { Env } from '../env';
 
 export const CHUNK_SIZE = 1536 * 1024; // 1.5 MiB, comfortably under D1's 2 MB row limit
-export const SHARD_SOFT_LIMIT = 450 * 1024 * 1024; // leave headroom under the 500 MB free cap
+export const FILES_SOFT_LIMIT = 400 * 1024 * 1024; // of the 500 MB free cap, shared with everything else
 
 export const limits = {
   image: 10 * 1024 * 1024,
@@ -33,7 +33,6 @@ export interface MediaRow {
   chunk_size: number;
   chunk_count: number;
   chunks_received: number;
-  shard: string;
   width: number | null;
   height: number | null;
   duration: number | null;
@@ -58,32 +57,10 @@ export const mediaJson = (m: MediaRow) => ({
 });
 export type MediaJson = ReturnType<typeof mediaJson>;
 
-/** Every bound chunk store, in order. */
-export function shardNames(env: Env): string[] {
-  const names = ['MEDIA'];
-  for (let i = 1; i <= 9; i++) if (env[`MEDIA_${i}`]) names.push(`MEDIA_${i}`);
-  return names;
-}
-
-export function shardDb(env: Env, shard: string): D1Database {
-  const db = env[shard] as D1Database | undefined;
-  if (!db) throw new Error(`Chunk store ${shard} is not bound`);
-  return db;
-}
-
-/** Picks the emptiest chunk store and reserves `size` bytes in it. */
-export async function reserveShard(env: Env, size: number): Promise<string> {
-  const names = shardNames(env);
-  const { results } = await env.DB.prepare('SELECT shard, bytes FROM media_shards').all<{ shard: string; bytes: number }>();
-  const used = new Map(results.map(r => [r.shard, r.bytes]));
-  const shard = names
-    .map(name => ({ name, bytes: used.get(name) ?? 0 }))
-    .sort((a, b) => a.bytes - b.bytes)[0];
-  if (shard.bytes + size > SHARD_SOFT_LIMIT)
-    throw new Error('Storage is full. Bind another MEDIA_n database.');
-  await env.DB.prepare(`INSERT INTO media_shards (shard, bytes) VALUES (?, ?)
-    ON CONFLICT(shard) DO UPDATE SET bytes = bytes + excluded.bytes`).bind(shard.name, size).run();
-  return shard.name;
+/** Throws if `size` more bytes of files would go over FILES_SOFT_LIMIT. Unfinished uploads count. */
+export async function checkSpace(env: Env, size: number): Promise<void> {
+  const row = await env.DB.prepare('SELECT COALESCE(SUM(size), 0) AS bytes FROM media').first<{ bytes: number }>();
+  if ((row?.bytes ?? 0) + size > FILES_SOFT_LIMIT) throw new Error('Storage is full.');
 }
 
 export async function getMedia(env: Env, id: string): Promise<MediaRow | null> {
@@ -104,18 +81,14 @@ export async function ownedReadyMedia(env: Env, ownerId: string, ids: string[]):
   });
 }
 
-/** Deletes files and their chunks, and gives the space back to their shards. */
+/** Deletes files; their chunks go with them (ON DELETE CASCADE). */
 export async function deleteMedia(env: Env, ids: string[]): Promise<void> {
   if (!ids.length) return;
   const { results } = await env.DB.prepare(
-    `SELECT id, shard, size, poster_id FROM media WHERE id IN (${ids.map(() => '?').join(', ')})`,
-  ).bind(...ids).all<{ id: string; shard: string; size: number; poster_id: string | null }>();
+    `SELECT id, poster_id FROM media WHERE id IN (${ids.map(() => '?').join(', ')})`,
+  ).bind(...ids).all<{ id: string; poster_id: string | null }>();
   if (!results.length) return;
-  for (const m of results) await shardDb(env, m.shard).prepare('DELETE FROM chunks WHERE media_id = ?').bind(m.id).run();
-  await env.DB.batch([
-    ...results.map(m => env.DB.prepare('UPDATE media_shards SET bytes = MAX(0, bytes - ?) WHERE shard = ?').bind(m.size, m.shard)),
-    env.DB.prepare(`DELETE FROM media WHERE id IN (${results.map(() => '?').join(', ')})`).bind(...results.map(m => m.id)),
-  ]);
+  await env.DB.prepare(`DELETE FROM media WHERE id IN (${results.map(() => '?').join(', ')})`).bind(...results.map(m => m.id)).run();
   const posters = results.map(m => m.poster_id).filter((p): p is string => Boolean(p));
   if (posters.length) await deleteMedia(env, posters);
 }
@@ -127,7 +100,7 @@ async function readChunk(env: Env, media: MediaRow, idx: number, ctx: { waitUnti
   const key = cacheKey(media.id, idx);
   const hit = await cache?.match(key).catch(() => undefined);
   if (hit) return new Uint8Array(await hit.arrayBuffer());
-  const row = await shardDb(env, media.shard).prepare('SELECT data FROM chunks WHERE media_id = ? AND idx = ?')
+  const row = await env.DB.prepare('SELECT data FROM chunks WHERE media_id = ? AND idx = ?')
     .bind(media.id, idx).first<{ data: ArrayBuffer | number[] }>();
   if (!row) throw new Error(`Chunk ${idx} of ${media.id} is missing`);
   const bytes = row.data instanceof ArrayBuffer ? new Uint8Array(row.data) : new Uint8Array(row.data);

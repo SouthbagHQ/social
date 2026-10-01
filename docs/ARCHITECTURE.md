@@ -7,8 +7,8 @@ Read this before adding a feature. See also `docs/STYLE.md` (interface and copy)
 - One Worker (`src/index.ts`, Hono) plus Workers Assets for `public/`. Only `/api/*`, `/auth/*` and
   `/media/*` run the Worker; everything else is a static file, and unknown paths fall back to
   `public/index.html` (the SPA).
-- **D1 only.** `DB` holds everything except file bytes (`migrations/`). `MEDIA` (and optional
-  `MEDIA_1…MEDIA_9`) hold file chunks (`migrations-media/`). No R2, no KV, no Durable Objects.
+- **One D1 database.** `DB` holds everything, file bytes included (`migrations/`; chunks are in
+  the `chunks` table). No R2, no KV, no Durable Objects.
 - Free plan limits that shape the code: 10 ms CPU per request, 50 D1 queries per request,
   100k D1 row writes per day, 2 MB per D1 row, 500 MB per database. So: batch writes with
   `env.DB.batch`, keep list pages ≤ 50 items, use keyset pagination, avoid N+1 queries

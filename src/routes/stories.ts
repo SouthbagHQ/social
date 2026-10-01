@@ -140,7 +140,7 @@ stories.get('/:handle', async c => {
   }
   const own = viewer?.id === author.id;
   const { results } = await c.env.DB.prepare(`SELECT s.*, m.id AS m_id, m.owner_id, m.kind, m.content_type, m.size, m.chunk_size,
-      m.chunk_count, m.chunks_received, m.shard, m.width, m.height, m.duration, m.poster_id, m.alt, m.status, m.created_at AS m_created_at,
+      m.chunk_count, m.chunks_received, m.width, m.height, m.duration, m.poster_id, m.alt, m.status, m.created_at AS m_created_at,
       ${viewer ? 'EXISTS (SELECT 1 FROM story_views v WHERE v.story_id = s.id AND v.viewer_id = ?)' : '0'} AS seen,
       ${own ? '(SELECT COUNT(*) FROM story_views v WHERE v.story_id = s.id AND v.viewer_id != s.author_id)' : 'NULL'} AS view_count
     FROM stories s JOIN media m ON m.id = s.media_id
