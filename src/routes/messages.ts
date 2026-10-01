@@ -1,11 +1,12 @@
 // Direct messages (Messenger / Instagram DMs) and the Southbag Support bot. Mounted at /api/messages.
 //
 //   GET    /api/messages?cursor               conversations, most recent first -> { items, next, unread_count }
+//                                             (items and conversations carry `streak`, see routes/streaks.ts)
 //   POST   /api/messages                      { handles[], title?, body?, media_id?, post_id? } -> find-or-create
 //   POST   /api/messages/support              find-or-create the viewer's Southbag Support conversation
 //   GET    /api/messages/:id?before=<id>      { conversation, items (oldest -> newest), next }
-//   GET    /api/messages/:id/poll?after=<id>  { items, read, title } - new messages since `after`
-//   POST   /api/messages/:id                  { body?, media_id?, post_id? } -> { message, reply? }
+//   GET    /api/messages/:id/poll?after=<id>  { items, read, title, streak } - new messages since `after`
+//   POST   /api/messages/:id                  { body?, media_id?, post_id? } -> { message, reply?, streak? }
 //   POST   /api/messages/:id/read             marks the conversation read for the viewer
 //   PATCH  /api/messages/:id                  { title } (group chats)
 //   DELETE /api/messages/:id/members/me       leave a group chat
@@ -23,12 +24,16 @@
 // intervals down before reaching for anything that isn't on the free plan.
 
 import { Hono } from 'hono';
-import type { AppEnv, Env, SessionUser } from '../env';
+import type { AppEnv, Ctx, Env, SessionUser } from '../env';
 import { body, cursor, fail, limit, placeholders, requireUser, str } from '../lib/http';
 import { newId, sha256 } from '../lib/ids';
 import { mediaJson, ownedReadyMedia, type MediaJson, type MediaRow } from '../lib/media';
 import { hydrate, loadVisiblePost, visibleTo, type PostJson, type PostRow } from '../lib/posts';
 import { userCard, userCardColumns, userCards, type UserCard, type UserRow } from '../lib/users';
+import {
+  conversationStreak, streakResult, streakSelect, streakState, streakUpsert, sydneyDay, trackStreak,
+  type StreakJson, type StreakRow,
+} from './streaks';
 
 const messages = new Hono<AppEnv>();
 
@@ -121,7 +126,7 @@ async function membersOf(env: Env, id: string) {
   return results;
 }
 
-function conversationJson(conv: ConversationRow, viewerId: string, members: (UserRow & { last_read_at: number })[]) {
+function conversationJson(conv: ConversationRow, viewerId: string, members: (UserRow & { last_read_at: number })[], streak: StreakRow | null = null) {
   const others = members.filter(m => m.id !== viewerId);
   const me = members.find(m => m.id === viewerId);
   return {
@@ -137,16 +142,19 @@ function conversationJson(conv: ConversationRow, viewerId: string, members: (Use
     last_read_at: me?.last_read_at ?? 0,
     /** Other members' read positions, for "Seen by ...". */
     read: Object.fromEntries(others.map(m => [m.id, m.last_read_at])),
+    /** One-to-one conversations only: the live message streak with the other person, or null. */
+    streak: conv.is_group || isSupport(conv.id) ? null : streakState(streak),
   };
 }
 
 async function loadConversationJson(env: Env, viewerId: string, id: string) {
-  const [conv, members] = await Promise.all([
+  const [conv, members, streak] = await Promise.all([
     env.DB.prepare('SELECT * FROM conversations WHERE id = ?').bind(id).first<ConversationRow>(),
     membersOf(env, id),
+    isSupport(id) ? null : conversationStreak(env, viewerId, id).first<StreakRow>(),
   ]);
   if (!conv) fail(404, 'Conversation not found.');
-  return conversationJson(conv, viewerId, members);
+  return conversationJson(conv, viewerId, members, streak);
 }
 
 /** Message rows -> JSON, batching senders, files and shared posts (which respect post visibility). */
@@ -201,7 +209,13 @@ const hasContent = (input: SendInput) =>
  * last_message_at and the sender's last_read_at right. In the Support conversation it also stores
  * the bot's reply in the same batch.
  */
-async function send(env: Env, user: SessionUser, conv: ConversationRow, input: SendInput): Promise<{ message: MessageJson; reply: MessageJson | null }> {
+async function send(c: Ctx, user: SessionUser, conv: ConversationRow, input: SendInput): Promise<{
+  message: MessageJson;
+  reply: MessageJson | null;
+  /** One-to-one conversations: the streak after this message; `extended` when it completed today's streak day. */
+  streak?: (StreakJson & { extended: boolean }) | null;
+}> {
+  const env = c.env;
   const text = typeof input.body === 'string' ? input.body.trim() : '';
   if ([...text].length > MAX_MESSAGE)
     fail(422, `Messages are limited to ${MAX_MESSAGE.toLocaleString('en-AU')} characters.`);
@@ -225,13 +239,16 @@ async function send(env: Env, user: SessionUser, conv: ConversationRow, input: S
     fail(422, 'Write a message first.');
 
   const support = isSupport(conv.id);
+  // One-to-one: the other person (for the streak) and whether either of you blocked the other.
+  let otherId: string | null = null;
   if (!conv.is_group && !support) {
-    const blocked = await env.DB.prepare(`SELECT b.blocker_id FROM conversation_members cm JOIN blocks b
+    const other = await env.DB.prepare(`SELECT cm.user_id, b.blocker_id FROM conversation_members cm LEFT JOIN blocks b
         ON (b.blocker_id = cm.user_id AND b.blocked_id = ?1) OR (b.blocker_id = ?1 AND b.blocked_id = cm.user_id)
-        WHERE cm.conversation_id = ?2 AND cm.user_id != ?1 LIMIT 1`).bind(user.id, conv.id).first<{ blocker_id: string }>();
-    if (blocked) fail(403, blocked.blocker_id === user.id
+        WHERE cm.conversation_id = ?2 AND cm.user_id != ?1 LIMIT 1`).bind(user.id, conv.id).first<{ user_id: string; blocker_id: string | null }>();
+    if (other?.blocker_id) fail(403, other.blocker_id === user.id
       ? 'You have blocked this person. Unblock them to send messages.'
       : 'This person is not accepting messages from you.');
+    otherId = other?.user_id ?? null;
   }
 
   const now = Date.now();
@@ -259,7 +276,17 @@ async function send(env: Env, user: SessionUser, conv: ConversationRow, input: S
     env.DB.prepare('UPDATE conversation_members SET last_read_at = MAX(last_read_at, ?) WHERE conversation_id = ? AND user_id = ?')
       .bind(readAt, conv.id, user.id),
   );
-  await env.DB.batch(statements);
+  // Streak: one upsert (it only writes on the sender's first message of the day) and a read back.
+  const streakAt = statements.length;
+  const tick = otherId ? streakUpsert(env, user.id, otherId, now) : null;
+  if (tick && otherId) statements.push(tick.statement, streakSelect(env, user.id, otherId));
+  const results = await env.DB.batch(statements);
+  let streak: (StreakJson & { extended: boolean }) | null = null;
+  if (tick) {
+    streak = streakResult(results[streakAt].results[0] as { current: number; last_day: string | null } | undefined,
+      results[streakAt + 1].results[0] as StreakRow | undefined, tick.day);
+    trackStreak(c, streak);
+  }
 
   return {
     message: {
@@ -272,6 +299,7 @@ async function send(env: Env, user: SessionUser, conv: ConversationRow, input: S
       created_at: now,
     },
     reply,
+    ...(tick ? { streak } : {}),
   };
 }
 
@@ -301,12 +329,18 @@ messages.get('/', async c => {
   const ids = convs.map(r => r.id);
   const members = new Map<string, UserCard[]>();
   const last = new Map<string, MessageRow>();
+  const streakRows = new Map<string, Pick<StreakRow, 'current' | 'longest' | 'last_day'>>();
   if (ids.length) {
     const inIds = placeholders(ids.length);
     const [memberRes, lastRes] = await Promise.all([
-      c.env.DB.prepare(`SELECT cm.conversation_id, ${u('u')} FROM conversation_members cm JOIN users u ON u.id = cm.user_id
+      // Members, plus the viewer's streak with the other person in one-to-ones (a primary-key lookup each).
+      c.env.DB.prepare(`SELECT cm.conversation_id, ${u('u')}, s.current AS s_current, s.longest AS s_longest, s.last_day AS s_last_day
+          FROM conversation_members cm JOIN users u ON u.id = cm.user_id
+          JOIN conversations cv ON cv.id = cm.conversation_id
+          LEFT JOIN streaks s ON cv.is_group = 0 AND s.user_a = MIN(cm.user_id, ?) AND s.user_b = MAX(cm.user_id, ?)
           WHERE cm.conversation_id IN (${inIds}) AND cm.user_id != ? ORDER BY cm.joined_at`)
-        .bind(...ids, user.id).all<UserRow & { conversation_id: string }>(),
+        .bind(user.id, user.id, ...ids, user.id)
+        .all<UserRow & { conversation_id: string; s_current: number | null; s_longest: number | null; s_last_day: string | null }>(),
       // Newest message per conversation: one indexed lookup each via messages_conversation.
       c.env.DB.prepare(`SELECT m.* FROM conversations c JOIN messages m
           ON m.id = (SELECT id FROM messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1)
@@ -315,10 +349,12 @@ messages.get('/', async c => {
     for (const m of memberRes.results) {
       if (!members.has(m.conversation_id)) members.set(m.conversation_id, []);
       members.get(m.conversation_id)!.push(userCard(m));
+      if (m.s_current != null) streakRows.set(m.conversation_id, { current: m.s_current, longest: m.s_longest ?? 0, last_day: m.s_last_day });
     }
     for (const m of lastRes.results) last.set(m.conversation_id, m);
   }
 
+  const today = sydneyDay();
   const items = convs.map(conv => {
     const m = last.get(conv.id);
     return {
@@ -335,6 +371,7 @@ messages.get('/', async c => {
       } : null,
       unread: conv.last_message_at > conv.last_read_at,
       last_message_at: conv.last_message_at,
+      streak: conv.is_group || isSupport(conv.id) ? null : streakState(streakRows.get(conv.id), today),
     };
   });
   const lastConv = convs[convs.length - 1];
@@ -412,7 +449,7 @@ messages.post('/', async c => {
     await c.env.DB.batch(statements);
   }
 
-  const sent = withMessage ? await send(c.env, user, conv, input) : null;
+  const sent = withMessage ? await send(c, user, conv, input) : null;
   const conversation = await loadConversationJson(c.env, user.id, conv.id);
   return c.json({ conversation, created, ...(sent ? { message: sent.message } : {}) }, created ? 201 : 200);
 });
@@ -442,16 +479,17 @@ messages.get('/:id', async c => {
   const id = c.req.param('id');
   const size = limit(c, 30, 50);
   const before = c.req.query('before') || null;
-  const [conv, members, page] = await Promise.all([
+  const [conv, members, page, streak] = await Promise.all([
     memberOf(c.env, user.id, id),
     membersOf(c.env, id),
     c.env.DB.prepare(`SELECT * FROM messages WHERE conversation_id = ? ${before ? 'AND id < ?' : ''} ORDER BY id DESC LIMIT ?`)
       .bind(id, ...(before ? [before] : []), size + 1).all<MessageRow>(),
+    isSupport(id) ? null : conversationStreak(c.env, user.id, id).first<StreakRow>(),
   ]);
   const rows = page.results.slice(0, size).reverse();
   const items = await hydrateMessages(c.env, user, rows);
   return c.json({
-    conversation: { ...conversationJson(conv, user.id, members), last_read_at: conv.last_read_at },
+    conversation: { ...conversationJson(conv, user.id, members, streak), last_read_at: conv.last_read_at },
     items,
     next: page.results.length > size ? rows[0].id : null,
   });
@@ -461,11 +499,13 @@ messages.get('/:id/poll', async c => {
   const user = requireUser(c);
   const id = c.req.param('id');
   const after = c.req.query('after') || '';
-  // One round trip: members (membership check + read positions + title) and anything newer than `after`.
-  const [membersRes, newRes] = await c.env.DB.batch([
+  // One round trip: members (membership check + read positions + title), anything newer than `after`
+  // and, in one-to-ones, the streak row (a primary-key lookup), so the other person sees it extend.
+  const [membersRes, newRes, streakRes] = await c.env.DB.batch([
     c.env.DB.prepare(`SELECT cm.user_id, cm.last_read_at, c.title FROM conversation_members cm
         JOIN conversations c ON c.id = cm.conversation_id WHERE cm.conversation_id = ?`).bind(id),
     c.env.DB.prepare('SELECT * FROM messages WHERE conversation_id = ? AND id > ? ORDER BY id LIMIT 51').bind(id, after),
+    ...(isSupport(id) ? [] : [conversationStreak(c.env, user.id, id)]),
   ]);
   const members = membersRes.results as { user_id: string; last_read_at: number; title: string | null }[];
   if (!members.some(m => m.user_id === user.id)) fail(404, 'Conversation not found.');
@@ -475,13 +515,14 @@ messages.get('/:id/poll', async c => {
     more: newRes.results.length > 50,
     read: Object.fromEntries(members.filter(m => m.user_id !== user.id).map(m => [m.user_id, m.last_read_at])),
     title: isSupport(id) ? SUPPORT_TITLE : members[0]?.title ?? null,
+    streak: streakState(streakRes?.results[0] as StreakRow | undefined),
   });
 });
 
 messages.post('/:id', async c => {
   const user = requireUser(c);
   const conv = await memberOf(c.env, user.id, c.req.param('id'));
-  const sent = await send(c.env, user, conv, await body<SendInput>(c));
+  const sent = await send(c, user, conv, await body<SendInput>(c));
   return c.json(sent, 201);
 });
 

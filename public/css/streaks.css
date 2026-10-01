@@ -1,1 +1,26 @@
-/* streaks styles */
+/* Message streaks, shown in Messages (public/js/views/messages.js). Plain text: "Streak: 12 days"
+   in grey, in Southbag blue with ", ends tonight" while today hasn't counted yet. No buttons or fonts
+   are styled here. */
+
+.streak-label { font-size: 0.75rem; color: var(--sb-muted); white-space: nowrap; box-shadow: none; }
+.streak-label.at-risk { color: var(--sb-blue); font-weight: 700; }
+
+/* Under the name in the conversation list. */
+.dm-item-streak { line-height: 1.3; box-shadow: none; }
+
+/* Next to the handle in the conversation header. */
+.dm-head-streak { margin-left: 0.5rem; font-size: inherit; }
+
+/* The line in the chat when today's streak day completes. */
+.dm-streak-note { font-style: normal; }
+
+/* "Streaks" at the top of the conversation list. */
+.dm-streaks { padding: 0.5rem 0.75rem 0.6rem; border-bottom: 2px dashed #000; box-shadow: none; }
+.dm-streaks-title { margin: 0 0 4px; font-size: 1rem; transform: rotate(-0.4deg); }
+.dm-streak-list { list-style: none; margin: 0; padding: 0; box-shadow: none; }
+.dm-streak { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; padding: 4px 0; box-shadow: none; }
+.dm-streak + .dm-streak { border-top: 1px dashed #999; }
+.dm-streak.active .dm-streak-name { font-weight: 700; }
+.dm-streak-name { flex: 1 1 8rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sb-ink); }
+.dm-streak-meta { display: flex; flex-wrap: wrap; gap: 0 8px; box-shadow: none; }
+.dm-streak-longest { font-size: 0.75rem; color: var(--sb-muted); white-space: nowrap; box-shadow: none; }
