@@ -20,13 +20,14 @@
 
 import { api } from '../api.js';
 import { h, mount } from '../dom.js';
-import { fullDate, plural, timeAgo } from '../format.js';
+import { fullDate, money, plural, timeAgo } from '../format.js';
 import { store } from '../store.js';
 import { confirm, dialog, empty, errorBox, lightbox, loading, menu, promptDialog, toast, toastError } from '../ui.js';
 import { pickFiles, uploadFile } from '../upload.js';
 import { avatar } from '../components/user.js';
 import { postUrl, richText } from '../components/post.js';
 import { videoEl } from '../components/media.js';
+import { sendMoneyDialog } from '../components/payments.js';
 
 // Polling budget. The free plan allows 100k Worker requests a day, and every poll is one. So: poll
 // every 5 s while a conversation is open, visible and active; after a minute of silence drop to
@@ -90,7 +91,8 @@ function excerpt(item) {
   if (!m) return item.is_support ? 'Help with your account' : 'No messages.';
   const who = m.sender_id && m.sender_id === me()?.id ? 'You: '
     : item.is_group && m.sender_id ? `${firstName(item.members.find(p => p.id === m.sender_id)?.name) || 'Someone'}: ` : '';
-  const text = m.body || (m.kind === 'post' ? 'Shared a post' : m.kind === 'media' ? 'Sent a photo or video' : '');
+  const text = m.kind === 'payment' ? (m.body ? `Sent money: ${m.body}` : 'Sent money')
+    : m.body || (m.kind === 'post' ? 'Shared a post' : m.kind === 'media' ? 'Sent a photo or video' : '');
   return who + text;
 }
 
@@ -625,6 +627,11 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onStr
       ] : [
         conv.members[0] ? { label: 'View profile', href: `/@${conv.members[0].handle}` } : null,
       ]));
+      if (!conv.is_group && conv.members[0]) {
+        actions.push(h('button.btn-small', { type: 'button', onclick: async () => {
+          if (await sendMoneyDialog(conv.members[0])) { lastActivity = Date.now(); schedule(0); }
+        } }, 'Send money'));
+      }
       actions.push(more);
     }
     mount(head, backBtn(), h('div.dm-head-text', title, h('div.dm-head-sub', sub)), h('div.dm-head-actions', actions));
@@ -670,6 +677,11 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onStr
       const own = mine(m);
       const wasNear = () => { if (atBottomOnLoad) scrollToBottom(); };
       const parts = [];
+      if (m.payment) {
+        parts.push(h('div.dm-payment',
+          h('strong', money(m.payment.amount)),
+          h('span.tiny', m.payment.sender_id === me()?.id ? 'Sent through Southbag Online Banking' : 'Received through Southbag Online Banking')));
+      }
       if (m.media) parts.push(mediaNode(m.media, wasNear));
       if (m.post || m.post_unavailable) parts.push(sharedPost(m));
       else if (m.pending && m.payload?.post_id) parts.push(h('div.dm-post.unavailable', 'Sharing a post'));

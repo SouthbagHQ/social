@@ -15,10 +15,13 @@ Read this before adding a feature. See also `docs/STYLE.md` (interface and copy)
   (`hydrate()` batches everything for a page of posts), no per-request fan-out writes.
 - Hourly cron (`scheduled` in `src/index.ts`) expires stories, cleans up and renews Southbag
   Verified.
-- **Money.** Southbag Verified is charged to Southbag Online Banking through the `BANKING` service
-  binding (Banking's `Billing` entrypoint, RPC). Use `charge()` from `src/lib/banking.ts`; claim
-  the change in D1 first and undo it if the charge throws, so nothing is charged twice. No
-  confirmation dialogs before charging.
+- **Money.** Southbag Online Banking holds everyone's money; Social reaches it through the `BANKING`
+  service binding (Banking's `Billing` entrypoint, RPC) with `charge()`, `transfer()` and
+  `account()` from `src/lib/banking.ts`. Southbag Verified uses `charge()` (claim the change in D1
+  first and undo it if the charge throws, so nothing is charged twice). Payments between people
+  (`src/routes/payments.ts`) use `transfer()`, Banking's own transfer with its fees and refusals,
+  then record the payment, add a message with `payment_id` to the pair's one-to-one conversation
+  and notify the recipient. No confirmation dialogs before money moves; payments can't be deleted.
 
 ## Auth
 

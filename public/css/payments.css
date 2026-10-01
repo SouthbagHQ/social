@@ -1,0 +1,15 @@
+/* Payments (views/payments.js, components/payments.js) and payment messages in chats. Greyscale:
+   money in and money out look the same apart from the sign. */
+.pay-page { display: flex; flex-direction: column; gap: 14px; box-shadow: none; }
+.pay-balance { font-size: 2rem; margin: 0.2rem 0; }
+.pay-transactions { list-style: none; padding: 0; margin: 0.6rem 0; font-size: 0.85rem; box-shadow: none; }
+.pay-transactions li { display: flex; gap: 12px; padding: 3px 0; border-bottom: 1px dashed var(--sb-hairline); box-shadow: none; }
+.pay-form { display: flex; flex-direction: column; gap: 8px; }
+.pay-amount { display: flex; align-items: center; gap: 6px; box-shadow: none; }
+.pay-amount input { width: 10rem; }
+.pay-row { display: flex; align-items: flex-start; gap: 10px; }
+.pay-row p { margin: 0.1rem 0; }
+.pay-note { overflow-wrap: anywhere; }
+.pay-amount-total { white-space: nowrap; font-size: 1.1rem; }
+.dm-payment { display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; border: 2px ridge var(--sb-ridge); background: var(--sb-paper); box-shadow: none; }
+.dm-payment strong { font-size: 1.4rem; }

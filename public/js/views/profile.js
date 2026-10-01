@@ -16,6 +16,7 @@ import { postCard, richText } from '../components/post.js';
 import { avatar, followButton, userRow, verifiedBadge } from '../components/user.js';
 import { pinnedPost } from '../components/pinned.js';
 import { careerTab, profileHeadline } from '../components/career.js';
+import { sendMoneyDialog } from '../components/payments.js';
 
 const POST_TABS = [
   ['posts', 'Posts'], ['career', 'Career'], ['replies', 'Replies'], ['photos', 'Photos'], ['videos', 'Videos'],
@@ -156,6 +157,7 @@ function actions(user, viewer, setFollowers, setFriends) {
     follow,
     friendButton(user, viewer, setFriends),
     h('a.btn', { href: `/messages?to=${encodeURIComponent(user.handle)}` }, 'Message'),
+    h('button.btn', { type: 'button', onclick: () => sendMoneyDialog(user) }, 'Send money'),
     more,
   ];
 }

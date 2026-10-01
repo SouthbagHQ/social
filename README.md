@@ -27,6 +27,10 @@ It signs in with **Southbag Identity™** and follows the look of the other Sout
   not reachable from the internet), see `src/lib/banking.ts`. Locally there is no bank unless you
   run Banking's `wrangler dev` too; `scripts/test.sh` sets `BANKING_DEV=1`, which makes charges
   succeed without one.
+- **People send each other money** from `/payments`, a profile ("Send money") or a one-to-one chat.
+  Banking moves the money with its own transfer (and its fee pile, paid by the sender) through the
+  same binding; Social records the payment, posts it in the pair's chat and notifies the recipient.
+  Payments are final.
 
 ## Southbag Identity
 
