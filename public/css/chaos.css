@@ -30,6 +30,10 @@ html.splash-open, html.splash-open body { overflow: hidden; }
 .loading .spin { display: inline-block; transform-origin: left center; }
 
 /* ── Motion ────────────────────────────────────────────────────────── */
+/* Sidebar links move in from the left one after another, slowly and linearly, on the first page. */
+@keyframes nav-arrive { from { translate: -115% 0; } to { translate: 0 0; } }
+.south-nav.arriving { overflow: hidden; }
+.south-nav.arriving li { animation: nav-arrive 1.2s linear both; animation-delay: calc(var(--i, 0) * 0.15s); }
 @keyframes chaos-ticker { to { transform: translateX(-100%); } }
 .ticker-track { animation: chaos-ticker 60s linear infinite; }
 .help-strip button:nth-child(3) { animation: quiet-blink 2.4s linear infinite; }

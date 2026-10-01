@@ -32,9 +32,10 @@ never like a gag (no "Do not press" buttons, no joke answers).
 - **Janky, but usable** (`public/js/chaos.js`, `public/css/chaos.css`). A splash screen with
   promotional slides once per browser session; a cookie banner once per browser (two huge
   "Accept" buttons, a tiny "Manage preferences" that lists dozens of required cookies); a strip of
-  six help buttons that all open the same support chat; an announcements ticker; a loading word
-  that spins around its left edge; and the page shifting a few pixels now and then while
-  scrolling. Motion ignores `prefers-reduced-motion`, like Banking. No gimmicks that look
+  six help buttons that all open the same support chat; an announcements ticker; sidebar links
+  that move in from the left one after another (slow, linear, no fade) on the first page; a
+  loading word that spins around its left edge; and the page shifting a few pixels now and then
+  while scrolling. Motion ignores `prefers-reduced-motion`, like Banking. No gimmicks that look
   deliberate: nothing bounces, jitters, sways or shakes, not even on errors. Limits: keyboard
   focus works, nothing blocks posting, liking, commenting, following or messaging, nothing reloads
   the page, no `alert()`, no "Leave site?" traps, no permission prompts.
@@ -58,7 +59,8 @@ never like a gag (no "Do not press" buttons, no joke answers).
 - Following is "Follow" / "Following" / "Followers".
 - No jokes about fees, surveillance, retention or consent. Kevin is rare and never explained: the
   sidebar ("Kevin is watching"), the deletion refusal, and a `kevin_session` cookie in the cookie
-  preferences. Add more only with a good reason. No The Pile, Floor 3, 2019 or Canberra.
+  preferences. He is always spelt "Kevin": any capitalisation typed into any text field becomes
+  "Kevin" as it is typed (`capitaliseKevin()` in `gags.js`). Add more only with a good reason. No The Pile, Floor 3, 2019 or Canberra.
 - Nothing about banking: no branches, balances, loans or "Online Banking" promotions. (The splash
   screen borrows Banking's promotional slides; that is the one exception.)
 - Australian spelling. Sentence case.

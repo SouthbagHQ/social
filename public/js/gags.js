@@ -1,4 +1,5 @@
-// House-style extras shared by every Southbag product: the promotional strip and themes.
+// House-style extras shared by every Southbag product: the promotional strip, themes, and how
+// Kevin is spelt.
 
 import { h } from './dom.js';
 
@@ -36,4 +37,23 @@ export function applyTheme() {
   try { theme = localStorage.getItem('sb_theme') || 'light'; joke = localStorage.getItem('sb_darkmode_gag') === '1'; } catch {}
   document.documentElement.dataset.theme = theme;
   document.documentElement.classList.toggle('gag-darkmode', joke);
+}
+
+// Kevin is always written "Kevin". Anything typed into any text field is corrected the moment the
+// word is finished, whatever its capitals ("kevin", "KEVIN", "kEvIn" → "Kevin"; "@kevin" →
+// "@Kevin"), keeping the caret where it was. Password fields and unfinished IME input are left alone.
+const anyKevin = /\bkevin/gi;
+const fixKevin = text => text.replace(anyKevin, 'Kevin');
+export function capitaliseKevin() {
+  document.addEventListener('input', e => {
+    const el = e.target;
+    if (e.isComposing || !(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) return;
+    if (el instanceof HTMLInputElement && ['password', 'hidden', 'number', 'range', 'color', 'checkbox', 'radio', 'file', 'date', 'datetime-local', 'time', 'month', 'week'].includes(el.type)) return;
+    const fixed = fixKevin(el.value);
+    if (fixed === el.value) return;
+    let start = null, end = null;
+    try { ({ selectionStart: start, selectionEnd: end } = el); } catch {}
+    el.value = fixed;
+    try { if (start != null) el.setSelectionRange(start, end); } catch {}
+  }, true);
 }

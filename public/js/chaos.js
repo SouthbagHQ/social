@@ -19,8 +19,9 @@ const once = key => {
 const slides = [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `/img/ad-${n}.jpg`);
 const statuses = ['Loading', 'Verifying session', 'Reviewing activity', 'Loading feed', 'Almost done', 'Almost done'];
 
+/** Shows the splash (once per session). Resolves when it is gone, straight away if it isn't shown. */
 export function splash(duration = 4200) {
-  if (!once('sb_splash_seen')) return;
+  if (!once('sb_splash_seen')) return Promise.resolve();
   const chosen = [...slides].sort(() => Math.random() - 0.5).slice(0, 3);
   const img = h('img', { src: chosen[0], alt: '' });
   const bar = h('div.splash-bar');
@@ -30,6 +31,8 @@ export function splash(duration = 4200) {
   document.documentElement.classList.add('splash-open');
   track('social_splash_shown');
   const start = performance.now();
+  let done;
+  const finished = new Promise(resolve => { done = resolve; });
   const tick = setInterval(() => {
     const t = Math.min(1, (performance.now() - start) / duration);
     // Fast to 80%, then a crawl, like every progress bar.
@@ -40,8 +43,9 @@ export function splash(duration = 4200) {
     clearInterval(tick);
     el.classList.add('leaving');
     document.documentElement.classList.remove('splash-open');
-    setTimeout(() => el.remove(), 500);
+    setTimeout(() => { el.remove(); done(); }, 500);
   }, 60);
+  return finished;
 }
 
 // ── Cookie banner ────────────────────────────────────────────────────────

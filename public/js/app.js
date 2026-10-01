@@ -5,7 +5,7 @@
 // furniture as Identity and Office, plus the jank in chaos.js.
 
 import { h, mount } from './dom.js';
-import { applyTheme, promoStrip } from './gags.js';
+import { applyTheme, capitaliseKevin, promoStrip } from './gags.js';
 import { cookieBanner, helpStrip, jank, splash, ticker } from './chaos.js';
 import { navigate, route, startRouter } from './router.js';
 import { login, store } from './store.js';
@@ -147,7 +147,7 @@ function renderNav(path) {
   mount(shell.nav,
     h('p.nav-title', 'Southbag Social'),
     me ? h('p.nav-hello.tiny', `Hello, "${me.email || me.handle}" !`) : null,
-    h('ul', items.map(s => h('li', h('a', { href: s.href, 'aria-current': isCurrent(s.href, path) ? 'page' : null }, s.label, badge(s.badge))))),
+    h('ul', items.map((s, i) => h('li', { style: `--i: ${i}` }, h('a', { href: s.href, 'aria-current': isCurrent(s.href, path) ? 'page' : null }, s.label, badge(s.badge))))),
     h('div.nav-footer',
       me ? h('button', { type: 'button', onclick: () => { location.href = '/auth/logout'; } }, 'Sign out')
         : h('button', { type: 'button', onclick: () => login() }, 'Log in'),
@@ -199,12 +199,24 @@ async function render(ctx, matched, controller, scroll) {
 // ── Boot ────────────────────────────────────────────────────────────────
 async function boot() {
   applyTheme();
-  splash();
+  capitaliseKevin();
+  const splashed = splash();
   mount(app, loading());
   await store.refresh();
   mount(shell.promo, promoStrip());
   mount(shell.player, audioPlayer());
   mount(app, shell.promo, shell.ticker, shell.header, shell.help, shell.layout, shell.footer, shell.player);
+  // The sidebar links slide in one by one on the first page only (the nav re-renders often),
+  // once the splash is out of the way.
+  splashed.then(() => {
+    shell.nav.classList.add('arriving');
+    const arrived = e => {
+      if (e.animationName !== 'nav-arrive' || e.target !== shell.nav.querySelector('li:last-child')) return;
+      shell.nav.classList.remove('arriving');
+      shell.nav.removeEventListener('animationend', arrived);
+    };
+    shell.nav.addEventListener('animationend', arrived);
+  });
   cookieBanner();
   jank();
   const params = new URLSearchParams(location.search);
