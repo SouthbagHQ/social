@@ -31,6 +31,7 @@ import boards from './routes/boards';
 import streaks, { streaksCron } from './routes/streaks';
 import wiki from './routes/wiki';
 import dating from './routes/dating';
+import payments from './routes/payments';
 
 const app = new Hono<AppEnv>();
 
@@ -105,6 +106,7 @@ app.route('/api/boards', boards);
 app.route('/api/streaks', streaks);
 app.route('/api/wiki', wiki);
 app.route('/api/dating', dating);
+app.route('/api/payments', payments);
 // Nothing can be deleted. The routers keep their DELETEs for undoing things (unlike, unfollow,
 // leave…); anything else that tries to delete lands here.
 app.delete('/api/*', () => fail(403, NO_DELETING));

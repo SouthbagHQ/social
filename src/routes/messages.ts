@@ -58,8 +58,12 @@ interface MessageRow {
   body: string;
   media_id: string | null;
   post_id: string | null;
+  payment_id: string | null;
   created_at: number;
 }
+
+/** Money sent with a message (routes/payments.ts). Amounts are in cents. */
+export interface MessagePaymentJson { id: string; sender_id: string; recipient_id: string; amount: number; fees: number }
 
 export interface MessageJson {
   id: string;
@@ -70,6 +74,7 @@ export interface MessageJson {
   post: PostJson | null;
   /** A post was shared but the viewer can't see it (deleted, private, or its author blocked them). */
   post_unavailable: boolean;
+  payment: MessagePaymentJson | null;
   created_at: number;
 }
 
@@ -162,7 +167,8 @@ async function hydrateMessages(env: Env, viewer: SessionUser, rows: MessageRow[]
   if (!rows.length) return [];
   const mediaIds = [...new Set(rows.map(m => m.media_id).filter((x): x is string => Boolean(x)))];
   const postIds = [...new Set(rows.map(m => m.post_id).filter((x): x is string => Boolean(x)))];
-  const [users, mediaRes, posts] = await Promise.all([
+  const paymentIds = [...new Set(rows.map(m => m.payment_id).filter((x): x is string => Boolean(x)))];
+  const [users, mediaRes, posts, paymentRes] = await Promise.all([
     userCards(env, rows.map(m => m.sender_id || '')),
     mediaIds.length
       ? env.DB.prepare(`SELECT * FROM media WHERE status = 'ready' AND id IN (${placeholders(mediaIds.length)})`).bind(...mediaIds).all<MediaRow>()
@@ -175,8 +181,13 @@ async function hydrateMessages(env: Env, viewer: SessionUser, rows: MessageRow[]
           return new Map((await hydrate(env, viewer, results)).map(p => [p.id, p]));
         })()
       : Promise.resolve(new Map<string, PostJson>()),
+    paymentIds.length
+      ? env.DB.prepare(`SELECT id, sender_id, recipient_id, amount, fees FROM payments WHERE id IN (${placeholders(paymentIds.length)})`)
+        .bind(...paymentIds).all<MessagePaymentJson>()
+      : Promise.resolve({ results: [] as MessagePaymentJson[] }),
   ]);
   const media = new Map(mediaRes.results.map(m => [m.id, mediaJson(m)]));
+  const payments = new Map(paymentRes.results.map(p => [p.id, p]));
   return rows.map(m => {
     const post = m.post_id ? posts.get(m.post_id) ?? null : null;
     return {
@@ -186,6 +197,7 @@ async function hydrateMessages(env: Env, viewer: SessionUser, rows: MessageRow[]
       media: m.media_id ? media.get(m.media_id) ?? null : null,
       post,
       post_unavailable: Boolean(m.post_id && !post),
+      payment: m.payment_id ? payments.get(m.payment_id) ?? null : null,
       created_at: m.created_at,
     };
   });
@@ -195,7 +207,7 @@ const systemMessage = (env: Env, conversationId: string, text: string, now: numb
   env.DB.prepare('INSERT INTO messages (id, conversation_id, sender_id, body, created_at) VALUES (?, ?, NULL, ?, ?)')
     .bind(newId(now), conversationId, text, now);
 
-const bumpConversation = (env: Env, conversationId: string, now: number) =>
+export const bumpConversation = (env: Env, conversationId: string, now: number) =>
   env.DB.prepare('UPDATE conversations SET last_message_at = MAX(last_message_at, ?) WHERE id = ?').bind(now, conversationId);
 
 interface SendInput { body?: unknown; media_id?: unknown; post_id?: unknown }
@@ -268,7 +280,7 @@ async function send(c: Ctx, user: SessionUser, conv: ConversationRow, input: Sen
     const replyId = newId(at);
     statements.push(env.DB.prepare('INSERT INTO messages (id, conversation_id, sender_id, body, created_at) VALUES (?, ?, NULL, ?, ?)')
       .bind(replyId, conv.id, replyText, at));
-    reply = { id: replyId, sender: null, body: replyText, media: null, post: null, post_unavailable: false, created_at: at };
+    reply = { id: replyId, sender: null, body: replyText, media: null, post: null, post_unavailable: false, payment: null, created_at: at };
     readAt = at;
   }
   statements.push(
@@ -296,6 +308,7 @@ async function send(c: Ctx, user: SessionUser, conv: ConversationRow, input: Sen
       media: media ? mediaJson(media) : null,
       post: post ? (await hydrate(env, user, [post]))[0] : null,
       post_unavailable: false,
+      payment: null,
       created_at: now,
     },
     reply,
@@ -367,7 +380,7 @@ messages.get('/', async c => {
         body: [...m.body].slice(0, 140).join(''),
         sender_id: m.sender_id,
         created_at: m.created_at,
-        kind: m.post_id ? 'post' : m.media_id ? 'media' : 'text',
+        kind: m.payment_id ? 'payment' : m.post_id ? 'post' : m.media_id ? 'media' : 'text',
       } : null,
       unread: conv.last_message_at > conv.last_read_at,
       last_message_at: conv.last_message_at,
@@ -381,6 +394,29 @@ messages.get('/', async c => {
     ...(unread ? { unread_count: unread.n } : {}),
   });
 });
+
+/**
+ * The one-to-one conversation between two people, created if there isn't one yet (without any
+ * messages; the caller adds one). Used by payments. Blocks are the caller's to check.
+ */
+export async function directConversationId(env: Env, userId: string, otherId: string, now: number): Promise<string> {
+  const existing = await env.DB.prepare(`SELECT c.id FROM conversation_members a
+      JOIN conversation_members b ON b.conversation_id = a.conversation_id AND b.user_id = ?
+      JOIN conversations c ON c.id = a.conversation_id
+      WHERE a.user_id = ? AND c.is_group = 0 ORDER BY c.created_at LIMIT 1`)
+    .bind(otherId, userId).first<{ id: string }>();
+  if (existing) return existing.id;
+  const id = newId(now);
+  await env.DB.batch([
+    env.DB.prepare('INSERT INTO conversations (id, title, is_group, created_by, last_message_at, created_at) VALUES (?, NULL, 0, ?, ?, ?)')
+      .bind(id, userId, now, now),
+    env.DB.prepare('INSERT INTO conversation_members (conversation_id, user_id, last_read_at, joined_at) VALUES (?, ?, ?, ?)')
+      .bind(id, userId, now, now),
+    env.DB.prepare('INSERT INTO conversation_members (conversation_id, user_id, last_read_at, joined_at) VALUES (?, ?, 0, ?)')
+      .bind(id, otherId, now),
+  ]);
+  return id;
+}
 
 messages.post('/', async c => {
   const user = requireUser(c);
