@@ -8,6 +8,7 @@ import { Hono } from 'hono';
 import type { AppEnv, Ctx, SessionUser } from '../env';
 import { body, fail, placeholders, requireUser } from '../lib/http';
 import { hydrateIds, loadVisiblePost, type PostRow } from '../lib/posts';
+import { track } from '../lib/palantir';
 
 const polls = new Hono<AppEnv>();
 
@@ -50,6 +51,7 @@ polls.post('/:postId/vote', async c => {
       .bind(post.id, optionId, user.id, now)),
     ...recount(c, post.id),
   ]);
+  track(c, 'social_poll_voted', { post_id: post.id, option_count: picked.length, multiple: Boolean(poll.multiple) });
   return fresh(c, user, post.id);
 });
 
@@ -61,6 +63,7 @@ polls.delete('/:postId/vote', async c => {
     c.env.DB.prepare('DELETE FROM poll_votes WHERE post_id = ? AND user_id = ?').bind(post.id, user.id),
     ...recount(c, post.id),
   ]);
+  track(c, 'social_poll_vote_withdrawn', { post_id: post.id });
   return fresh(c, user, post.id);
 });
 
@@ -70,6 +73,7 @@ polls.post('/:postId/close', async c => {
   if (post.author_id !== user.id) fail(403, 'Only the author can end this poll.');
   const now = Date.now();
   if (poll.closes_at > now) await c.env.DB.prepare('UPDATE polls SET closes_at = ? WHERE post_id = ?').bind(now, post.id).run();
+  if (poll.closes_at > now) track(c, 'social_poll_closed', { post_id: post.id });
   return fresh(c, user, post.id);
 });
 

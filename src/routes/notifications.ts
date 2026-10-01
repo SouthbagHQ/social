@@ -11,6 +11,7 @@
 import { Hono } from 'hono';
 import type { AppEnv, Ctx } from '../env';
 import { body, cursor, limit, placeholders, requireUser } from '../lib/http';
+import { track } from '../lib/palantir';
 import { visibleTo } from '../lib/posts';
 import { userCards } from '../lib/users';
 
@@ -107,6 +108,7 @@ notifications.post('/read', async c => {
   } else {
     await c.env.DB.prepare('UPDATE notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL').bind(now, me.id).run();
   }
+  track(c, 'social_notifications_read', { all: !ids, count: ids?.length ?? null });
   return c.json({ ok: true, unread: await unreadCounts(c, me.id) });
 });
 

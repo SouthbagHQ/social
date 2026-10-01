@@ -1,9 +1,22 @@
 // App-wide state: the signed-in user and unread counts. Views read `store.me`;
 // anything can `store.on('change', fn)` to re-render badges etc.
 
+import { identify, reset } from './analytics.js';
 import { api } from './api.js';
 
 const listeners = new Set();
+
+// palantir.js identifies whoever is signed in when the page loads; this only follows changes during
+// the visit without a reload (signing in from a dialog, a session expiring), like Identity's layout.
+let knownUserId; // undefined until the first answer from /api/me
+function followIdentity(me) {
+  const id = me?.id ?? null;
+  if (knownUserId !== undefined && id !== knownUserId) {
+    if (me) identify(me);
+    else reset();
+  }
+  knownUserId = id;
+}
 
 export const store = {
   /** Full /api/me user, or null when signed out. */
@@ -16,6 +29,7 @@ export const store = {
       const data = await api.get('me');
       this.me = data.authenticated ? data.user : null;
       this.unread = data.unread || { notifications: 0, messages: 0, friend_requests: 0 };
+      followIdentity(this.me);
     } catch {
       this.me = null;
     }

@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../env';
 import { body, fail, requireUser, str } from '../lib/http';
 import { getMedia } from '../lib/media';
+import { track } from '../lib/palantir';
 import { avatarUrl } from '../lib/users';
 
 const me = new Hono<AppEnv>();
@@ -82,8 +83,10 @@ me.patch('/', async c => {
     set(column, file.id);
   }
   if (!sets.length) fail(422, 'Nothing to change.');
+  const fields = sets.map(part => part.split(' ')[0]);
   set('updated_at', Date.now());
   await c.env.DB.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).bind(...values, session.id).run();
+  track(c, 'social_profile_updated', { fields });
   return c.json({ ok: true });
 });
 

@@ -20,6 +20,7 @@ import {
   reactionTypes, visibleTo, type CreatePostInput, type PostRow, type ReactionType,
 } from '../lib/posts';
 import { notifyStatement } from '../lib/notify';
+import { track } from '../lib/palantir';
 import { userCardColumns, userCard, type UserRow } from '../lib/users';
 
 const posts = new Hono<AppEnv>();
@@ -38,7 +39,9 @@ const one = async (c: Ctx, id: string) => (await hydrateIds(c.env, c.get('user')
 posts.post('/', async c => {
   const user = requireUser(c);
   const id = await createPost(c.env, user, await body<CreatePostInput>(c));
-  return c.json({ post: await one(c, id) }, 201);
+  const post = await one(c, id);
+  track(c, 'social_post_created', { post_id: id, kind: post.kind, visibility: post.visibility, reply: Boolean(post.reply_to), quote: Boolean(post.repost_of), media_count: post.media.length, poll: Boolean(post.poll), group_id: post.group?.id ?? null, wall: Boolean(post.wall_user) });
+  return c.json({ post }, 201);
 });
 
 posts.get('/:id', async c => {
@@ -90,11 +93,13 @@ posts.patch('/:id', async c => {
     ...extractTags(`${title || ''} ${newBody}`).map(tag =>
       c.env.DB.prepare('INSERT OR IGNORE INTO post_tags (tag, post_id, created_at) VALUES (?, ?, ?)').bind(tag, post.id, post.created_at)),
   ]);
+  track(c, 'social_post_edited', { post_id: post.id, kind: post.kind });
   return c.json({ post: await one(c, post.id) });
 });
 
 posts.delete('/:id', async c => {
   await deletePost(c.env, requireUser(c), c.req.param('id'));
+  track(c, 'social_post_deleted', { post_id: c.req.param('id') });
   return c.json({ ok: true });
 });
 
@@ -119,6 +124,7 @@ posts.put('/:id/reaction', async c => {
     if (note) statements.push(note);
     await c.env.DB.batch(statements);
   }
+  track(c, 'social_reaction_added', { post_id: post.id, post_kind: post.kind, type, changed: Boolean(existing), own_post: post.author_id === user.id });
   return c.json({ post: await one(c, post.id) });
 });
 
@@ -127,6 +133,7 @@ posts.delete('/:id/reaction', async c => {
   const post = await visibleOr404(c, c.req.param('id'));
   const { meta } = await c.env.DB.prepare('DELETE FROM reactions WHERE post_id = ? AND user_id = ?').bind(post.id, user.id).run();
   if (meta.changes) await c.env.DB.prepare('UPDATE posts SET reaction_count = MAX(0, reaction_count - 1) WHERE id = ?').bind(post.id).run();
+  if (meta.changes) track(c, 'social_reaction_removed', { post_id: post.id, post_kind: post.kind });
   return c.json({ post: await one(c, post.id) });
 });
 
@@ -135,6 +142,7 @@ posts.post('/:id/repost', async c => {
   const post = await visibleOr404(c, c.req.param('id'));
   if (post.visibility !== 'public' && post.author_id !== user.id) fail(403, 'Only public posts can be reposted.');
   await createPost(c.env, user, { repost_of_id: post.id });
+  track(c, 'social_post_reposted', { post_id: post.id, post_kind: post.kind, own_post: post.author_id === user.id });
   return c.json({ post: await one(c, post.repost_of_id && !post.body ? post.repost_of_id : post.id) });
 });
 
@@ -144,6 +152,7 @@ posts.delete('/:id/repost', async c => {
   const mine = await c.env.DB.prepare(`SELECT id FROM posts WHERE author_id = ? AND repost_of_id = ? AND body = ''
     AND deleted_at IS NULL`).bind(user.id, post.id).first<{ id: string }>();
   if (mine) await deletePost(c.env, user, mine.id);
+  if (mine) track(c, 'social_repost_removed', { post_id: post.id });
   return c.json({ post: await one(c, post.id) });
 });
 
@@ -152,18 +161,21 @@ posts.put('/:id/bookmark', async c => {
   const post = await visibleOr404(c, c.req.param('id'));
   await c.env.DB.prepare('INSERT OR IGNORE INTO bookmarks (user_id, post_id, created_at) VALUES (?, ?, ?)')
     .bind(user.id, post.id, Date.now()).run();
+  track(c, 'social_bookmark_added', { post_id: post.id, post_kind: post.kind });
   return c.json({ ok: true, bookmarked: true });
 });
 
 posts.delete('/:id/bookmark', async c => {
   const user = requireUser(c);
   await c.env.DB.prepare('DELETE FROM bookmarks WHERE user_id = ? AND post_id = ?').bind(user.id, c.req.param('id')).run();
+  track(c, 'social_bookmark_removed', { post_id: c.req.param('id') });
   return c.json({ ok: true, bookmarked: false });
 });
 
 posts.post('/:id/view', async c => {
   const post = await visibleOr404(c, c.req.param('id'));
   await c.env.DB.prepare('UPDATE posts SET view_count = view_count + 1 WHERE id = ?').bind(post.id).run();
+  track(c, 'social_post_viewed', { post_id: post.id, kind: post.kind });
   return c.json({ views: post.view_count + 1 });
 });
 

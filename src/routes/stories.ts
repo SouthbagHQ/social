@@ -19,6 +19,7 @@ import type { AppEnv, Ctx, Env } from '../env';
 import { body, fail, requireUser, str } from '../lib/http';
 import { newId } from '../lib/ids';
 import { deleteUnusedMedia, mediaJson, ownedReadyMedia, type MediaRow } from '../lib/media';
+import { track } from '../lib/palantir';
 import { userByHandle, userCard, userCardColumns, userCards, type UserRow } from '../lib/users';
 
 const stories = new Hono<AppEnv>();
@@ -93,6 +94,7 @@ stories.post('/', async c => {
   await c.env.DB.prepare(`INSERT INTO stories (id, author_id, media_id, caption, background, created_at, expires_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)`)
     .bind(story.id, story.author_id, story.media_id, story.caption, story.background, story.created_at, story.expires_at).run();
+  track(c, 'social_story_created', { story_id: story.id, media_kind: media.kind, has_caption: Boolean(caption), background: story.background, duration: media.duration ?? null });
   return c.json({ story: storyJson(story, media, true, 0) }, 201);
 });
 
@@ -159,8 +161,9 @@ stories.post('/:id/view', async c => {
   if (!viewer || viewer.id === story.author_id) return c.json({ ok: true, seen: true });
   const blocked = await c.env.DB.prepare('SELECT 1 FROM blocks WHERE blocker_id = ? AND blocked_id = ?').bind(story.author_id, viewer.id).first();
   if (blocked) fail(404, 'Story not found.');
-  await c.env.DB.prepare('INSERT OR IGNORE INTO story_views (story_id, viewer_id, created_at) VALUES (?, ?, ?)')
+  const { meta } = await c.env.DB.prepare('INSERT OR IGNORE INTO story_views (story_id, viewer_id, created_at) VALUES (?, ?, ?)')
     .bind(story.id, viewer.id, Date.now()).run();
+  if (meta.changes) track(c, 'social_story_viewed', { story_id: story.id, author_id: story.author_id });
   return c.json({ ok: true, seen: true });
 });
 
@@ -181,6 +184,7 @@ stories.delete('/:id', async c => {
   const story = await ownStory(c, user.id, true);
   await c.env.DB.prepare('DELETE FROM stories WHERE id = ?').bind(story.id).run();
   await deleteUnusedMedia(c.env, [story.media_id]);
+  track(c, 'social_story_deleted', { story_id: story.id });
   return c.json({ ok: true });
 });
 

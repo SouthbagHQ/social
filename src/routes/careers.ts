@@ -59,6 +59,7 @@ import { body, cursor, fail, limit, page, placeholders, requireUser, str } from 
 import { newId } from '../lib/ids';
 import { deleteUnusedMedia, getMedia } from '../lib/media';
 import { notify, notifyStatement } from '../lib/notify';
+import { track } from '../lib/palantir';
 import { userCard, userCardColumns, type UserRow } from '../lib/users';
 
 const careers = new Hono<AppEnv>();
@@ -265,6 +266,7 @@ careers.patch('/profile', async c => {
   }
   const row = await c.env.DB.prepare('SELECT headline, open_to_work FROM users WHERE id = ?').bind(me.id)
     .first<{ headline: string; open_to_work: number }>();
+  if (sets.length) track(c, 'social_career_profile_updated', { fields: sets.map(part => part.split(' ')[0]), open_to_work: Boolean(row?.open_to_work) });
   return c.json({ headline: row?.headline ?? '', open_to_work: Boolean(row?.open_to_work) });
 });
 
@@ -318,6 +320,7 @@ careers.post('/experiences', async c => {
     .bind(id, me.id, fields.company_id ?? null, fields.company_name!, fields.title!, fields.employment_type!, fields.location ?? '',
       fields.start_month!, fields.end_month ?? null, fields.description ?? '', now).run();
   if (!res.meta.changes) fail(422, `You can list up to ${MAX.experiences} roles.`);
+  track(c, 'social_experience_added', { experience_id: id, employment_type: fields.employment_type, linked_company: Boolean(fields.company_id), current: !fields.end_month });
   const row = await c.env.DB.prepare(`${experienceSelect} WHERE e.id = ?`).bind(id).first<ExperienceRow>();
   return c.json({ experience: experienceJson(row!) }, 201);
 });
@@ -396,6 +399,7 @@ careers.post('/educations', async c => {
     WHERE (SELECT COUNT(*) FROM educations WHERE user_id = ?2) < ${MAX.educations}`)
     .bind(id, me.id, f.school!, f.degree ?? '', f.field ?? '', f.start_year ?? null, f.end_year ?? null, f.description ?? '', Date.now()).run();
   if (!res.meta.changes) fail(422, `You can list up to ${MAX.educations} schools.`);
+  track(c, 'social_education_added', { education_id: id });
   const row = await c.env.DB.prepare('SELECT * FROM educations WHERE id = ?').bind(id).first<EducationRow>();
   return c.json({ education: educationJson(row!) }, 201);
 });
@@ -442,6 +446,7 @@ careers.post('/skills', async c => {
     SELECT ?1, ?2, COALESCE((SELECT MAX(position) FROM skills WHERE user_id = ?1), -1) + 1, 0, ?3
     WHERE (SELECT COUNT(*) FROM skills WHERE user_id = ?1) < ${MAX.skills}`).bind(me.id, name, Date.now()).run();
   if (!res.meta.changes) fail(422, `You can list up to ${MAX.skills} skills.`);
+  track(c, 'social_skill_added');
   return c.json({ skill: { name, endorsement_count: 0, endorsed: false } }, 201);
 });
 
@@ -485,6 +490,7 @@ async function endorse(c: Ctx, on: boolean) {
   }
   const row = await c.env.DB.prepare('SELECT endorsement_count FROM skills WHERE user_id = ? AND name = ?').bind(them.id, skill.name)
     .first<{ endorsement_count: number }>();
+  track(c, on ? 'social_skill_endorsed' : 'social_skill_unendorsed', { target_user_id: them.id });
   return c.json({ skill: { name: skill.name, endorsement_count: row?.endorsement_count ?? 0, endorsed: on } });
 }
 
@@ -523,6 +529,7 @@ careers.post('/recommendations/requests/:handle', async c => {
       SELECT ?, ?, ?, 'system', ?, ?, ? WHERE changes() > 0`)
       .bind(newId(now), them.id, me.id, `${me.name} asked you for a recommendation.`, `/@${me.handle}/career`, now),
   ]);
+  track(c, 'social_recommendation_requested', { target_user_id: them.id, has_message: Boolean(message) });
   return c.json({ requested: true });
 });
 
@@ -552,6 +559,7 @@ careers.put('/recommendations/:handle', async c => {
       body: `${me.name} wrote you a recommendation. Review it on your Career tab.`, link: `/@${them.handle}/career` }, now)!,
   ]);
   const row = await c.env.DB.prepare(`${recommendationSelect} WHERE r.user_id = ? AND r.author_id = ?`).bind(them.id, me.id).first<RecommendationRow>();
+  track(c, 'social_recommendation_written', { recommendation_id: row?.id ?? null, target_user_id: them.id });
   return c.json({ recommendation: recommendationJson(row!) });
 });
 
@@ -691,6 +699,7 @@ careers.post('/companies', async c => {
     if (String(err).includes('UNIQUE')) fail(409, 'That address is taken.');
     throw err;
   }
+  track(c, 'social_company_created', { company_id: id, size: fields.size || null, has_logo: Boolean(logo) });
   return c.json({ company: await companyById(c.env, id, me.id) }, 201);
 });
 
@@ -777,6 +786,7 @@ careers.put('/companies/:slug/follow', async c => {
     c.env.DB.prepare('INSERT OR IGNORE INTO company_follows (company_id, user_id, created_at) VALUES (?, ?, ?)').bind(co.id, me.id, Date.now()),
   ]);
   const row = await c.env.DB.prepare('SELECT follower_count FROM companies WHERE id = ?').bind(co.id).first<{ follower_count: number }>();
+  track(c, 'social_company_followed', { company_id: co.id });
   return c.json({ is_following: true, follower_count: row?.follower_count ?? 0 });
 });
 
@@ -789,6 +799,7 @@ careers.delete('/companies/:slug/follow', async c => {
     c.env.DB.prepare('DELETE FROM company_follows WHERE company_id = ? AND user_id = ?').bind(co.id, me.id),
   ]);
   const row = await c.env.DB.prepare('SELECT follower_count FROM companies WHERE id = ?').bind(co.id).first<{ follower_count: number }>();
+  track(c, 'social_company_unfollowed', { company_id: co.id });
   return c.json({ is_following: false, follower_count: row?.follower_count ?? 0 });
 });
 
@@ -956,6 +967,7 @@ careers.post('/jobs', async c => {
       currency, description, apply_url, status, applicant_count, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'AUD', ?, ?, 'open', 0, ?, ?)`)
     .bind(id, co.id, me.id, f.title, f.location, f.workplace, f.employment_type, f.salary_min, f.salary_max, f.description, f.apply_url, now, now).run();
+  track(c, 'social_job_posted', { job_id: id, company_id: co.id, workplace: f.workplace, employment_type: f.employment_type, has_salary: f.salary_min != null || f.salary_max != null, external_apply: Boolean(f.apply_url) });
   return c.json({ job: await jobJson(c.env, await loadJob(c, id)) }, 201);
 });
 
@@ -988,6 +1000,7 @@ careers.post('/jobs/:id/close', async c => {
   const { job } = await manageJob(c);
   const now = Date.now();
   await c.env.DB.prepare(`UPDATE jobs SET status = 'closed', closed_at = ?, updated_at = ? WHERE id = ? AND status = 'open'`).bind(now, now, job.id).run();
+  if (job.status === 'open') track(c, 'social_job_closed', { job_id: job.id, applicant_count: job.applicant_count });
   return c.json({ job: await jobJson(c.env, await loadJob(c)) });
 });
 
@@ -1001,6 +1014,7 @@ careers.put('/jobs/:id/save', async c => {
   const me = requireUser(c);
   const job = await loadJob(c);
   await c.env.DB.prepare('INSERT OR IGNORE INTO saved_jobs (user_id, job_id, created_at) VALUES (?, ?, ?)').bind(me.id, job.id, Date.now()).run();
+  track(c, 'social_job_saved', { job_id: job.id });
   return c.json({ saved: true });
 });
 
@@ -1037,6 +1051,7 @@ careers.post('/jobs/:id/apply', async c => {
       .bind(newId(now), job.poster_id, me.id, `${me.name} applied for ${job.title}.`, `/jobs/${job.id}`, now, job.poster_id, job.poster_id, me.id),
   ]);
   if (!inserted.meta.changes) fail(409, 'You have already applied for this job.');
+  track(c, 'social_job_applied', { job_id: job.id, application_id: id, has_note: Boolean(note) });
   const row = await c.env.DB.prepare('SELECT * FROM job_applications WHERE id = ?').bind(id).first<ApplicationRow>();
   return c.json({ application: applicationJson(row!) }, 201);
 });
@@ -1049,6 +1064,7 @@ careers.delete('/jobs/:id/apply', async c => {
     c.env.DB.prepare('UPDATE jobs SET applicant_count = MAX(0, applicant_count - 1) WHERE id = ? AND changes() > 0').bind(jobId),
   ]);
   if (!deleted.meta.changes) fail(404, 'Application not found.');
+  track(c, 'social_job_application_withdrawn', { job_id: jobId });
   return c.json({ ok: true });
 });
 
@@ -1098,6 +1114,7 @@ careers.patch('/applications/:id', async c => {
     const now = Date.now();
     await c.env.DB.prepare('UPDATE job_applications SET status = ?, updated_at = ? WHERE id = ?').bind(status, now, app.id).run();
     await notify(c.env, { userId: app.user_id, actorId: null, type: 'system', body: STATUS_MESSAGES[status](job.title, job.c_name), link: `/jobs/${job.id}` });
+    track(c, 'social_job_application_reviewed', { application_id: app.id, job_id: job.id, from_status: app.status, status });
     app.status = status;
     app.updated_at = now;
   }

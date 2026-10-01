@@ -97,3 +97,18 @@ Palantir (PostHog behind `palantir.southbag.cc`) is shared by every Southbag app
 `track(c, 'event_name', props)` from `src/lib/palantir.ts` on the server and `track('event_name', props)`
 from `public/js/analytics.js` in the browser. Event names are `social_<noun>_<past-tense verb>`,
 e.g. `social_post_created`, `social_listing_sold`.
+
+- Call `track(c, …)` after the write succeeds, as a single line, usually just before `return c.json(…)`.
+  It returns nothing and never throws. The event is sent after the response with `waitUntil`.
+- Properties are ids, kinds, counts and flags only. Never send post or message text, captions,
+  search queries or other free text. Send a length or a boolean such as `has_note` instead.
+- The event goes to the signed-in user (`c.get('user')`, whose id is the Identity `sub` the browser
+  identifies with). Signed-out visitors fall back to PostHog's cookie id, and events without either
+  are dropped. Pass a fourth argument, `track(c, event, props, { id })`, when the actor isn't the
+  session user, e.g. on `/auth/*` routes. Outside a Hono handler, use
+  `tracker(request, env, ctx, user).capture(event, props)` (see `src/lib/auth.ts`).
+- The server sends nothing under `node --test` or from localhost unless `PALANTIR_DEV=1`
+  (`PALANTIR_HOST_OVERRIDE` points a local run at a mock collector).
+- Pageviews are automatic. The shared `public/palantir.js` uses `capture_pageview: "history_change"`,
+  so the router must not capture its own. Don't edit `public/palantir.js`: it is identical in every
+  Southbag app.

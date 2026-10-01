@@ -46,6 +46,31 @@ signed in locally without Identity. `npm run check` type-checks the Worker.
 Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) before adding a feature, and
 [`docs/STYLE.md`](docs/STYLE.md) for the interface and copy rules.
 
+## Analytics
+
+Social reports to Palantir, the PostHog instance every Southbag app uses (`palantir.southbag.cc`).
+
+- **Browser.** `public/palantir.js` is the shared Southbag client script, identical in every app
+  (don't edit it here). It records pageviews, including client-side navigation, plus clicks,
+  page leaves, errors, web vitals and session replays. It identifies the signed-in user by their
+  Identity id from `/api/me`. `public/js/store.js` re-identifies or resets when someone signs in or
+  out mid-visit. Views can send custom events with `track()` from `public/js/analytics.js`.
+- **Server.** `track(c, 'social_…', props)` from `src/lib/palantir.ts` records what the API did:
+  sign-in, sign-out and new accounts, posts, reactions, reposts, bookmarks, follows, friends and
+  blocks, uploads, stories, groups, communities, events, podcasts and music, servers, careers,
+  polls, pins, searches and profile edits. Events are sent after the response (`waitUntil`), so
+  they never slow down or break a request. They join the browser's session through PostHog's
+  cookie and are attributed to the signed-in user.
+- **Not captured.** Only ids, kinds, counts and flags are sent. Post text, comments, messages,
+  captions and search queries are never sent: searches record the type, query length and result
+  count. Server events drop the query string from `$current_url`.
+- **Local dev and tests.** The server sends nothing from `localhost`/`127.0.0.1` or under
+  `node --test`. To try it locally, run
+  `npx wrangler dev --var PALANTIR_DEV:1 --var PALANTIR_HOST_OVERRIDE:http://127.0.0.1:8827` with
+  a local collector on that port. The override only works for localhost requests. The shared
+  browser script still runs in local dev, as it does in every Southbag app. Block
+  `palantir.southbag.cc` in your browser if you don't want local clicks recorded.
+
 ## Deploy
 
 ```sh

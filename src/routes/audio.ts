@@ -57,6 +57,7 @@ import type { AppEnv, Ctx, Env } from '../env';
 import { body, cursor, fail, limit, requireUser, str } from '../lib/http';
 import { newId } from '../lib/ids';
 import { deleteUnusedMedia, ownedReadyMedia, type MediaRow } from '../lib/media';
+import { track } from '../lib/palantir';
 import { createPost, deletePost } from '../lib/posts';
 import { userCard } from '../lib/users';
 
@@ -346,6 +347,7 @@ audio.post('/shows', async c => {
   const id = newId();
   await c.env.DB.prepare(`INSERT INTO shows (id, owner_id, kind, title, description, cover_media_id, category, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, user.id, kind, title, description, cover?.id ?? null, category, Date.now()).run();
+  track(c, 'social_show_created', { show_id: id, kind, has_cover: Boolean(cover) });
   return c.json({ show: await oneShow(c.env, user.id, id) }, 201);
 });
 
@@ -418,6 +420,7 @@ async function setFollow(c: Ctx, follow: boolean) {
   ]);
   const result = counted.results[0] as { follower_count: number } | undefined;
   if (!result) fail(404, 'Show not found.');
+  track(c, follow ? 'social_show_followed' : 'social_show_unfollowed', { show_id: id });
   return c.json({ following: follow, follower_count: result.follower_count });
 }
 audio.put('/shows/:id/follow', c => setFollow(c, true));
@@ -488,6 +491,7 @@ audio.post('/tracks', async c => {
         episodeNumber, season, album, genre, postId, now, now),
     c.env.DB.prepare('UPDATE shows SET track_count = track_count + 1, last_published_at = ? WHERE id = ?').bind(now, show.id),
   ]);
+  track(c, 'social_track_published', { track_id: id, show_id: show.id, kind, duration, posted_to_feed: Boolean(postId), has_cover: Boolean(cover) });
   return c.json({ track: await oneTrack(c.env, user.id, id) }, 201);
 });
 
@@ -567,6 +571,7 @@ async function setLike(c: Ctx, like: boolean) {
   ]);
   const result = counted.results[0] as { like_count: number } | undefined;
   if (!result) fail(404, 'Track not found.');
+  track(c, like ? 'social_track_liked' : 'social_track_unliked', { track_id: id });
   return c.json({ liked: like, like_count: result.like_count });
 }
 audio.put('/tracks/:id/like', c => setLike(c, true));
@@ -588,6 +593,7 @@ audio.post('/tracks/:id/play', async c => {
       .bind(now - WEEK - 86400000),
   ]);
   const result = counted.results[0] as { play_count: number } | undefined;
+  if (result) track(c, 'social_track_played', { track_id: id });
   if (result) return c.json({ counted: true, play_count: result.play_count });
   const row = await c.env.DB.prepare('SELECT play_count FROM tracks WHERE id = ?').bind(id).first<{ play_count: number }>();
   if (!row) fail(404, 'Track not found.');
@@ -678,6 +684,7 @@ audio.post('/playlists', async c => {
   const now = Date.now();
   await c.env.DB.prepare(`INSERT INTO playlists (id, owner_id, title, description, visibility, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(id, user.id, title, str(input.description, 1000), visibilityOf(input.visibility), now, now).run();
+  track(c, 'social_playlist_created', { playlist_id: id, visibility: visibilityOf(input.visibility) });
   return c.json({ playlist: await onePlaylist(c.env, user.id, id) }, 201);
 });
 
@@ -733,6 +740,7 @@ audio.post('/playlists/:id/tracks', async c => {
     c.env.DB.prepare(`UPDATE playlists SET track_count = (SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = ?1), updated_at = ?2
       WHERE id = ?1`).bind(row.id, now),
   ]);
+  track(c, 'social_playlist_track_added', { playlist_id: row.id, track_id: trackId });
   return c.json({ playlist: await onePlaylist(c.env, row.owner_id as string, row.id as string) }, 201);
 });
 
