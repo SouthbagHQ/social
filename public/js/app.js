@@ -8,7 +8,7 @@ import { api } from './api.js';
 import { h, mount } from './dom.js';
 import { money } from './format.js';
 import { applyTheme, capitaliseKevin, promoStrip } from './gags.js';
-import { cookieBanner, helpStrip, jank, splash, ticker } from './chaos.js';
+import { cookieBanner, helpStrip, jank, notificationNags, splash, ticker } from './chaos.js';
 import { navigate, route, startRouter } from './router.js';
 import { login, store } from './store.js';
 import { startPush } from './push.js';
@@ -135,6 +135,7 @@ const shell = {
   ticker: ticker(),
   header: h('header.site-header'),
   help: helpStrip(),
+  nags: notificationNags(),
   nav: h('nav.south-nav', { 'aria-label': 'Southbag Social' }),
   main: h('main', { id: 'main', tabIndex: -1 }),
   aside: h('aside'),
@@ -254,7 +255,7 @@ async function boot() {
   await store.refresh();
   mount(shell.promo, promoStrip());
   mount(shell.player, audioPlayer());
-  mount(app, shell.promo, shell.ticker, shell.header, shell.help, shell.layout, shell.footer, shell.player);
+  mount(app, shell.promo, shell.ticker, shell.header, shell.nags.strip, shell.help, shell.layout, shell.footer, shell.player);
   // The sidebar links slide in one by one on the first page only (the nav re-renders often),
   // once the splash is out of the way.
   splashed.then(() => {
@@ -283,6 +284,7 @@ async function boot() {
     refreshBalance();
   }
   startPush();
+  splashed.then(() => shell.nags.start());
   // Payments and Southbag Verified announce that money moved.
   window.addEventListener('bank:changed', refreshBalance);
   window.addEventListener('auth:required', () => { if (store.me) store.refresh(); });

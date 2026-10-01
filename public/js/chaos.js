@@ -1,13 +1,15 @@
 // Jank, after Southbag Online Banking, Identity and Service Table (../support): a splash screen,
-// a cookie banner, more help buttons than anyone needs, an announcements ticker, and a page that
-// jumps a little while you scroll. None of it is a joke on screen; it is
-// just a site that was built badly. Everything is once-per-session or harmless, and nothing here
-// stops anyone posting, reading or messaging. Motion lives in css/chaos.css.
+// a cookie banner, more help buttons than anyone needs, an announcements ticker, nags to turn on
+// notifications, and a page that jumps a little while you scroll. None of it is a joke on screen;
+// it is just a site that was built badly. Everything is once-per-session or harmless, and nothing
+// here stops anyone posting, reading or messaging. Motion lives in css/chaos.css.
 
-import { h } from './dom.js';
+import { h, mount } from './dom.js';
 import { navigate } from './router.js';
-import { dialog } from './ui.js';
+import { store } from './store.js';
+import { dialog, toast, toastError } from './ui.js';
 import { track } from './analytics.js';
+import { enablePush, needsHomeScreen, pushState } from './push.js';
 
 const once = key => {
   try { if (sessionStorage.getItem(key)) return false; sessionStorage.setItem(key, '1'); } catch {}
@@ -114,6 +116,93 @@ const announcements = [
 ];
 export const ticker = () => h('div.ticker', { 'aria-hidden': 'true' },
   h('div.ticker-track', [...announcements, ...announcements].map(line => h('span', line))));
+
+// ── Notification nags ────────────────────────────────────────────────────
+// Like every site that wants to send notifications: a strip under the header that stays until
+// they're on, a card in the corner after most page changes, and a dialog every few pages (with an
+// "Are you sure?"). Only "Turn on" asks the browser for permission. Nothing opens while someone is
+// typing or another dialog is open, or on Settings and Welcome. It all stops once notifications are
+// on, or blocked in the browser.
+const NAG_EVERY = 3;            // pages between dialogs
+const NAG_GAP_MS = 2 * 60000;   // and at least this long between them
+const nagSkip = path => path === '/settings' || path === '/welcome';
+const busy = () => document.querySelector('.overlay') || document.documentElement.classList.contains('splash-open')
+  || document.activeElement?.matches?.('input, textarea, select, [contenteditable], [contenteditable] *');
+const lastDialog = () => { try { return Number(sessionStorage.getItem('sb_nag_at')) || 0; } catch { return 0; } };
+const dialogShown = () => { try { sessionStorage.setItem('sb_nag_at', String(Date.now())); } catch {} };
+
+/** Returns the strip for the shell; call `start()` once the router is running. */
+export function notificationNags() {
+  const strip = h('div.nag-strip.hidden', { role: 'region', 'aria-label': 'Notifications' });
+  let state = 'unknown';
+  let card = null;
+  let pages = 0;
+  let lastPath = null;
+  const refresh = async () => {
+    try { state = store.me ? await pushState() : 'unknown'; } catch { state = 'unknown'; }
+    const homeScreen = state === 'unsupported' && needsHomeScreen();
+    strip.classList.toggle('hidden', state !== 'off' && !homeScreen);
+    mount(strip, state === 'off'
+      ? [h('span', 'Notifications are off for this device.'), h('button.btn-small', { type: 'button', onclick: () => turnOn('strip') }, 'Turn on')]
+      : homeScreen ? h('span', 'Add Southbag Social to your Home Screen to get notifications.') : null);
+    if (state !== 'off') { card?.remove(); card = null; }
+    return state;
+  };
+  // Called straight from a click, so the browser's own prompt is allowed to appear.
+  const turnOn = async kind => {
+    track('social_push_nag_answered', { kind, choice: 'on' });
+    try {
+      if (await enablePush()) toast('Notifications on.');
+    } catch (err) {
+      toastError(err);
+    }
+    await refresh();
+  };
+
+  const showCard = () => {
+    if (card || state !== 'off') return;
+    track('social_push_nag_shown', { kind: 'card' });
+    const close = () => { card?.remove(); card = null; };
+    card = h('section.nag-card', { role: 'region', 'aria-label': 'Notifications' },
+      h('h3', 'Notifications'),
+      h('p', 'Southbag Social would like to send you notifications.'),
+      h('div.cookie-actions',
+        h('button.btn-large', { type: 'button', onclick: () => { close(); turnOn('card'); } }, 'Allow'),
+        h('button.btn-tiny', { type: 'button', onclick: () => { close(); track('social_push_nag_answered', { kind: 'card', choice: 'later' }); } }, 'Later')));
+    document.body.append(card);
+  };
+
+  const showDialog = async () => {
+    dialogShown();
+    track('social_push_nag_shown', { kind: 'dialog' });
+    const ask = (title, body) => dialog({ title, body, actions: [{ label: 'Not now', value: false }, { label: 'Turn on', value: true, primary: true }] });
+    let yes = await ask('Turn on notifications?', 'Find out when people follow you, reply to you or mention you, even when Southbag Social is closed.');
+    if (!yes && state === 'off') yes = await ask('Are you sure?', "You won't be notified when people interact with you.");
+    if (yes) turnOn('dialog');
+    else track('social_push_nag_answered', { kind: 'dialog', choice: 'not_now' });
+  };
+
+  const onPage = async () => {
+    const path = location.pathname;
+    if (path === lastPath) return;
+    lastPath = path;
+    if (!store.me || await refresh() !== 'off' || nagSkip(path)) return;
+    const page = ++pages;
+    setTimeout(() => {
+      if (location.pathname !== path || state !== 'off' || busy()) return;
+      if ((page === 1 || page % NAG_EVERY === 0) && Date.now() - lastDialog() > NAG_GAP_MS) showDialog();
+      else if (Math.random() < 0.6) showCard();
+    }, page === 1 ? 9000 : 4000);
+  };
+
+  return {
+    strip,
+    start() {
+      window.addEventListener('route:change', onPage);
+      onPage();
+    },
+  };
+}
 
 // ── Jank ─────────────────────────────────────────────────────────────────
 // The page shifts a little now and then while scrolling (Service Table does the same).

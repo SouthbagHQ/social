@@ -32,13 +32,17 @@ never like a gag (no "Do not press" buttons, no joke answers).
 - **Janky, but usable** (`public/js/chaos.js`, `public/css/chaos.css`). A splash screen with
   promotional slides once per browser session; a cookie banner once per browser (two huge
   "Accept" buttons, a tiny "Manage preferences" that lists dozens of required cookies); a strip of
-  six help buttons that all open the same support chat; an announcements ticker; sidebar links
+  six help buttons that all open the same support chat; nags to turn on notifications (a strip
+  under the header until they're on, a corner card after most page changes, and a dialog with an
+  "Are you sure?" every few pages); an announcements ticker; sidebar links
   that move in from the left one after another (slow, linear, no fade) on the first page; a
   loading word that spins around its left edge; and the page shifting a few pixels now and then
   while scrolling. Motion ignores `prefers-reduced-motion`, like Banking. No gimmicks that look
   deliberate: nothing bounces, jitters, sways or shakes, not even on errors. Limits: keyboard
   focus works, nothing blocks posting, liking, commenting, following or messaging, nothing reloads
-  the page, no `alert()`, no "Leave site?" traps, no permission prompts.
+  the page, no `alert()`, no "Leave site?" traps, no permission prompts nobody clicked for (the
+  nags only ask the browser after "Turn on", never open over someone typing, and stop once
+  notifications are on or blocked).
 - **No toasts.** Every message is a dialog with an OK button (`toast()` / `toastError()` in `ui.js`
   open one; the same message is never open twice).
 - **No deleting.** Delete buttons stay where they are, but call `refuseDelete()` from `ui.js`

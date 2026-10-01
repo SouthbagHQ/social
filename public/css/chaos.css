@@ -18,6 +18,13 @@ html.splash-open, html.splash-open body { overflow: hidden; }
 .cookie-list { max-height: 50vh; overflow-y: auto; columns: 2 220px; font-size: 0.85rem; box-shadow: none; }
 .cookie-row { display: block; transform: none; margin: 2px 0; break-inside: avoid; }
 
+/* ── Notification nags ─────────────────────────────────────────────── */
+.nag-strip { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 12px; padding: 6px 12px; border-bottom: 2px dashed #000; background: var(--sb-paper-nav); font-size: 0.9rem; }
+:root[data-theme='dark'] .nag-strip { border-bottom-color: var(--sb-hairline); }
+.nag-card { position: fixed; right: 16px; bottom: 16px; z-index: 900; width: min(380px, calc(100vw - 32px)); padding: 14px 16px; border: 3px ridge var(--sb-ridge); background: var(--sb-paper); transform: rotate(0.8deg); }
+.nag-card h3 { margin: 0 0 4px; }
+.nag-card p { margin: 0; }
+
 /* ── Help strip and ticker ─────────────────────────────────────────── */
 .help-strip { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 10px; padding: 6px 12px; border-bottom: 2px dashed #000; box-shadow: none; }
 :root[data-theme='dark'] .help-strip { border-bottom-color: var(--sb-hairline); }

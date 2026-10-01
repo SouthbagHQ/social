@@ -85,4 +85,5 @@ async function run(scroll) {
     cleanup: fn => cleanups.push(fn),
   };
   await renderFn(ctx, found?.route, controller, scroll);
+  window.dispatchEvent(new Event('route:change'));
 }
