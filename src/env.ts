@@ -5,6 +5,9 @@ export interface Env {
   ASSETS: Fetcher;
   /** Southbag Online Banking's Billing entrypoint (lib/banking.ts). */
   BANKING?: import('./lib/banking').BankingBilling;
+  /** Push notifications (lib/push.ts). Secrets; push is off without them. */
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY?: string;
   [binding: string]: unknown;
 }
 

@@ -11,6 +11,7 @@ import { applyTheme, capitaliseKevin, promoStrip } from './gags.js';
 import { cookieBanner, helpStrip, jank, splash, ticker } from './chaos.js';
 import { navigate, route, startRouter } from './router.js';
 import { login, store } from './store.js';
+import { startPush } from './push.js';
 import { errorBox, loading, menu } from './ui.js';
 import { sidebar, footer } from './components/sidebar.js';
 import { audioPlayer } from './components/player.js';
@@ -281,6 +282,7 @@ async function boot() {
     setInterval(() => { if (document.visibilityState === 'visible') refreshBalance(); }, 300000);
     refreshBalance();
   }
+  startPush();
   // Payments and Southbag Verified announce that money moved.
   window.addEventListener('bank:changed', refreshBalance);
   window.addEventListener('auth:required', () => { if (store.me) store.refresh(); });

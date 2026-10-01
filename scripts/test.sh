@@ -6,7 +6,8 @@ export PERSIST_TO="$(mktemp -d)"
 PORT="${PORT:-8799}"
 npx wrangler d1 migrations apply DB --local --persist-to "$PERSIST_TO" > /dev/null
 bash scripts/seed-local.sh > /dev/null
-setsid npx wrangler dev --var BANKING_DEV:1 --port "$PORT" --inspector-port "$((PORT + 1000))" --persist-to "$PERSIST_TO" > "$PERSIST_TO/dev.log" 2>&1 &
+# A throwaway VAPID key pair turns push notifications on (tests/push.test.mjs).
+setsid npx wrangler dev --var BANKING_DEV:1 $(node scripts/vapid-keys.mjs --vars) --port "$PORT" --inspector-port "$((PORT + 1000))" --persist-to "$PERSIST_TO" > "$PERSIST_TO/dev.log" 2>&1 &
 DEV=$!
 trap 'kill -- -$DEV 2>/dev/null; [ -n "${KEEP:-}" ] || rm -rf "$PERSIST_TO"' EXIT
 for _ in $(seq 1 60); do curl -sf "http://localhost:$PORT/api/me" | grep -q authenticated && break; sleep 1; done

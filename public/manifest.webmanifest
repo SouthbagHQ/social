@@ -1,0 +1,11 @@
+{
+  "name": "Southbag Social",
+  "short_name": "Social",
+  "description": "Posts, photos, videos and messages with your Southbag account.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#efeee9",
+  "theme_color": "#efeee9",
+  "icons": [{ "src": "/img/s-256.png", "sizes": "256x256", "type": "image/png", "purpose": "any" }]
+}

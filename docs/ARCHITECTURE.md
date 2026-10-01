@@ -49,7 +49,9 @@ on `/welcome` to pick theirs.
   right). `deletePost()` is only for undoing a plain repost.
 - Users in responses: `userCard(row)` (`{ id, handle, name, avatar_url, verified }`), selecting
   `userCardColumns`. Add `is_following` etc. alongside when useful.
-- Notifications: `notify(env, {...})` or `notifyStatement()` inside a batch.
+- Notifications: `notify(env, {...})` or `notifyStatement()` inside a batch (or any INSERT with a
+  `newId()`-style id). Don't send push notifications from a route: `pushPending()` in
+  `src/lib/push.ts` runs after every write request and the hourly cron and pushes new rows itself.
 - Files: `ownedReadyMedia()` to validate media ids a user attaches; `mediaJson()` for output;
   `deleteMedia()` / `deleteUnusedMedia()` only for files nothing shows any more (abandoned
   uploads, replaced pictures, expired stories).
@@ -102,8 +104,8 @@ signed in without Identity. Mutating API calls need `origin: http://localhost:87
 Migration numbers are reserved per feature so parallel work never collides:
 `0003_polls_pins.sql`, `0004_communities.sql`, `0005_events.sql`, `0006_audio.sql`,
 `0007_servers.sql`, `0008_careers.sql`, `0009_notification_links.sql`, `0010_marketplace.sql`,
-`0011_boards.sql`, `0012_streaks.sql`, `0013_wiki.sql`, `0014_dating.sql`. Never edit an applied
-migration; add a new one.
+`0011_boards.sql`, `0012_streaks.sql`, `0013_wiki.sql`, `0014_dating.sql`, `0019_push.sql`. Never
+edit an applied migration; add a new one.
 
 ## Analytics
 

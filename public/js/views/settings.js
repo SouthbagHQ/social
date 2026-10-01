@@ -1,5 +1,5 @@
 // /settings - profile (name, handle, bio, location, website, photo, banner), appearance,
-// and links to Southbag Identity for password and account.
+// notifications on this device, and links to Southbag Identity for password and account.
 //   PATCH /api/me { name?, handle?, bio?, location?, website?, avatar_media_id?, banner_media_id? }
 
 import { api } from '../api.js';
@@ -7,6 +7,7 @@ import { h, mount } from '../dom.js';
 import { applyTheme } from '../gags.js';
 import { store } from '../store.js';
 import { toast, toastError } from '../ui.js';
+import { disablePush, enablePush, needsHomeScreen, pushState } from '../push.js';
 import { pickFiles, uploadFile } from '../upload.js';
 import { avatar } from '../components/user.js';
 
@@ -24,6 +25,7 @@ export default function settings(ctx) {
     h('div.page-head', h('h1', 'Settings'), h('span.spacer'), h('a.btn-small', { href: `/@${me.handle}` }, 'View profile')),
     profileCard(me),
     appearanceCard(),
+    notificationsCard(),
     accountCard(me));
 }
 
@@ -143,6 +145,49 @@ function appearanceCard() {
       h('legend', 'Theme'),
       radio('light', 'Light'),
       radio('dark', 'Dark')));
+}
+
+// -- Notifications (push, this browser only) -------------------------------
+
+function notificationsCard() {
+  const text = h('p', 'Loading...');
+  const button = h('button.btn', { type: 'button', class: { hidden: true } });
+  let state = null;
+  const paint = next => {
+    state = next;
+    text.textContent = {
+      unsupported: needsHomeScreen()
+        ? 'On iPhone and iPad, add Southbag Social to your Home Screen first, then turn notifications on there.'
+        : "This browser can't show notifications.",
+      unavailable: "Notifications aren't available.",
+      denied: 'Notifications are blocked in your browser settings.',
+      off: 'Get notifications on this device when Southbag Social is closed.',
+      on: 'Notifications are on for this device.',
+    }[state];
+    button.textContent = state === 'on' ? 'Turn off' : 'Turn on';
+    button.classList.toggle('hidden', state !== 'on' && state !== 'off');
+  };
+  const recheck = () => pushState().then(paint).catch(() => paint('unavailable'));
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    try {
+      if (state === 'on') {
+        await disablePush();
+        toast('Notifications off.');
+      } else if (await enablePush()) {
+        toast('Notifications on.');
+      }
+    } catch (err) {
+      toastError(err);
+    }
+    await recheck();
+    button.disabled = false;
+  });
+  recheck();
+  return h('section.south-card.flat',
+    h('h2', 'Notifications'),
+    text,
+    h('div.row.wrap', button));
 }
 
 // -- Account ---------------------------------------------------------------

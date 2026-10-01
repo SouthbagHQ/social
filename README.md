@@ -31,6 +31,14 @@ It signs in with **Southbag Identity™** and follows the look of the other Sout
   Banking moves the money with its own transfer (and its fee pile, paid by the sender) through the
   same binding; Social records the payment, posts it in the pair's chat and notifies the recipient.
   Payments are final.
+- **Push notifications** with no push provider account (Web Push). Settings > Notifications turns
+  them on for one browser. The Worker encrypts each message for that browser and signs it with our
+  own VAPID key (`src/lib/push.ts`, WebCrypto, no packages), then sends it to the push service the
+  browser picked (Google's, Mozilla's, Apple's or Microsoft's). Routes don't send anything: after
+  every write request, and after the hourly cron, the Worker pushes notification rows from the last
+  10 minutes that haven't been pushed or read (at most 20 a run). A subscription ends with the
+  session that made it. iPhones and iPads need Social added to the Home Screen first
+  (`public/manifest.webmanifest`). Chats don't push yet; only notifications do.
 
 ## Southbag Identity
 
@@ -53,6 +61,8 @@ npm run dev            # http://localhost:8787
 
 Set the cookie `southbag_social_session=dev-alice` (or `dev-bob`, `dev-carol`, `dev-kevin`) to be
 signed in locally without Identity. `npm run check` type-checks the Worker.
+
+Push notifications are off locally until you add keys: `node scripts/vapid-keys.mjs >> .dev.vars`.
 
 Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) before adding a feature, and
 [`docs/STYLE.md`](docs/STYLE.md) for the interface and copy rules.
@@ -90,6 +100,11 @@ npm run deploy         # applies migrations, then deploys
 
 Banking must already be deployed with its `Billing` entrypoint, or subscribing to Verified fails
 with "Southbag Online Banking is unavailable." (nothing is charged).
+
+Push notifications need a VAPID key pair, once: run `node scripts/vapid-keys.mjs`, then
+`npx wrangler secret put VAPID_PUBLIC_KEY` and `npx wrangler secret put VAPID_PRIVATE_KEY` with the
+two values. Until then Settings says "Notifications aren't available." Keep the pair: a new one cuts
+every browser off until it next opens Social.
 
 It deploys to the Southbag account (`account_id` in `wrangler.jsonc`) at `social.southbag.cc`,
 with the `southbag-social` D1 database. For a fresh account, run

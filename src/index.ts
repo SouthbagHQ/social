@@ -8,6 +8,7 @@ import type { AppEnv, Env } from './env';
 import { callback, login, logout, safeReturnTo, session } from './lib/auth';
 import { deleteMedia, serveMedia } from './lib/media';
 import { NO_DELETING, fail } from './lib/http';
+import { pushPending } from './lib/push';
 import feed from './routes/feed';
 import groups from './routes/groups';
 import me from './routes/me';
@@ -32,6 +33,7 @@ import streaks, { streaksCron } from './routes/streaks';
 import wiki from './routes/wiki';
 import dating from './routes/dating';
 import payments from './routes/payments';
+import push from './routes/push';
 
 const app = new Hono<AppEnv>();
 
@@ -76,6 +78,9 @@ app.use('/api/*', async (c, next) => {
   if (!['GET', 'HEAD'].includes(c.req.method) && user && !user.bearer && origin !== new URL(c.req.url).origin)
     return c.json({ error: 'Invalid origin' }, 403);
   await next();
+  // Push notifications: whatever this request (or any other) just notified people about goes out
+  // after the response. Routes only write notification rows; see src/lib/push.ts.
+  if (!['GET', 'HEAD'].includes(c.req.method)) c.executionCtx.waitUntil(pushPending(c.env).catch(err => console.error('push', err)));
   c.header('cache-control', 'no-store');
   if (cors) {
     c.header('access-control-allow-origin', origin);
@@ -107,6 +112,7 @@ app.route('/api/streaks', streaks);
 app.route('/api/wiki', wiki);
 app.route('/api/dating', dating);
 app.route('/api/payments', payments);
+app.route('/api/push', push);
 // Nothing can be deleted. The routers keep their DELETEs for undoing things (unlike, unfollow,
 // leave…); anything else that tries to delete lands here.
 app.delete('/api/*', () => fail(403, NO_DELETING));
@@ -126,6 +132,8 @@ async function janitor(env: Env): Promise<void> {
   await env.DB.batch([
     env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(now),
     env.DB.prepare('DELETE FROM oauth_states WHERE expires_at < ?').bind(now),
+    // Push subscriptions end with the session that made them (signed out or expired).
+    env.DB.prepare('DELETE FROM push_subscriptions WHERE NOT EXISTS (SELECT 1 FROM sessions s WHERE s.token_hash = push_subscriptions.session_hash)'),
     // Servers: typing indicators and presence older than a day are only noise.
     env.DB.prepare('DELETE FROM channel_typing WHERE until < ?').bind(now - 60000),
     env.DB.prepare('DELETE FROM server_presence WHERE last_seen_at < ?').bind(now - 86400000),
@@ -136,11 +144,15 @@ export default {
   fetch: app.fetch,
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(janitor(env));
-    // Southbag Verified: charge subscribers who are due through Southbag Online Banking.
-    ctx.waitUntil(renewVerified(env).catch(err => console.error('verified renewals', err)));
-    // Events: remind people going to events that start in the next 24 hours (once each).
-    ctx.waitUntil(sendEventReminders(env).catch(err => console.error('event reminders', err)));
-    // Streaks: warn people whose message streaks are about to run out.
-    ctx.waitUntil(streaksCron(env).catch(err => console.error('streaks', err)));
+    const jobs = [
+      // Southbag Verified: charge subscribers who are due through Southbag Online Banking.
+      renewVerified(env).catch(err => console.error('verified renewals', err)),
+      // Events: remind people going to events that start in the next 24 hours (once each).
+      sendEventReminders(env).catch(err => console.error('event reminders', err)),
+      // Streaks: warn people whose message streaks are about to run out.
+      streaksCron(env).catch(err => console.error('streaks', err)),
+    ];
+    // Then push whatever those jobs notified people about.
+    ctx.waitUntil(Promise.all(jobs).then(() => pushPending(env)).catch(err => console.error('push', err)));
   },
 } satisfies ExportedHandler<Env>;
