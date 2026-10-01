@@ -2,7 +2,7 @@
 // the types); nothing here touches the network except the local API.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BASE, as } from './helpers.mjs';
+import { BASE } from './helpers.mjs';
 import { capture, capturePayload, palantirContext, palantirHost, tracker } from '../src/lib/palantir.ts';
 
 const KEY = 'phc_rStyYsw4wrB8MwXEsPBJjz57uipHycNVwFPaw2m3aYXo';
@@ -108,7 +108,6 @@ test('tracker: signed-in id wins over the cookie id; nothing is sent from tests'
 });
 
 test('API: tracked routes still answer normally with a PostHog cookie present', async () => {
-  const alice = as('alice');
   const headers = { cookie: `southbag_social_session=dev-alice; ${browserCookie}`, origin: BASE, 'content-type': 'application/json' };
   const started = Date.now();
   const created = await fetch(`${BASE}/api/posts`, { method: 'POST', headers, body: JSON.stringify({ body: 'Analytics check' }) });
@@ -116,6 +115,8 @@ test('API: tracked routes still answer normally with a PostHog cookie present', 
   const { post } = await created.json();
   const search = await fetch(`${BASE}/api/search?q=analytics&type=posts`, { headers });
   assert.equal(search.status, 200);
+  const edited = await fetch(`${BASE}/api/posts/${post.id}`, { method: 'PATCH', headers, body: JSON.stringify({ body: 'Analytics check, edited' }) });
+  assert.equal(edited.status, 200);
+  assert.equal((await edited.json()).post.body, 'Analytics check, edited');
   assert.ok(Date.now() - started < 5000, 'analytics never hold up a response');
-  assert.equal((await alice.del(`posts/${post.id}`)).status, 200);
 });

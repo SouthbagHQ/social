@@ -9,7 +9,7 @@ import { h, mount } from '../dom.js';
 import { plural, timeAgo } from '../format.js';
 import { refresh } from '../router.js';
 import { login, store } from '../store.js';
-import { confirm, dialog, errorBox, loading, promptDialog, shake, toast, toastError } from '../ui.js';
+import { dialog, errorBox, loading, promptDialog, refuseDelete, shake, toast, toastError } from '../ui.js';
 import { avatar, userName } from './user.js';
 
 // -- Labels and formatting ---------------------------------------------------
@@ -209,15 +209,6 @@ function orderControls(list, index, key, path, reload) {
   ];
 }
 
-async function removeItem(message, path, reload) {
-  if (!(await confirm(message, { title: 'Remove', ok: 'Remove' }))) return;
-  try {
-    await api.del(path);
-    toast('Removed.');
-    reload();
-  } catch (err) { toastError(err); }
-}
-
 // About: headline and open to work.
 function about(data, me) {
   const { user } = data;
@@ -268,7 +259,7 @@ function experienceSection(data, me, reload) {
       e.description ? h('p.career-text', e.description) : null,
       me ? h('div.career-controls',
         h('button.btn-small', { type: 'button', onclick: () => experienceDialog(e, reload) }, 'Edit'),
-        h('button.btn-small', { type: 'button', onclick: () => removeItem(`Remove ${e.title} at ${e.company_name}?`, `careers/experiences/${e.id}`, reload) }, 'Remove'),
+        h('button.btn-small', { type: 'button', onclick: refuseDelete }, 'Remove'),
         orderControls(list, i, 'id', 'careers/experiences/order', reload)) : null)));
   return section('Experience', add, items.length ? items : h('p.muted', 'No experience added.'));
 }
@@ -320,7 +311,7 @@ function educationSection(data, me, reload) {
       e.description ? h('p.career-text', e.description) : null,
       me ? h('div.career-controls',
         h('button.btn-small', { type: 'button', onclick: () => educationDialog(e, reload) }, 'Edit'),
-        h('button.btn-small', { type: 'button', onclick: () => removeItem(`Remove ${e.school}?`, `careers/educations/${e.id}`, reload) }, 'Remove'),
+        h('button.btn-small', { type: 'button', onclick: refuseDelete }, 'Remove'),
         orderControls(list, i, 'id', 'careers/educations/order', reload)) : null)));
   return section('Education', add, items.length ? items : h('p.muted', 'No education added.'));
 }
@@ -391,7 +382,7 @@ function skillsSection(data, me, reload) {
       h('div.grow', h('strong', s.name), ' ', countEl),
       endorse,
       me ? h('div.career-controls',
-        h('button.btn-small', { type: 'button', onclick: () => removeItem(`Remove ${s.name}? Its endorsements go with it.`, `careers/skills/${encodeURIComponent(s.name)}`, reload) }, 'Remove'),
+        h('button.btn-small', { type: 'button', onclick: refuseDelete }, 'Remove'),
         orderControls(list, i, 'name', 'careers/skills/order', reload)) : null);
   });
   const note = !me && store.me && !viewer.can_endorse && list.length
@@ -421,7 +412,7 @@ function recommendationCard(r, { me, reload }) {
         status ? h('span.chip', status) : null,
         me && r.status !== 'visible' ? h('button.btn-small', { type: 'button', onclick: () => setStatus('visible') }, 'Show') : null,
         me && r.status === 'visible' ? h('button.btn-small', { type: 'button', onclick: () => setStatus('hidden') }, 'Hide') : null,
-        me || mine ? h('button.btn-small', { type: 'button', onclick: () => removeItem('Delete this recommendation?', `careers/recommendations/${r.id}`, reload) }, 'Delete') : null)));
+        me || mine ? h('button.btn-small', { type: 'button', onclick: refuseDelete }, 'Delete') : null)));
 }
 
 async function writeRecommendation(person, existing, reload) {

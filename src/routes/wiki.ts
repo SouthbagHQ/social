@@ -8,7 +8,6 @@
 //                                          (also creates "Main Page")
 //   GET    /api/wiki/:space                -> { space, viewer: ViewerJson, main_page: 'Main_Page' }
 //   PATCH  /api/wiki/:space                admins: { title?, description?, logo_media_id?, edit_policy?, community? } -> { space }
-//   DELETE /api/wiki/:space                owner -> { ok }
 //   GET    /api/wiki/:space/members        -> { items: [{ user, role }] }
 //   PUT    /api/wiki/:space/members/:handle    admins: { role: admin|editor } -> { member: { user, role } }
 //   DELETE /api/wiki/:space/members/:handle    admins, or yourself -> { ok }
@@ -29,13 +28,11 @@
 //                                                             truncated, viewer }
 //   POST   /api/wiki/:space/pages/:slug/revert           { revision_id, summary? } -> { page, revision }
 //   POST   /api/wiki/:space/pages/:slug/move             { title, redirect?: true } -> { page, redirect: slug|null }
-//   DELETE /api/wiki/:space/pages/:slug                  admins -> { ok }
 //   POST   /api/wiki/:space/pages/:slug/undelete         admins -> { page }
 //   PUT    /api/wiki/:space/pages/:slug/protect          admins: { protected } -> { page }
 //   GET    /api/wiki/:space/pages/:slug/links            "What links here" -> { items: [{ slug, title, redirect_to }] }
 //   GET    /api/wiki/:space/pages/:slug/talk             -> { items: TalkJson[] (oldest first, flat; nest by parent_id), count }
 //   POST   /api/wiki/:space/pages/:slug/talk             { body, parent_id? } -> 201 { comment }
-//   DELETE /api/wiki/:space/pages/:slug/talk/:id         author or admins -> { ok }
 //   PUT    /api/wiki/:space/pages/:slug/watch            -> { watching: true }
 //   DELETE /api/wiki/:space/pages/:slug/watch            -> { watching: false }
 //
@@ -665,17 +662,6 @@ wiki.patch('/:space', async c => {
   return c.json({ space: spaceJson(row!, viewerOf(row!, user).role) });
 });
 
-wiki.delete('/:space', async c => {
-  const { space, viewer } = await loadSpace(c);
-  requireUser(c);
-  if (viewer.role !== 'owner') fail(403, 'Only the owner can delete the wiki.');
-  const { results } = await c.env.DB.prepare(`SELECT DISTINCT f.media_id FROM wiki_files f JOIN wiki_pages p ON p.id = f.page_id
-      WHERE p.space_id = ? LIMIT 200`).bind(space.id).all<{ media_id: string }>();
-  await c.env.DB.prepare('DELETE FROM wiki_spaces WHERE id = ?').bind(space.id).run();
-  await deleteUnusedMedia(c.env, [space.logo_media_id, ...results.map(r => r.media_id)]);
-  return c.json({ ok: true });
-});
-
 // ── Members ─────────────────────────────────────────────────────────────
 
 wiki.get('/:space/members', async c => {
@@ -980,20 +966,6 @@ wiki.post('/:space/pages/:slug/move', async c => {
   return c.json({ page: pageJson(moved!), redirect });
 });
 
-wiki.delete('/:space/pages/:slug', async c => {
-  const { space, viewer, page } = await loadPage(c);
-  requireUser(c);
-  if (!viewer.admin) fail(403, 'Only wiki admins can delete pages.');
-  if (page.slug.toLowerCase() === slugOf(MAIN_PAGE).toLowerCase()) fail(409, 'The main page cannot be deleted.');
-  const now = Date.now();
-  await c.env.DB.batch([
-    c.env.DB.prepare('UPDATE wiki_pages SET deleted_at = ? WHERE id = ?').bind(now, page.id),
-    recountPages(c.env, space.id, now),
-  ]);
-  track(c, 'social_wiki_page_deleted', { wiki_id: space.id, page_id: page.id });
-  return c.json({ ok: true });
-});
-
 wiki.post('/:space/pages/:slug/undelete', async c => {
   const { space, viewer, page } = await loadPage(c, { deleted: true });
   requireUser(c);
@@ -1078,16 +1050,6 @@ wiki.post('/:space/pages/:slug/talk', async c => {
   await c.env.DB.batch(statements);
   track(c, 'social_wiki_talk_posted', { wiki_id: space.id, page_id: page.id, reply: Boolean(parent) });
   return c.json({ comment: talkJson(row, new Map([[user.id, userCard(user as unknown as UserRow)]]), viewer) }, 201);
-});
-
-wiki.delete('/:space/pages/:slug/talk/:id', async c => {
-  const { viewer, page } = await loadPage(c);
-  const user = requireUser(c);
-  const row = await c.env.DB.prepare('SELECT * FROM wiki_talk WHERE id = ? AND page_id = ?').bind(c.req.param('id'), page.id).first<TalkRow>();
-  if (!row || row.deleted_at) fail(404, 'Comment not found.');
-  if (row.author_id !== user.id && !viewer.admin) fail(403, 'You can only delete your own comments.');
-  await c.env.DB.prepare('UPDATE wiki_talk SET deleted_at = ? WHERE id = ?').bind(Date.now(), row.id).run();
-  return c.json({ ok: true });
 });
 
 // ── Watching ────────────────────────────────────────────────────────────

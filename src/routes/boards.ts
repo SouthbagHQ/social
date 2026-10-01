@@ -8,11 +8,9 @@
 //   GET    /api/boards/pins/:pinId        -> { pin }
 //   GET    /api/boards/pins/:pinId/related -> { items: PinJson[] } (same board, same source author, then popular)
 //   PATCH  /api/boards/pins/:pinId        { title?, note?, link?, board_id? (move) } -> { pin }
-//   DELETE /api/boards/pins/:pinId
 //   POST   /api/boards                    { title, description?, visibility? } -> { board }
 //   GET    /api/boards/:id                -> { board, collaborators: [{ user, role }], viewer: { role, can_edit, following } }
 //   PATCH  /api/boards/:id                owner: { title?, description?, visibility?, cover_pin_id? } -> { board }
-//   DELETE /api/boards/:id                owner
 //   GET    /api/boards/:id/pins           ?cursor -> { items: PinJson[], next } (board order, top first)
 //   POST   /api/boards/:id/pins           owner/editors, one of:
 //                                          { post_id, media_id? }   save a post's photo (the post must be visible to you)
@@ -40,7 +38,7 @@ import { Hono } from 'hono';
 import type { AppEnv, Ctx, Env, SessionUser } from '../env';
 import { body, cursor, fail, limit, placeholders, requireUser } from '../lib/http';
 import { newId } from '../lib/ids';
-import { deleteUnusedMedia, mediaJson, ownedReadyMedia, type MediaJson, type MediaRow } from '../lib/media';
+import { mediaJson, ownedReadyMedia, type MediaJson, type MediaRow } from '../lib/media';
 import { notifyStatement, type NotificationType } from '../lib/notify';
 import { track } from '../lib/palantir';
 import { loadVisiblePost, visibleTo } from '../lib/posts';
@@ -439,21 +437,6 @@ boards.patch('/pins/:pinId', async c => {
   return c.json({ pin: await onePin(c, pin.id) });
 });
 
-boards.delete('/pins/:pinId', async c => {
-  const user = requireUser(c);
-  const pin = await loadPin(c, c.req.param('pinId'));
-  if (pin.user_id !== user.id && pin.board_owner_id !== user.id) fail(403, 'Only the person who saved this pin can delete it.');
-  await c.env.DB.batch([
-    c.env.DB.prepare('DELETE FROM pins WHERE id = ?').bind(pin.id),
-    c.env.DB.prepare(`UPDATE boards SET pin_count = MAX(0, pin_count - 1),
-      cover_pin_id = CASE WHEN cover_pin_id = ? THEN NULL ELSE cover_pin_id END WHERE id = ?`).bind(pin.id, pin.board_id),
-  ]);
-  // An uploaded photo goes when its last pin does; a post's photo stays with the post.
-  await deleteUnusedMedia(c.env, [pin.media_id]);
-  track(c, 'social_pin_deleted', { pin_id: pin.id, board_id: pin.board_id });
-  return c.json({ ok: true });
-});
-
 // ── Boards ──────────────────────────────────────────────────────────────
 
 function boardFields(input: Record<string, unknown>, partial: boolean) {
@@ -536,23 +519,6 @@ boards.patch('/:id', async c => {
     track(c, 'social_board_updated', { board_id: board.id, fields: Object.keys(fields) });
   }
   return c.json({ board: await oneBoard(c, board.id) });
-});
-
-boards.delete('/:id', async c => {
-  const board = await ownBoard(c, c.req.param('id'));
-  // Uploaded photos that only this board used are removed too. Capped so one request stays within
-  // the free plan's query budget; anything past that is left for the next file cleanup.
-  const { results } = await c.env.DB.prepare('SELECT DISTINCT media_id FROM pins WHERE board_id = ? LIMIT 20')
-    .bind(board.id).all<{ media_id: string }>();
-  await c.env.DB.batch([
-    c.env.DB.prepare('DELETE FROM pins WHERE board_id = ?').bind(board.id),
-    c.env.DB.prepare('DELETE FROM board_collaborators WHERE board_id = ?').bind(board.id),
-    c.env.DB.prepare('DELETE FROM board_follows WHERE board_id = ?').bind(board.id),
-    c.env.DB.prepare('DELETE FROM boards WHERE id = ?').bind(board.id),
-  ]);
-  await deleteUnusedMedia(c.env, results.map(r => r.media_id));
-  track(c, 'social_board_deleted', { board_id: board.id });
-  return c.json({ ok: true });
 });
 
 boards.get('/:id/pins', async c => {

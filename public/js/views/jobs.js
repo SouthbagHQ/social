@@ -9,7 +9,7 @@ import { h, mount } from '../dom.js';
 import { count, fullDate, plural, timeAgo } from '../format.js';
 import { navigate, refresh } from '../router.js';
 import { login, store } from '../store.js';
-import { confirm, dialog, empty, errorBox, infiniteList, loading, tabs, toast, toastError } from '../ui.js';
+import { confirm, dialog, empty, errorBox, infiniteList, loading, refuseDelete, tabs, toast, toastError } from '../ui.js';
 import {
   APPLICATION_STATUS, COMPANY_SIZES, JOB_TYPES, WORKPLACES, companyLogo, field, formDialog, jobRow, posted,
   salaryLabel, saveButton, select,
@@ -355,14 +355,7 @@ async function companyPage(ctx, slug) {
       h('button.btn-small', { type: 'button', onclick: () => companyDialog(co) }, 'Edit'),
       h('button.btn-small', { type: 'button', onclick: () => adminsDialog(co, admins) }, 'Admins'),
     ] : null,
-    co.is_owner ? h('button.btn-small', { type: 'button', onclick: async () => {
-      if (!(await confirm(`Delete ${co.name}? Its jobs and applications are deleted too.`, { title: 'Delete company', ok: 'Delete' }))) return;
-      try {
-        await api.del(`careers/companies/${co.slug}`);
-        toast('Deleted.');
-        navigate('/jobs?tab=companies');
-      } catch (err) { toastError(err); }
-    } }, 'Delete') : null);
+    co.is_owner ? h('button.btn-small', { type: 'button', onclick: refuseDelete }, 'Delete') : null);
 
   return h('div.jobs-page.company-page',
     h('p.fine', h('a', { href: '/jobs?tab=companies' }, 'Companies')),
@@ -448,7 +441,7 @@ function jobActions(job) {
         job.status === 'open'
           ? h('button.btn', { type: 'button', onclick: () => setStatus('close') }, 'Close job')
           : h('button.btn', { type: 'button', onclick: () => setStatus('open') }, 'Reopen'),
-        h('button.btn', { type: 'button', onclick: removeJob }, 'Delete'));
+        h('button.btn', { type: 'button', onclick: refuseDelete }, 'Delete'));
     } else if (job.application_status) {
       parts.push(h('span.chip', `Applied: ${APPLICATION_STATUS[job.application_status]}`),
         h('button.btn', { type: 'button', onclick: withdraw }, 'Withdraw'));
@@ -493,14 +486,6 @@ function jobActions(job) {
       else await api.patch(`careers/jobs/${job.id}`, { status: 'open' });
       toast(which === 'close' ? 'Job closed.' : 'Job reopened.');
       refresh();
-    } catch (err) { toastError(err); }
-  }
-  async function removeJob() {
-    if (!(await confirm(`Delete ${job.title}? Its applications are deleted too.`, { title: 'Delete job', ok: 'Delete' }))) return;
-    try {
-      await api.del(`careers/jobs/${job.id}`);
-      toast('Deleted.');
-      navigate('/jobs?tab=post');
     } catch (err) { toastError(err); }
   }
   paint();

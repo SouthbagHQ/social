@@ -3,6 +3,12 @@ import { test } from 'node:test';
 import { as } from './helpers.mjs';
 
 const alice = as('alice'), bob = as('bob'), carol = as('carol'), kevin = as('kevin');
+const NO_DELETING = "Deletion isn't available. Kevin knows what you did.";
+
+function refused(res) {
+  assert.equal(res.status, 403, res.text);
+  assert.equal(res.body.error, NO_DELETING);
+}
 
 async function makeServer(name = `Test server ${Date.now()}`) {
   const res = await alice.post('servers', { name, description: 'For tests.' });
@@ -64,7 +70,7 @@ test('servers: invites, joining and leaving', async () => {
   assert.deepEqual(members.body.items.map(m => m.user.handle).sort(), ['alice', 'carol']);
 });
 
-test('servers: permissions for channels, roles, kicks and messages', async () => {
+test('servers: permissions for channels, roles, kicks and messages; nothing can be deleted', async () => {
   const s = await makeServer();
   await join(bob, s.code);
   await join(carol, s.code);
@@ -98,10 +104,11 @@ test('servers: permissions for channels, roles, kicks and messages', async () =>
   // Kicking needs a higher role; nobody outranks the owner.
   assert.equal((await bob.del(`servers/${s.id}/members/dev-alice`)).status, 403);
   const msg = await alice.post(`servers/${s.id}/channels/${s.general}/messages`, { body: 'Owner message' });
-  assert.equal((await carol.del(`servers/${s.id}/channels/${s.general}/messages/${msg.body.message.id}`)).status, 403);
+  refused(await carol.del(`servers/${s.id}/channels/${s.general}/messages/${msg.body.message.id}`));
   assert.equal((await carol.put(`servers/${s.id}/channels/${s.general}/messages/${msg.body.message.id}/pin`)).status, 403);
   assert.equal((await bob.put(`servers/${s.id}/channels/${s.general}/messages/${msg.body.message.id}/pin`)).status, 200, 'manage_messages can pin');
-  assert.equal((await bob.del(`servers/${s.id}/channels/${s.general}/messages/${msg.body.message.id}`)).status, 200, 'manage_messages can delete');
+  refused(await bob.del(`servers/${s.id}/channels/${s.general}/messages/${msg.body.message.id}`));
+  assert.ok((await alice.get(`servers/${s.id}/channels/${s.general}/messages`)).body.items.some(m => m.id === msg.body.message.id), 'not even manage_messages deletes');
   assert.equal((await bob.del(`servers/${s.id}/members/dev-carol`)).status, 200);
   assert.equal((await carol.get(`servers/${s.id}`)).status, 404, 'kicked');
   await join(carol, s.code); // a kick is not a ban
@@ -111,12 +118,20 @@ test('servers: permissions for channels, roles, kicks and messages', async () =>
   assert.equal((await carol.post(`servers/${s.id}/channels/${news.body.channel.id}/messages`, { body: 'hi' })).status, 403);
   assert.equal((await bob.post(`servers/${s.id}/channels/${news.body.channel.id}/messages`, { body: 'Update' })).status, 201);
 
-  // Deleting a channel needs manage_channels.
-  assert.equal((await carol.del(`servers/${s.id}/channels/${channel.body.channel.id}`)).status, 403);
-  assert.equal((await bob.del(`servers/${s.id}/channels/${channel.body.channel.id}`)).status, 200);
+  // Channels, categories and roles can't be deleted, not even by the owner.
+  const categoryId = s.detail.categories[0].id;
+  for (const who of [carol, bob, alice]) {
+    refused(await who.del(`servers/${s.id}/channels/${channel.body.channel.id}`));
+    refused(await who.del(`servers/${s.id}/categories/${categoryId}`));
+    refused(await who.del(`servers/${s.id}/roles/${role.body.role.id}`));
+  }
+  const after = (await alice.get(`servers/${s.id}`)).body;
+  assert.ok(after.channels.some(ch => ch.id === channel.body.channel.id), 'the channel stays');
+  assert.ok(after.categories.some(cat => cat.id === categoryId), 'the category stays');
+  assert.ok(after.roles.some(r => r.id === role.body.role.id), 'the role stays');
 });
 
-test('servers: messages send, edit, delete, pin, react, reply and page', async () => {
+test('servers: messages send, edit, pin, react, reply and page, but are never deleted', async () => {
   const s = await makeServer();
   await join(bob, s.code);
   const base = `servers/${s.id}/channels/${s.general}`;
@@ -150,9 +165,9 @@ test('servers: messages send, edit, delete, pin, react, reply and page', async (
   const pins = await bob.get(`${base}/pins`);
   assert.deepEqual(pins.body.items.map(m => m.id), [id]);
 
-  assert.equal((await bob.del(`${base}/messages/${id}`)).status, 403, 'no manage_messages');
-  const own = await bob.del(`${base}/messages/${reply.body.message.id}`);
-  assert.equal(own.status, 200, 'authors delete their own');
+  refused(await bob.del(`${base}/messages/${id}`));
+  refused(await bob.del(`${base}/messages/${reply.body.message.id}`)); // not even authors delete their own
+  refused(await alice.del(`${base}/messages/${reply.body.message.id}`)); // nor the owner
 
   // Paging newest-first.
   for (let i = 0; i < 4; i++) await alice.post(`${base}/messages`, { body: `Page ${i}` });
@@ -160,10 +175,11 @@ test('servers: messages send, edit, delete, pin, react, reply and page', async (
   assert.deepEqual(page1.body.items.map(m => m.body), ['Page 3', 'Page 2']);
   const page2 = await bob.get(`${base}/messages?limit=2&before=${page1.body.next}`);
   assert.deepEqual(page2.body.items.map(m => m.body), ['Page 1', 'Page 0']);
-  assert.ok(!page2.body.items.some(m => m.id === reply.body.message.id), 'deleted messages are gone');
+  const page3 = await bob.get(`${base}/messages?limit=10&before=${page2.body.next}`);
+  assert.deepEqual(page3.body.items.map(m => m.id), [reply.body.message.id, id], 'refused deletes leave messages in place');
 });
 
-test('servers: polling returns new, edited and deleted messages, typing and unread flags', async () => {
+test('servers: polling returns new and edited messages, typing and unread flags', async () => {
   const s = await makeServer();
   await join(bob, s.code);
   const base = `servers/${s.id}/channels/${s.general}`;
@@ -180,7 +196,7 @@ test('servers: polling returns new, edited and deleted messages, typing and unre
   const after = poll.body.items.at(-1).id;
 
   await alice.patch(`${base}/messages/${a.body.message.id}`, { body: 'One, edited' });
-  await alice.del(`${base}/messages/${b.body.message.id}`);
+  refused(await alice.del(`${base}/messages/${b.body.message.id}`));
   await alice.post(`${base}/typing`);
   const c = await alice.post(`${base}/messages`, { body: 'Three' });
   await alice.post(`${base}/typing`);
@@ -189,7 +205,8 @@ test('servers: polling returns new, edited and deleted messages, typing and unre
   poll = await bob.get(`${base}/poll?after=${after}&since=${poll.body.now}&read=1`);
   assert.deepEqual(poll.body.items.map(m => m.id), [c.body.message.id]);
   assert.ok(poll.body.updated.some(m => m.id === a.body.message.id && m.body === 'One, edited'));
-  assert.ok(poll.body.deleted.includes(b.body.message.id));
+  assert.deepEqual(poll.body.deleted, [], 'nothing is ever deleted');
+  assert.ok(!poll.body.updated.some(m => m.id === b.body.message.id), 'a refused delete changes nothing');
   assert.deepEqual(poll.body.typing.map(t => t.handle), ['alice']);
   assert.ok(poll.body.online_count >= 1);
   const flags = Object.fromEntries(poll.body.channels.map(ch => [ch.id, ch.unread]));
@@ -269,8 +286,9 @@ test('servers: bans remove members and stop them rejoining', async () => {
   assert.equal((await alice.del(`servers/${s.id}/bans/dev-kevin`)).status, 200);
   assert.equal((await kevin.post(`servers/join/${s.code}`)).status, 200);
 
-  // Deleting is for the owner only.
-  assert.equal((await bob.del(`servers/${s.id}`)).status, 403);
-  assert.equal((await alice.del(`servers/${s.id}`)).status, 200);
-  assert.equal((await alice.get(`servers/${s.id}`)).status, 404);
+  // Servers can't be deleted, not even by the owner.
+  refused(await bob.del(`servers/${s.id}`));
+  refused(await alice.del(`servers/${s.id}`));
+  assert.equal((await alice.get(`servers/${s.id}`)).status, 200);
+  assert.equal((await kevin.get(`servers/${s.id}`)).status, 200);
 });

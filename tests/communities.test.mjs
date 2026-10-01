@@ -5,6 +5,15 @@ import { anon, as } from './helpers.mjs';
 const alice = as('alice'), bob = as('bob'), carol = as('carol'), kevin = as('kevin');
 const suffix = () => Math.random().toString(36).slice(2, 8);
 
+const NO_DELETING = "Deletion isn't available. Kevin knows what you did.";
+
+/** Every DELETE of something a user made is refused with the same message. */
+async function cannotDelete(who, path) {
+  const res = await who.del(path);
+  assert.equal(res.status, 403, res.text);
+  assert.deepEqual(res.body, { error: NO_DELETING });
+}
+
 async function png(who) {
   const bytes = new Uint8Array(1000);
   const { body } = await who.post('media', { kind: 'image', content_type: 'image/png', size: bytes.length, width: 10, height: 10 });
@@ -93,20 +102,20 @@ test('communities: posting text, link and image threads', async () => {
   assert.equal(one.body.thread.body, 'First post.');
   assert.equal(one.body.thread.vote, 0);
 
-  // Editing and deleting are the author's.
+  // Editing is the author's; deleting is nobody's.
   assert.equal((await carol.patch(`communities/${c.name}/threads/${text.body.thread.id}`, { body: 'Hijacked' })).status, 403);
   const edited = await bob.patch(`communities/${c.name}/threads/${text.body.thread.id}`, { body: 'Edited.' });
   assert.equal(edited.body.thread.body, 'Edited.');
   assert.ok(edited.body.thread.edited_at);
-  assert.equal((await carol.del(`communities/${c.name}/threads/${link.body.thread.id}`)).status, 403);
-  assert.equal((await bob.del(`communities/${c.name}/threads/${link.body.thread.id}`)).status, 200);
-  const gone = await anon.get(`communities/${c.name}/threads/${link.body.thread.id}`);
-  assert.equal(gone.body.thread.deleted, true);
-  assert.equal(gone.body.thread.author, null);
-  assert.equal(gone.body.thread.url, null);
+  await cannotDelete(carol, `communities/${c.name}/threads/${link.body.thread.id}`);
+  await cannotDelete(bob, `communities/${c.name}/threads/${link.body.thread.id}`);
+  const kept = await anon.get(`communities/${c.name}/threads/${link.body.thread.id}`);
+  assert.equal(kept.body.thread.deleted, false);
+  assert.equal(kept.body.thread.author.handle, 'bob');
+  assert.equal(kept.body.thread.url, 'https://example.com/a');
   const list = await anon.get(`communities/${c.name}/threads?sort=new`);
-  assert.equal(list.body.items.some(t => t.id === link.body.thread.id), false);
-  assert.equal((await anon.get(`communities/${c.name}`)).body.community.thread_count, 2);
+  assert.equal(list.body.items.some(t => t.id === link.body.thread.id), true);
+  assert.equal((await anon.get(`communities/${c.name}`)).body.community.thread_count, 3);
 
   // Threads stay out of the social feeds.
   const feed = await bob.get('feed');
@@ -239,26 +248,27 @@ test('communities: nested comments, sorting, edits and notifications', async () 
   const bobNotes = (await bob.get('notifications')).body.items.filter(n => n.type === 'reply' && n.link === `/c/${c.name}/${thread.id}` && n.body === 'Reply to bob');
   assert.equal(bobNotes.length, 1);
 
-  // Edit and delete.
+  // Edit, but never delete.
   assert.equal((await carol.patch(`${path}/${a.id}`, { body: 'Nope' })).status, 403);
   const edited = await bob.patch(`${path}/${a.id}`, { body: 'Edited by bob' });
   assert.equal(edited.body.comment.body, 'Edited by bob');
   assert.ok(edited.body.comment.edited_at);
-  assert.equal((await carol.del(`${path}/${a.id}`)).status, 403);
-  assert.equal((await bob.del(`${path}/${a.id}`)).status, 200);
+  await cannotDelete(carol, `${path}/${a.id}`);
+  await cannotDelete(bob, `${path}/${a.id}`);
+  await cannotDelete(bob, `${path}/${b.id}`);
+  await cannotDelete(carol, `${path}/${b.id}`);
   const after = (await anon.get(path)).body;
-  const deleted = after.items.find(x => x.id === a.id);
-  assert.equal(deleted.deleted, true, 'a deleted comment with replies stays as a placeholder');
-  assert.equal(deleted.body, '');
-  assert.equal(deleted.author, null);
-  assert.equal(deleted.children.length, 1);
-  assert.equal((await bob.del(`${path}/${b.id}`)).status, 403);
-  assert.equal((await carol.del(`${path}/${b.id}`)).status, 200);
-  assert.equal((await anon.get(path)).body.items.some(x => x.id === b.id), false, 'deleted leaves disappear');
-  assert.equal((await anon.get(`communities/${c.name}/threads/${thread.id}`)).body.thread.comment_count, 5);
+  const kept = after.items.find(x => x.id === a.id);
+  assert.equal(kept.deleted, false);
+  assert.equal(kept.body, 'Edited by bob');
+  assert.equal(kept.author.handle, 'bob');
+  assert.equal(kept.children.length, 1);
+  assert.ok(after.items.some(x => x.id === b.id));
+  assert.equal(after.count, 7);
+  assert.equal((await anon.get(`communities/${c.name}/threads/${thread.id}`)).body.thread.comment_count, 7);
 });
 
-test('communities: moderators pin, lock and remove; others cannot', async () => {
+test('communities: moderators pin, lock and hide; others cannot; nobody deletes', async () => {
   const c = await community();
   await bob.post(`communities/${c.name}/join`);
   await carol.post(`communities/${c.name}/join`);
@@ -288,21 +298,40 @@ test('communities: moderators pin, lock and remove; others cannot', async () => 
   assert.equal((await bob.post(`${threadPath(newer.id)}/comments`, { body: 'Locked.' })).status, 201);
   const comment = (await alice.post(`${threadPath(older.id)}/comments`, { body: 'Remove me' })).body.comment;
 
-  // Remove comments and threads.
-  assert.equal((await carol.del(`${threadPath(older.id)}/comments/${comment.id}`)).status, 403);
-  assert.equal((await bob.del(`${threadPath(older.id)}/comments/${comment.id}`)).status, 200);
+  // Nobody deletes, moderators included. Moderators hide instead.
+  const commentPath = `${threadPath(older.id)}/comments/${comment.id}`;
+  await cannotDelete(carol, commentPath);
+  await cannotDelete(bob, commentPath);
+  await cannotDelete(bob, threadPath(older.id));
+
+  // A hidden comment is blank for everyone else, and still readable by moderators and its author.
+  assert.equal((await carol.patch(commentPath, { removed: true })).status, 403, 'only moderators hide');
+  const hiddenComment = await bob.patch(commentPath, { removed: true });
+  assert.equal(hiddenComment.body.comment.removed, true);
+  assert.equal(hiddenComment.body.comment.body, 'Remove me');
   assert.equal((await anon.get(`${threadPath(older.id)}/comments`)).body.count, 0);
-  assert.equal((await bob.del(threadPath(older.id))).status, 403, 'moderators remove rather than delete');
-  const removed = await bob.patch(threadPath(older.id), { removed: true });
-  assert.equal(removed.body.thread.removed, true);
-  assert.equal(removed.body.thread.pinned, false);
-  assert.equal((await anon.get(`communities/${c.name}/threads?sort=new`)).body.items.some(t => t.id === older.id), false);
-  assert.equal((await anon.get(threadPath(older.id))).status, 404);
-  assert.equal((await carol.get(threadPath(older.id))).body.thread.body, '', 'titles only: text body is empty here anyway');
-  assert.equal((await carol.post(`${threadPath(older.id)}/comments`, { body: 'Hello?' })).status, 404);
-  assert.equal((await carol.put('communities/votes', { target_type: 'thread', target_id: older.id, value: 1 })).status, 404);
+  assert.equal((await carol.get(`${threadPath(older.id)}/comments`)).body.count, 0);
+  assert.equal((await bob.get(`${threadPath(older.id)}/comments`)).body.items[0].body, 'Remove me', 'moderators see it');
+  assert.equal((await alice.get(`${threadPath(older.id)}/comments`)).body.items[0].body, 'Remove me', 'so does its author');
+  assert.equal((await anon.get(threadPath(older.id))).body.thread.comment_count, 0);
+  assert.equal((await bob.patch(commentPath, { removed: false })).body.comment.removed, false);
+  assert.equal((await anon.get(`${threadPath(older.id)}/comments`)).body.items[0].body, 'Remove me');
+  assert.equal((await anon.get(threadPath(older.id))).body.thread.comment_count, 1);
+
+  // A hidden thread leaves the list for everyone but the moderators, and is unpinned.
+  assert.equal((await carol.patch(threadPath(older.id), { removed: true })).status, 403, 'authors are not moderators');
+  const hidden = await bob.patch(threadPath(older.id), { removed: true });
+  assert.equal(hidden.body.thread.removed, true);
+  assert.equal(hidden.body.thread.pinned, false, 'hiding unpins');
+  const listed = async who => (await who.get(`communities/${c.name}/threads?sort=new`)).body.items.some(t => t.id === older.id);
+  assert.equal(await listed(anon), false);
+  assert.equal(await listed(carol), false);
+  assert.equal(await listed(bob), true, 'moderators still see hidden threads');
+  assert.equal((await carol.get(threadPath(older.id))).body.thread.removed, true, 'the author can still open it');
   assert.equal((await anon.get(`communities/${c.name}`)).body.community.thread_count, 1);
-  await bob.patch(threadPath(older.id), { removed: false });
+  const unhidden = await bob.patch(threadPath(older.id), { removed: false });
+  assert.equal(unhidden.body.thread.removed, false);
+  assert.equal(await listed(anon), true);
   assert.equal((await anon.get(`communities/${c.name}`)).body.community.thread_count, 2);
 
   // Demoted moderators lose the power.

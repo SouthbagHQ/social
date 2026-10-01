@@ -6,9 +6,9 @@
 import { api } from '../api.js';
 import { h, mount } from '../dom.js';
 import { count, plural } from '../format.js';
-import { navigate, refresh } from '../router.js';
+import { refresh } from '../router.js';
 import { login, store } from '../store.js';
-import { confirm, dialog, empty, infiniteList, menu, share, shake, tabs, toast, toastError } from '../ui.js';
+import { confirm, dialog, empty, infiniteList, menu, refuseDelete, share, shake, tabs, toast, toastError } from '../ui.js';
 import { composerCard } from '../components/composer.js';
 import { postCard } from '../components/post.js';
 import { avatar, userName } from '../components/user.js';
@@ -57,7 +57,7 @@ export default async function groupView(ctx) {
       b.addEventListener('click', () => menu(b, [
         role !== 'owner' ? { label: 'Leave group', onClick: leave } : null,
         isAdmin(role) ? { label: 'Edit group', onClick: edit } : null,
-        role === 'owner' ? { label: 'Delete group', onClick: remove } : null,
+        role === 'owner' ? { label: 'Delete group', onClick: refuseDelete } : null,
       ]));
       buttons.push(b);
     }
@@ -120,15 +120,6 @@ export default async function groupView(ctx) {
       await api.patch(`groups/${group.slug}`, patch);
       toast('Saved.');
       refresh();
-    } catch (err) { toastError(err); }
-  }
-
-  async function remove() {
-    if (!(await confirm(`Delete ${group.name}? All posts in the group will be deleted.`, { ok: 'Delete', title: 'Delete group' }))) return;
-    try {
-      await api.del(`groups/${group.slug}`);
-      toast('Group deleted.');
-      navigate('/groups', { replace: true });
     } catch (err) { toastError(err); }
   }
 

@@ -14,7 +14,7 @@ import { h, mount } from '../dom.js';
 import { fullDate, plural } from '../format.js';
 import { navigate } from '../router.js';
 import { store } from '../store.js';
-import { confirm, copy, dialog, empty, errorBox, lightbox, loading, menu, promptDialog, tabs, toast, toastError } from '../ui.js';
+import { confirm, copy, dialog, empty, errorBox, lightbox, loading, menu, promptDialog, refuseDelete, tabs, toast, toastError } from '../ui.js';
 import { pickFiles, uploadFile } from '../upload.js';
 import { avatar } from '../components/user.js';
 import { richText } from '../components/post.js';
@@ -600,22 +600,11 @@ export default async function view(ctx) {
       h('label.field', h('span', 'Slowmode'), slow),
       h('p.fine', 'Slowmode limits how often each member can post. Moderators are not affected.'),
       h('div.row.sv-dialog-actions',
-        editing ? h('button', { type: 'button', onclick: async () => { if (await deleteChannel(d, ch)) close(); } }, 'Delete channel') : null,
+        editing ? h('button', { type: 'button', onclick: refuseDelete }, 'Delete channel') : null,
         h('span.grow'),
         h('button', { type: 'button', onclick: () => close() }, 'Cancel'), submit)),
       onOpen: () => name.focus(),
     });
-  }
-
-  async function deleteChannel(d, ch) {
-    if (!(await confirm(`Delete #${ch.name} and all of its messages? This cannot be undone.`, { title: 'Delete channel?', ok: 'Delete channel' }))) return false;
-    try {
-      await api.del(`servers/${d.server.id}/channels/${ch.id}`);
-      toast('Deleted.');
-      if (channelId === ch.id) channelId = null;
-      await loadDetail({ quiet: true });
-      return true;
-    } catch (err) { toastError(err); return false; }
   }
 
   async function categoryDialog(d, cat) {
@@ -760,19 +749,6 @@ export default async function view(ctx) {
       if (!(await confirm('The current invite link will stop working.', { title: 'New invite link?', ok: 'New invite link' }))) return;
       try { await api.post(`servers/${d.server.id}/invite`); toast('New invite link made.'); await loadDetail({ quiet: true }); redraw(); } catch (err) { toastError(err); }
     };
-    const remove = async () => {
-      const typed = await promptDialog(`Type the server name (${d.server.name}) to delete it and every channel and message in it.`, { title: 'Delete server?', ok: 'Delete server' });
-      if (typed === null) return;
-      if (typed !== d.server.name) { toast('The name did not match.', { error: true }); return; }
-      try {
-        await api.del(`servers/${d.server.id}`);
-        document.querySelectorAll('.overlay').forEach(o => o.remove());
-        toast('Deleted.');
-        cache.detail.delete(d.server.id);
-        if (cache.servers) cache.servers = cache.servers.filter(s => s.id !== d.server.id);
-        open(null, null);
-      } catch (err) { toastError(err); }
-    };
     return h('div.stack',
       h('div.row.wrap', iconBox,
         editable ? h('div.stack', { style: 'gap:6px' },
@@ -791,7 +767,7 @@ export default async function view(ctx) {
         editable ? h('button', { type: 'button', onclick: rotate }, 'New invite link') : null),
       d.me.is_owner ? h('hr.divider') : null,
       d.me.is_owner ? h('div.row.wrap', h('span.grow.fine', 'Deleting the server removes every channel and message.'),
-        h('button', { type: 'button', onclick: remove }, 'Delete server')) : null);
+        h('button', { type: 'button', onclick: refuseDelete }, 'Delete server')) : null);
   }
 
   function channelsTab(d, redraw) {
@@ -827,10 +803,6 @@ export default async function view(ctx) {
       h('button.btn-small', { type: 'button', disabled: i === 0, onclick: () => moveChannel(ch, -1) }, 'Move up'),
       h('button.btn-small', { type: 'button', disabled: i === list.length - 1, onclick: () => moveChannel(ch, 1) }, 'Move down'),
       h('button.btn-small', { type: 'button', onclick: () => { channelDialog(d, ch); afterDialog(); } }, 'Edit'));
-    const deleteCategory = async cat => {
-      if (!(await confirm(`Delete the ${cat.name} category? Its channels are kept and move out of the category.`, { title: 'Delete category?', ok: 'Delete category' }))) return;
-      try { await api.del(`servers/${d.server.id}/categories/${cat.id}`); toast('Deleted.'); await loadDetail({ quiet: true }); redraw(); } catch (err) { toastError(err); }
-    };
     return h('div',
       h('div.row.wrap', { style: 'margin-bottom:10px' },
         h('button', { type: 'button', onclick: () => channelDialog(d, null) }, 'Create channel'),
@@ -842,7 +814,7 @@ export default async function view(ctx) {
           h('button.btn-small', { type: 'button', disabled: ci === 0, onclick: () => moveCategory(cat, -1) }, 'Move up'),
           h('button.btn-small', { type: 'button', disabled: ci === cats.length - 1, onclick: () => moveCategory(cat, 1) }, 'Move down'),
           h('button.btn-small', { type: 'button', onclick: async () => { await categoryDialog(d, cat); redraw(); } }, 'Rename'),
-          h('button.btn-small', { type: 'button', onclick: () => deleteCategory(cat) }, 'Delete')),
+          h('button.btn-small', { type: 'button', onclick: refuseDelete }, 'Delete')),
         byCat.get(cat.id).length ? h('ul.sv-set-list', byCat.get(cat.id).map(channelRow)) : h('p.fine', 'No channels.'))));
   }
 
@@ -857,10 +829,6 @@ export default async function view(ctx) {
       if (j < 0 || j >= ids.length) return;
       [ids[i], ids[j]] = [ids[j], ids[i]];
       try { await api.post(`servers/${d.server.id}/roles/reorder`, { ids }); await loadDetail({ quiet: true }); redraw(); } catch (err) { toastError(err); }
-    }
-    async function remove(role) {
-      if (!(await confirm(`Delete the ${role.name} role? Members keep their other roles.`, { title: 'Delete role?', ok: 'Delete role' }))) return;
-      try { await api.del(`servers/${d.server.id}/roles/${role.id}`); toast('Deleted.'); await loadDetail({ quiet: true }); redraw(); } catch (err) { toastError(err); }
     }
     function edit(role) {
       const name = role ? null : h('input.input.boxed', { maxLength: 40, placeholder: 'Moderators' });
@@ -901,7 +869,7 @@ export default async function view(ctx) {
           !r.is_everyone ? h('button.btn-small', { type: 'button', disabled: !manageable || i === 0, onclick: () => move(r, -1) }, 'Move up') : null,
           !r.is_everyone ? h('button.btn-small', { type: 'button', disabled: !manageable || i === ranked.length - 1, onclick: () => move(r, 1) }, 'Move down') : null,
           h('button.btn-small', { type: 'button', disabled: !manageable, onclick: () => edit(r) }, 'Edit'),
-          !r.is_everyone ? h('button.btn-small', { type: 'button', disabled: !manageable, onclick: () => remove(r) }, 'Delete') : null);
+          !r.is_everyone ? h('button.btn-small', { type: 'button', disabled: !manageable, onclick: refuseDelete }, 'Delete') : null);
       })),
       h('p.fine', 'Roles higher in the list outrank the ones below. Members can only manage roles and members below their own highest role.'));
   }
@@ -1235,7 +1203,7 @@ function channelPane({ detail: initialDetail, channel: initialChannel, signal, o
       mod ? { label: m.pinned ? 'Unpin' : 'Pin', onClick: () => togglePin(m) } : null,
       m.body ? { label: 'Copy text', onClick: () => copy(m.body, 'Copied.') } : null,
       own || mod ? 'divider' : null,
-      own || mod ? { label: 'Delete', onClick: () => remove(m) } : null,
+      own || mod ? { label: 'Delete', onClick: refuseDelete } : null,
     ]);
   }
 
@@ -1260,16 +1228,6 @@ function channelPane({ detail: initialDetail, channel: initialChannel, signal, o
       replaceMessage(res.message);
       render();
       toast(res.message.pinned ? 'Pinned.' : 'Unpinned.');
-    } catch (err) { toastError(err); }
-  }
-
-  async function remove(m) {
-    if (!(await confirm('Delete this message? This cannot be undone.', { title: 'Delete message?', ok: 'Delete' }))) return;
-    try {
-      await api.del(`${base}/messages/${m.id}`);
-      removeMessage(m.id);
-      render();
-      toast('Deleted.');
     } catch (err) { toastError(err); }
   }
 

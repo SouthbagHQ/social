@@ -11,7 +11,7 @@ import { h, mount } from '../dom.js';
 import { count, fullDate, timeAgo } from '../format.js';
 import { navigate, refresh } from '../router.js';
 import { login, store } from '../store.js';
-import { confirm, dialog, empty, infiniteList, loading, shake, share, tabs, toast, toastError } from '../ui.js';
+import { confirm, dialog, empty, infiniteList, loading, refuseDelete, shake, share, tabs, toast, toastError } from '../ui.js';
 import { pickFiles, uploadFile } from '../upload.js';
 import { avatar, userName, userRow } from '../components/user.js';
 
@@ -311,16 +311,7 @@ function discussionTab(ctx, event, onCount) {
       h('div.grow',
         h('div.row.wrap', userName(c.author), h('time.fine', { datetime: new Date(c.created_at).toISOString(), title: fullDate(c.created_at) }, timeAgo(c.created_at))),
         h('p.event-comment-body', c.body),
-        c.can_delete ? h('button.btn-tiny', { type: 'button', onclick: async () => {
-          if (!(await confirm('Delete this comment?', { title: 'Delete comment', ok: 'Delete' }))) return;
-          try {
-            await api.del(`events/${event.id}/comments/${c.id}`);
-            el.remove();
-            event.comment_count = Math.max(0, event.comment_count - 1);
-            onCount();
-            toast('Deleted.');
-          } catch (err) { toastError(err); }
-        } }, 'Delete') : null));
+        c.can_delete ? h('button.btn-tiny', { type: 'button', onclick: refuseDelete }, 'Delete') : null));
     return el;
   };
   list = infiniteList({

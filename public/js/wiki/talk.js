@@ -3,7 +3,7 @@
 import { api } from '../api.js';
 import { h, mount } from '../dom.js';
 import { login, store } from '../store.js';
-import { confirm, empty, shake, toast, toastError } from '../ui.js';
+import { empty, refuseDelete, shake, toast, toastError } from '../ui.js';
 import { avatar } from '../components/user.js';
 import { canEdit, pageApi, pageTabs, pageTitle, userLink, when, wikiFrame } from './common.js';
 
@@ -38,7 +38,7 @@ export function talkView(ctx, spaceSlug, slug) {
         h('p.wk-comment-body', c.deleted ? 'Comment deleted.' : c.body),
         c.deleted ? null : h('div.wk-comment-actions',
           h('button.btn-small', { type: 'button', onclick: e => openReply(e.currentTarget, c) }, 'Reply'),
-          c.viewer.can_delete ? h('button.btn-small', { type: 'button', onclick: () => remove(c) }, 'Delete') : null),
+          c.viewer.can_delete ? h('button.btn-small', { type: 'button', onclick: refuseDelete }, 'Delete') : null),
         h('div.wk-replies', (children.get(c.id) || []).filter(live).map(node)));
       const roots = (children.get('') || []).filter(live);
       mount(thread, roots.length ? roots.map(node) : empty({ title: 'No comments yet.' }));
@@ -59,17 +59,6 @@ export function talkView(ctx, spaceSlug, slug) {
         toast('Posted.');
       } catch (err) { shake(form); toastError(err); }
       btn.disabled = false;
-    };
-
-    const remove = async c => {
-      if (!(await confirm('Delete this comment?', { title: 'Delete comment', ok: 'Delete' }))) return;
-      try {
-        await api.del(pageApi(space.slug, page.slug, `/talk/${c.id}`));
-        c.deleted = true;
-        c.body = '';
-        paint();
-        toast('Deleted.');
-      } catch (err) { toastError(err); }
     };
 
     const openReply = (button, parent) => {

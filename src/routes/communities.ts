@@ -15,12 +15,10 @@
 //   GET    /api/communities/:name/threads           ?sort=hot|new|top&t=day|week|month|all&cursor -> { items: ThreadJson[], next }
 //   POST   /api/communities/:name/threads           { title, kind: text|link|image, body?, url?, media_id? } -> { thread }
 //   GET    /api/communities/:name/threads/:id       -> { thread }
-//   PATCH  /api/communities/:name/threads/:id       author: { body? }  moderators: { pinned?, locked?, removed? } -> { thread }
-//   DELETE /api/communities/:name/threads/:id       author only (moderators remove instead) -> { ok }
+//   PATCH  /api/communities/:name/threads/:id       author: { body? }  moderators: { pinned?, locked?, removed? (hide) } -> { thread }
 //   GET    /api/communities/:name/threads/:id/comments          ?sort=top|new -> { items: CommentJson[] (nested), count }
 //   POST   /api/communities/:name/threads/:id/comments          { body, parent_id? } -> { comment }
-//   PATCH  /api/communities/:name/threads/:id/comments/:cid     author: { body } -> { comment }
-//   DELETE /api/communities/:name/threads/:id/comments/:cid     author (deleted) or moderator (removed) -> { ok }
+//   PATCH  /api/communities/:name/threads/:id/comments/:cid     author: { body }  moderators: { removed } (hide) -> { comment }
 //
 // CommunityJson: { id, name, title, description, rules: string[], icon_url, banner_url, member_count, thread_count,
 //                  created_at, role }  (role = the viewer's: owner|moderator|member|null)
@@ -501,7 +499,7 @@ communities.delete('/:name/moderators/:handle', c => setModerator(c, 'member'));
 /**
  * A page of threads in `scope`, sorted by ?sort=hot|new|top (&t= for top). New uses keyset paging on
  * id; Hot and Top use offset paging (their order moves with votes anyway). The first Hot page of a
- * single community lists its pinned threads first.
+ * single community lists its pinned threads first. Moderators also see hidden threads.
  */
 async function listThreads(c: Ctx, scope: { sql: string; params: unknown[] }, withPinned: boolean, moderator = false) {
   const user = c.get('user');
@@ -509,7 +507,8 @@ async function listThreads(c: Ctx, scope: { sql: string; params: unknown[] }, wi
   const size = limit(c, 25);
   const after = cursor(c);
   const offset = Math.max(0, Number(after) || 0);
-  const where = [scope.sql, 't.deleted_at IS NULL', 't.removed = 0'];
+  // Moderators still see hidden (removed) threads, so they can review and unhide them.
+  const where = [scope.sql, 't.deleted_at IS NULL', ...(moderator ? [] : ['t.removed = 0'])];
   const params = [...scope.params];
   let order: string;
   if (sort === 'new') {
@@ -621,21 +620,6 @@ communities.patch('/:name/threads/:id', async c => {
   return c.json({ thread: threadJson(fresh, vote, user.id, mod) });
 });
 
-communities.delete('/:name/threads/:id', async c => {
-  const user = requireUser(c);
-  const { thread } = await loadThread(c);
-  if (thread.deleted_at) fail(404, 'Post not found.');
-  if (thread.author_id !== user.id) fail(403, 'Only the author can delete this post.');
-  const statements = [
-    c.env.DB.prepare(`UPDATE threads SET deleted_at = ?, body = '', url = NULL, media_id = NULL, pinned = 0 WHERE id = ?`)
-      .bind(Date.now(), thread.id),
-  ];
-  if (!thread.removed) statements.push(c.env.DB.prepare('UPDATE communities SET thread_count = MAX(0, thread_count - 1) WHERE id = ?').bind(thread.community_id));
-  await c.env.DB.batch(statements);
-  await dropUnused(c.env, [thread.media_id]);
-  return c.json({ ok: true });
-});
-
 // ── Comments ────────────────────────────────────────────────────────────
 
 interface CommentJson {
@@ -650,26 +634,28 @@ interface CommentJson {
   deleted: boolean;
   created_at: number;
   edited_at: number | null;
-  viewer: { can_edit: boolean; can_delete: boolean };
+  viewer: { can_edit: boolean; can_delete: boolean; can_moderate: boolean };
   children: CommentJson[];
 }
 function commentJson(r: CommentRow & { u_id: string | null; u_handle: string | null; u_name: string | null; u_avatar: string | null; u_picture: string | null; u_verified: number | null },
   vote: number, viewerId: string | null, moderator: boolean): CommentJson {
   const mine = Boolean(viewerId && r.author_id === viewerId);
   const gone = Boolean(r.deleted_at || r.removed);
+  // Hidden (removed) comments keep their text for their author and the moderators, like threads.
+  const hidden = Boolean(r.deleted_at) || (Boolean(r.removed) && !mine && !moderator);
   return {
     id: r.id,
     parent_id: r.parent_id,
     depth: r.depth,
     author: r.deleted_at ? null : authorCard(r),
-    body: gone ? '' : r.body,
+    body: hidden ? '' : r.body,
     score: r.score,
     vote,
     removed: Boolean(r.removed),
     deleted: Boolean(r.deleted_at),
     created_at: r.created_at,
     edited_at: r.edited_at,
-    viewer: { can_edit: mine && !gone, can_delete: (mine || moderator) && !gone },
+    viewer: { can_edit: mine && !gone, can_delete: mine && !gone, can_moderate: moderator && !r.deleted_at },
     children: [] as CommentJson[],
   };
 }
@@ -703,10 +689,11 @@ communities.get('/:name/threads/:id/comments', async c => {
   const compare = sort === 'new'
     ? (a: CommentJson, b: CommentJson) => (a.id < b.id ? 1 : -1)
     : (a: CommentJson, b: CommentJson) => b.score - a.score || (a.id < b.id ? -1 : 1);
-  // Sort every level, and drop deleted or removed comments that have no replies left.
+  // Sort every level, and drop deleted comments, and hidden ones the viewer can't read, that have
+  // no replies left.
   const tidy = (list: CommentJson[]): CommentJson[] => list
     .map(n => ({ ...n, children: tidy(n.children) }))
-    .filter(n => !(n.deleted || n.removed) || n.children.length)
+    .filter(n => !(n.deleted || (n.removed && !mod && n.author?.id !== viewerId)) || n.children.length)
     .sort(compare);
   const items = tidy(roots);
   let count = 0;
@@ -753,38 +740,38 @@ communities.post('/:name/threads/:id/comments', async c => {
 });
 
 /** A comment of the loaded thread, or a 404. */
-async function loadComment(c: Ctx, threadId: string) {
+async function loadComment(c: Ctx, threadId: string, { hidden = false } = {}) {
   const row = await c.env.DB.prepare(`${COMMENT_SELECT} WHERE tc.id = ? AND tc.thread_id = ?`).bind(c.req.param('cid'), threadId)
     .first<CommentRow & { u_id: string | null; u_handle: string | null; u_name: string | null; u_avatar: string | null; u_picture: string | null; u_verified: number | null }>();
-  if (!row || row.deleted_at || row.removed) fail(404, 'Comment not found.');
+  if (!row || row.deleted_at || (row.removed && !hidden)) fail(404, 'Comment not found.');
   return row;
 }
 
 communities.patch('/:name/threads/:id/comments/:cid', async c => {
   const user = requireUser(c);
   const { thread, role } = await loadThread(c);
+  const input = await body(c);
+  // Moderators hide and unhide comments. Hidden comments stay readable by moderators and the author.
+  if ('removed' in input) {
+    if (!isMod(role)) fail(403, 'Only moderators can do that.');
+    const comment = await loadComment(c, thread.id, { hidden: true });
+    const removed = input.removed ? 1 : 0;
+    if (removed !== comment.removed) {
+      await c.env.DB.batch([
+        c.env.DB.prepare('UPDATE thread_comments SET removed = ? WHERE id = ?').bind(removed, comment.id),
+        c.env.DB.prepare(`UPDATE threads SET comment_count = MAX(0, comment_count ${removed ? '- 1' : '+ 1'}) WHERE id = ?`).bind(thread.id),
+      ]);
+    }
+    const vote = (await votesFor(c.env, user.id, 'comment', [comment.id])).get(comment.id) ?? 0;
+    return c.json({ comment: commentJson({ ...comment, removed }, vote, user.id, true) });
+  }
   const comment = await loadComment(c, thread.id);
   if (comment.author_id !== user.id) fail(403, 'Only the author can edit this comment.');
-  const text = validCommentBody((await body(c)).body);
+  const text = validCommentBody(input.body);
   const now = Date.now();
   await c.env.DB.prepare('UPDATE thread_comments SET body = ?, edited_at = ? WHERE id = ?').bind(text, now, comment.id).run();
   const vote = (await votesFor(c.env, user.id, 'comment', [comment.id])).get(comment.id) ?? 0;
   return c.json({ comment: commentJson({ ...comment, body: text, edited_at: now }, vote, user.id, isMod(role)) });
-});
-
-communities.delete('/:name/threads/:id/comments/:cid', async c => {
-  const user = requireUser(c);
-  const { thread, role } = await loadThread(c);
-  const comment = await loadComment(c, thread.id);
-  const mine = comment.author_id === user.id;
-  if (!mine && !isMod(role)) fail(403, 'Only the author or a moderator can delete this comment.');
-  await c.env.DB.batch([
-    mine
-      ? c.env.DB.prepare(`UPDATE thread_comments SET deleted_at = ?, body = '' WHERE id = ?`).bind(Date.now(), comment.id)
-      : c.env.DB.prepare('UPDATE thread_comments SET removed = 1 WHERE id = ?').bind(comment.id),
-    c.env.DB.prepare('UPDATE threads SET comment_count = MAX(0, comment_count - 1) WHERE id = ?').bind(thread.id),
-  ]);
-  return c.json({ ok: true });
 });
 
 export default communities;

@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { anon, as } from './helpers.mjs';
 
 const alice = as('alice'), bob = as('bob'), carol = as('carol');
+const NO_DELETING = "Deletion isn't available. Kevin knows what you did.";
 
 const poll = (options, extra = {}) => ({ options, duration_hours: 24, ...extra });
 
@@ -101,12 +102,15 @@ test('polls: vote, change, withdraw, multiple answers, close', async () => {
   assert.equal(final.closed, true);
   assert.deepEqual(final.options.map(o => o.votes), [0, 1]);
 
-  // Posts without a poll, and deleted polls, 404.
+  // Posts without a poll 404. A poll's post can't be deleted, so the poll and its votes stay.
   const plain = (await alice.post('posts', { body: 'Plain' })).body.post;
   assert.equal((await bob.post(`polls/${plain.id}/vote`, { option_ids: [mon] })).status, 404);
-  assert.equal((await alice.del(`posts/${multi.id}`)).status, 200);
-  assert.equal((await bob.post(`polls/${multi.id}/vote`, { option_ids: [apple] })).status, 404);
-  assert.equal((await bob.get(`posts/${multi.id}`)).body.post.poll, null);
+  const refused = await alice.del(`posts/${multi.id}`);
+  assert.equal(refused.status, 403);
+  assert.deepEqual(refused.body, { error: NO_DELETING });
+  const kept = (await bob.get(`posts/${multi.id}`)).body.post.poll;
+  assert.deepEqual(kept.options.map(o => o.votes), [0, 1, 1]);
+  assert.deepEqual(kept.viewer_votes, [plum]);
 });
 
 test('polls: private posts are not votable by people who cannot see them', async () => {
@@ -115,7 +119,7 @@ test('polls: private posts are not votable by people who cannot see them', async
   assert.equal(res.status, 404);
 });
 
-test('pins: pin, replace, unpin, other people, deleted posts', async () => {
+test('pins: pin, replace, unpin, other people, pinned posts cannot be deleted', async () => {
   const first = (await alice.post('posts', { body: 'Pin me' })).body.post;
   const second = (await alice.post('posts', { body: 'No, pin me' })).body.post;
   const bobs = (await bob.post('posts', { body: 'Bob post' })).body.post;
@@ -143,10 +147,13 @@ test('pins: pin, replace, unpin, other people, deleted posts', async () => {
   assert.equal((await bob.get('pins/alice')).body.post, null);
 
   await alice.put('pins', { post_id: second.id });
-  assert.equal((await alice.del(`posts/${second.id}`)).status, 200);
-  assert.equal((await bob.get('pins/alice')).body.post, null, 'a deleted pinned post is not shown');
+  const refused = await alice.del(`posts/${second.id}`);
+  assert.equal(refused.status, 403);
+  assert.deepEqual(refused.body, { error: NO_DELETING });
+  assert.equal((await bob.get('pins/alice')).body.post.id, second.id, 'the pinned post stays pinned');
+  assert.equal((await alice.get('users/alice')).body.user.pinned_post_id, second.id);
+  assert.equal((await alice.del('pins')).status, 200, 'unpinning still works');
   assert.equal((await alice.get('users/alice')).body.user.pinned_post_id, null);
-  assert.equal((await alice.put('pins', { post_id: second.id })).status, 404);
 
   assert.equal((await bob.get('pins/nobody-here')).status, 404);
 });

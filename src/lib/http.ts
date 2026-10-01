@@ -2,6 +2,9 @@ import { HTTPException } from 'hono/http-exception';
 import type { Ctx, SessionUser } from '../env';
 
 /** Throw from anywhere in a handler; the app turns it into `{ error }` JSON. */
+/** Nothing on Southbag Social can be deleted. Every attempt gets this. */
+export const NO_DELETING = "Deletion isn't available. Kevin knows what you did.";
+
 export function fail(status: 400 | 401 | 403 | 404 | 409 | 413 | 422 | 429 | 500 | 502 | 503, message: string): never {
   throw new HTTPException(status, { message });
 }

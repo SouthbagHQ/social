@@ -12,7 +12,6 @@
 //   GET    /shows/:id                                   → { show, tracks: Track[], next }
 //   GET    /shows/:id/tracks?cursor&limit               → { items: Track[], next }
 //   PATCH  /shows/:id { title?, description?, category?, cover_media_id? } → { show }
-//   DELETE /shows/:id                                   → { ok } (only once it has no tracks)
 //   PUT    /shows/:id/follow · DELETE /shows/:id/follow → { following, follower_count }
 // Tracks
 //   GET    /tracks?kind=episode|song&sort=new|popular&q=&owner=me|<user id>&cursor&limit → { items, next }
@@ -21,7 +20,6 @@
 //   GET    /tracks/:id                                  → { track, more: Track[] } (more from the show)
 //   GET    /tracks/by-media/:mediaId                    → { track } (feed posts use it to find the track)
 //   PATCH  /tracks/:id { title?, description?, cover_media_id?, episode_number?, season?, album?, genre? } → { track }
-//   DELETE /tracks/:id                                  → { ok } (also deletes its files and feed post)
 //   PUT    /tracks/:id/like · DELETE /tracks/:id/like   → { liked, like_count }
 //   POST   /tracks/:id/play                             → { counted, play_count } (the player calls it ~30 s in;
 //                                                         one count per listener per track every 30 minutes)
@@ -35,7 +33,6 @@
 //   POST   /playlists { title, description?, visibility?: 'public'|'private' } → { playlist }
 //   GET    /playlists/:id                               → { playlist, tracks: Track[] } (private: owner only)
 //   PATCH  /playlists/:id { title?, description?, visibility? } → { playlist }
-//   DELETE /playlists/:id                               → { ok }
 //   POST   /playlists/:id/tracks { track_id }           → { playlist } (appended at the end)
 //   DELETE /playlists/:id/tracks/:trackId               → { playlist }
 //   PUT    /playlists/:id/order { track_ids }           → { tracks } (the full new order)
@@ -58,7 +55,7 @@ import { body, cursor, fail, limit, requireUser, str } from '../lib/http';
 import { newId } from '../lib/ids';
 import { deleteUnusedMedia, ownedReadyMedia, type MediaRow } from '../lib/media';
 import { track } from '../lib/palantir';
-import { createPost, deletePost } from '../lib/posts';
+import { createPost } from '../lib/posts';
 import { userCard } from '../lib/users';
 
 const audio = new Hono<AppEnv>();
@@ -398,15 +395,6 @@ audio.patch('/shows/:id', async c => {
   return c.json({ show: await oneShow(c.env, user.id, row.id as string) });
 });
 
-audio.delete('/shows/:id', async c => {
-  const row = await ownShow(c, c.req.param('id'));
-  const left = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM tracks WHERE show_id = ?').bind(row.id).first<{ n: number }>();
-  if (left?.n) fail(409, row.kind === 'podcast' ? 'Delete its episodes first.' : 'Delete its songs first.');
-  await c.env.DB.prepare('DELETE FROM shows WHERE id = ?').bind(row.id).run();
-  await deleteUnused(c.env, [row.cover_media_id as string | null]);
-  return c.json({ ok: true });
-});
-
 async function setFollow(c: Ctx, follow: boolean) {
   const user = requireUser(c);
   const id = c.req.param('id') as string;
@@ -540,23 +528,6 @@ audio.patch('/tracks/:id', async c => {
   if (sets.length) await c.env.DB.prepare(`UPDATE tracks SET ${sets.join(', ')} WHERE id = ?`).bind(...params, row.id).run();
   if (oldCover) await deleteUnused(c.env, [oldCover]);
   return c.json({ track: await oneTrack(c.env, user.id, row.id as string) });
-});
-
-audio.delete('/tracks/:id', async c => {
-  const row = await ownTrack(c, c.req.param('id'));
-  const user = requireUser(c);
-  await c.env.DB.batch([
-    c.env.DB.prepare(`UPDATE playlists SET track_count = MAX(0, track_count - 1)
-      WHERE id IN (SELECT playlist_id FROM playlist_tracks WHERE track_id = ?)`).bind(row.id),
-    c.env.DB.prepare('UPDATE shows SET track_count = MAX(0, track_count - 1) WHERE id = ?').bind(row.show_id),
-    c.env.DB.prepare('DELETE FROM tracks WHERE id = ?').bind(row.id),
-  ]);
-  if (row.post_id) {
-    const post = await c.env.DB.prepare('SELECT deleted_at FROM posts WHERE id = ?').bind(row.post_id).first<{ deleted_at: number | null }>();
-    if (post && !post.deleted_at) await deletePost(c.env, user, row.post_id as string);
-  }
-  await deleteUnused(c.env, [row.media_id as string, row.cover_media_id as string | null]);
-  return c.json({ ok: true });
 });
 
 async function setLike(c: Ctx, like: boolean) {
@@ -715,12 +686,6 @@ audio.patch('/playlists/:id', async c => {
   if ('visibility' in input) { sets.push('visibility = ?'); params.push(visibilityOf(input.visibility)); }
   await c.env.DB.prepare(`UPDATE playlists SET ${sets.join(', ')} WHERE id = ?`).bind(...params, row.id).run();
   return c.json({ playlist: await onePlaylist(c.env, row.owner_id as string, row.id as string) });
-});
-
-audio.delete('/playlists/:id', async c => {
-  const row = await ownPlaylist(c, c.req.param('id'));
-  await c.env.DB.prepare('DELETE FROM playlists WHERE id = ?').bind(row.id).run();
-  return c.json({ ok: true });
 });
 
 audio.post('/playlists/:id/tracks', async c => {

@@ -12,7 +12,7 @@ import { h, mount } from '../dom.js';
 import { plural } from '../format.js';
 import { navigate } from '../router.js';
 import { login, store } from '../store.js';
-import { confirm, dialog, empty, infiniteList, loading, menu, shake, tabs, toast, toastError } from '../ui.js';
+import { dialog, empty, infiniteList, loading, menu, refuseDelete, shake, tabs, toast, toastError } from '../ui.js';
 import { pictureField } from './group-new.js';
 import {
   MAIN, ago, canEdit, communitySelect, enc, forgetSpace, logoBox, pageApi, pagePath, pageTabs, pageTitle, policySelect, spacePath, userLink,
@@ -214,7 +214,7 @@ function moreButton(ctx, space, page, viewer, isMain) {
     { label: 'History', href: pagePath(space.slug, page.slug, 'history') },
     editable && !isMain ? { label: 'Move', onClick: () => movePage(space, page) } : null,
     viewer.can_admin ? { label: page.protected ? 'Unprotect' : 'Protect', onClick: () => protect(space, page) } : null,
-    viewer.can_admin && !isMain && !page.deleted ? { label: 'Delete', onClick: () => deletePage(space, page) } : null,
+    viewer.can_admin && !isMain && !page.deleted ? { label: 'Delete', onClick: refuseDelete } : null,
   ]));
   return btn;
 }
@@ -243,16 +243,6 @@ async function protect(space, page) {
     await api.put(pageApi(space.slug, page.slug, '/protect'), { protected: !page.protected });
     toast(page.protected ? 'Unprotected.' : 'Protected.');
     navigate(pagePath(space.slug, page.slug), { replace: true, scroll: false });
-  } catch (err) { toastError(err); }
-}
-
-async function deletePage(space, page) {
-  if (!(await confirm(`Delete ${page.title}? Wiki admins can restore it later.`, { title: 'Delete page', ok: 'Delete' }))) return;
-  try {
-    await api.del(pageApi(space.slug, page.slug));
-    forgetSpace(space.slug);
-    toast('Deleted.');
-    navigate(spacePath(space.slug));
   } catch (err) { toastError(err); }
 }
 

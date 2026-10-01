@@ -7,6 +7,15 @@ let n = 0;
 const uniq = title => `${title} ${Date.now().toString(36).slice(-4)}${n++}`;
 const ids = res => res.body.items.map(x => x.id);
 
+const NO_DELETING = "Deletion isn't available. Kevin knows what you did.";
+
+/** Every DELETE of something a user made is refused with the same message. */
+async function cannotDelete(who, path) {
+  const res = await who.del(path);
+  assert.equal(res.status, 403, res.text);
+  assert.deepEqual(res.body, { error: NO_DELETING });
+}
+
 async function upload(who, { kind = 'image', type = 'image/png', size = 400 } = {}) {
   const { body } = await who.post('media', { kind, content_type: type, size, width: 300, height: 200 });
   await who.put(`media/${body.id}/chunks/0`, new Uint8Array(size).fill(7));
@@ -33,7 +42,7 @@ async function photoPost(who, { visibility = 'public', images = 1 } = {}) {
   return { post: res.body.post, media };
 }
 
-test('boards: create, read, update, delete', async () => {
+test('boards: create, read, update, and no deleting', async () => {
   assert.equal((await anon.get('boards/feed')).status, 200);
   assert.equal((await alice.post('boards', { title: '' })).status, 422);
   assert.equal((await alice.post('boards', { title: 'x'.repeat(51) })).status, 422);
@@ -70,9 +79,9 @@ test('boards: create, read, update, delete', async () => {
   assert.equal((await anon.get('boards?owner=nobody-here')).status, 404);
   assert.equal((await anon.get('boards')).status, 401);
 
-  assert.equal((await bob.del(`boards/${b.id}`)).status, 403);
-  assert.equal((await alice.del(`boards/${b.id}`)).status, 200);
-  assert.equal((await alice.get(`boards/${b.id}`)).status, 404);
+  await cannotDelete(bob, `boards/${b.id}`);
+  await cannotDelete(alice, `boards/${b.id}`);
+  assert.equal((await alice.get(`boards/${b.id}`)).status, 200);
 });
 
 test('boards: secret boards are only for the owner and collaborators', async () => {
@@ -136,9 +145,9 @@ test('boards: saving photos from posts respects who can see the post', async () 
   assert.ok(ids(await bob.get(`boards/${b.id}/pins`)).includes(hidden.id));
   assert.equal((await carol.post(`boards/${carolBoard.id}/pins`, { pin_id: hidden.id })).status, 404, 'no repin either');
 
-  // Deleting the post hides pins of it.
-  await alice.del(`posts/${post.id}`);
-  assert.equal((await bob.get(`boards/pins/${saved.id}`)).status, 404);
+  // The post can't be deleted, so pins of it stay.
+  await cannotDelete(alice, `posts/${post.id}`);
+  assert.equal((await bob.get(`boards/pins/${saved.id}`)).status, 200);
 
   // Uploads must be your own finished image.
   const bobsVideo = await upload(bob, { kind: 'video', type: 'video/mp4' });
@@ -216,10 +225,10 @@ test('boards: collaborators can add pins but not manage the board', async () => 
   // Editors edit their own pins; the owner can edit any.
   assert.equal((await bob.patch(`boards/pins/${bobPin.id}`, { note: 'Booked' })).body.pin.note, 'Booked');
   assert.equal((await bob.patch(`boards/pins/${alicePin.id}`, { note: 'Mine' })).status, 403);
-  assert.equal((await bob.del(`boards/pins/${alicePin.id}`)).status, 403);
+  await cannotDelete(bob, `boards/pins/${alicePin.id}`);
   assert.equal((await alice.patch(`boards/pins/${bobPin.id}`, { title: 'Hostel (old town)' })).status, 200);
   assert.equal((await bob.patch(`boards/${group.id}`, { title: 'Bob trip' })).status, 403);
-  assert.equal((await bob.del(`boards/${group.id}`)).status, 403);
+  await cannotDelete(bob, `boards/${group.id}`);
   assert.equal((await bob.post(`boards/${group.id}/collaborators`, { handle: 'kevin' })).status, 403);
   assert.equal((await bob.del(`boards/${group.id}/collaborators/alice`)).status, 403);
 
@@ -319,24 +328,26 @@ test('boards: pin order, moving pins and covers', async () => {
   assert.notEqual(p2.body.items[0].id, p1.body.items[0].id);
 });
 
-test('boards: files stay while pinned and go with their last pin', async () => {
+test('boards: pins, boards and their files stay', async () => {
   const b = await board(bob, { title: uniq('Files') });
   const image = await upload(bob);
   const p = await pin(bob, b.id, { media_id: image.id });
   assert.equal((await bob.del(`media/${image.id}`)).status, 409, 'in use by a pin');
 
+  // Neither pins nor boards can be deleted, so the file stays.
   const kevinBoard = await board(kevin);
   const repin = await pin(kevin, kevinBoard.id, { pin_id: p.id });
-  assert.equal((await bob.del(`boards/pins/${p.id}`)).status, 200);
-  assert.equal((await fetch(`${BASE}/media/${image.id}`)).status, 200, 'kept for the repin');
+  await cannotDelete(bob, `boards/pins/${p.id}`);
+  assert.equal((await bob.get(`boards/pins/${p.id}`)).status, 200);
   assert.equal((await kevin.get(`boards/pins/${repin.id}`)).status, 200);
-  assert.equal((await kevin.del(`boards/${kevinBoard.id}`)).status, 200);
-  assert.equal((await fetch(`${BASE}/media/${image.id}`)).status, 404, 'deleted with the last pin');
+  await cannotDelete(kevin, `boards/${kevinBoard.id}`);
+  assert.equal((await kevin.get(`boards/${kevinBoard.id}`)).status, 200);
+  assert.equal((await fetch(`${BASE}/media/${image.id}`)).status, 200);
 
-  // A post's photo stays with the post when its pin goes.
+  // A pin of a post stays too, and so does the post's photo.
   const { post, media } = await photoPost(alice);
   const fromPost = await pin(bob, b.id, { post_id: post.id });
-  assert.equal((await bob.del(`boards/pins/${fromPost.id}`)).status, 200);
+  await cannotDelete(bob, `boards/pins/${fromPost.id}`);
   assert.equal((await fetch(`${BASE}/media/${media[0].id}`)).status, 200);
-  assert.equal((await bob.get(`boards/${b.id}`)).body.board.pin_count, 0);
+  assert.equal((await bob.get(`boards/${b.id}`)).body.board.pin_count, 2);
 });

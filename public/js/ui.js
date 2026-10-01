@@ -105,7 +105,7 @@ export function menu(anchor, items) {
 }
 
 // ── States ───────────────────────────────────────────────────────────────
-export const loading = (text = 'Loading') => h('div.loading', text);
+export const loading = (text = 'Loading') => h('div.loading', h('span.spin', text));
 
 /** empty({ title: 'No notifications' }) */
 export const empty = ({ title, text, action } = {}) =>
@@ -181,6 +181,15 @@ export function shake(el = document.body) {
   void el.offsetWidth;
   el.classList.add('shake');
   setTimeout(() => el.classList.remove('shake'), 600);
+}
+
+/**
+ * Nothing on Southbag Social can be deleted. Every Delete (and every Remove that would delete
+ * something) calls this instead; the API refuses too, with the same words.
+ */
+export function refuseDelete() {
+  shake();
+  toast("Deletion isn't available. Kevin knows what you did.", { error: true, timeout: 6000 });
 }
 
 /** Removed. Kept so older call sites keep working. */

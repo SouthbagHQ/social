@@ -13,7 +13,7 @@ import { h, mount } from '../dom.js';
 import { timeAgo } from '../format.js';
 import { navigate } from '../router.js';
 import { login, store } from '../store.js';
-import { confirm, dialog, empty, errorBox, loading, menu, toast, toastError } from '../ui.js';
+import { dialog, empty, errorBox, loading, menu, refuseDelete, toast, toastError } from '../ui.js';
 import { openStoryComposer, storyBackground } from '../components/stories-bar.js';
 import { avatar, userName } from '../components/user.js';
 
@@ -144,10 +144,9 @@ export default async function storiesView(ctx) {
     moreBtn.addEventListener('click', e => {
       e.stopPropagation();
       hold();
-      const story = reel.items[index];
       const m = menu(moreBtn, [
         own ? { label: 'Add story', onClick: addMore } : null,
-        own ? { label: 'Delete', onClick: () => removeStory(story) } : null,
+        own ? { label: 'Delete', onClick: refuseDelete } : null,
         !own ? { label: 'Report', onClick: () => toast('Reported.') } : null,
       ]);
       // Resume once the menu is gone.
@@ -388,27 +387,6 @@ export default async function storiesView(ctx) {
       },
     });
     release();
-  }
-
-  async function removeStory(story) {
-    hold();
-    const ok = await confirm('Delete this story?', { title: 'Delete story', ok: 'Delete' });
-    if (!ok) return release();
-    try {
-      await api.del(`stories/${story.id}`);
-      toast('Story deleted.');
-      window.dispatchEvent(new CustomEvent('stories:changed'));
-      reel.items.splice(index, 1);
-      reelCache.delete(handle);
-      holds = 0;
-      if (!reel.items.length) return close();
-      index = Math.min(index, reel.items.length - 1);
-      build();
-      show();
-    } catch (err) {
-      toastError(err);
-      release();
-    }
   }
 
   async function addMore() {

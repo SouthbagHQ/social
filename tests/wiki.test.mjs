@@ -4,6 +4,12 @@ import { anon, as } from './helpers.mjs';
 
 const alice = as('alice'), bob = as('bob'), carol = as('carol'), kevin = as('kevin');
 const suffix = () => Math.random().toString(36).slice(2, 8);
+const NO_DELETING = "Deletion isn't available. Kevin knows what you did.";
+
+function refused(res) {
+  assert.equal(res.status, 403, res.text);
+  assert.equal(res.body.error, NO_DELETING);
+}
 
 async function space(owner = alice, extra = {}) {
   const slug = `w-${suffix()}`;
@@ -69,6 +75,11 @@ test('wiki: spaces, validation and the main page', async () => {
   assert.equal(patched.status, 200, patched.text);
   assert.equal(patched.body.space.title, 'Renamed wiki');
   assert.equal(patched.body.space.edit_policy, 'members');
+
+  // Wikis can't be deleted, not even by their owner.
+  refused(await bob.del(`wiki/${s.slug}`));
+  refused(await alice.del(`wiki/${s.slug}`));
+  assert.equal((await anon.get(`wiki/${s.slug}`)).status, 200);
 });
 
 test('wiki: edit policy, members and protected pages', async () => {
@@ -274,26 +285,21 @@ test('wiki: move with redirect, links table and what links here', async () => {
   assert.equal((await anon.get(page(s, 'Old name'))).body.page.slug, 'Alpha');
 });
 
-test('wiki: delete and undelete are for admins', async () => {
+test('wiki: pages cannot be deleted, not even by admins', async () => {
   const s = await space();
   await save(bob, s, 'Doomed', 'Text.');
-  assert.equal((await bob.del(page(s, 'Doomed'))).status, 403);
-  assert.equal((await alice.del(page(s, 'Main_Page'))).status, 409, 'the main page stays');
-  assert.equal((await alice.del(page(s, 'Doomed'))).status, 200);
-  assert.equal((await anon.get(page(s, 'Doomed'))).status, 404);
-  assert.equal((await bob.get(page(s, 'Doomed', '/history'))).status, 404);
-  const seen = await alice.get(page(s, 'Doomed'));
+  refused(await bob.del(page(s, 'Doomed')));
+  refused(await alice.del(page(s, 'Main_Page')));
+  refused(await alice.del(page(s, 'Doomed')));
+  const seen = await anon.get(page(s, 'Doomed'));
   assert.equal(seen.status, 200);
-  assert.equal(seen.body.page.deleted, true);
-  assert.equal(seen.body.viewer.can_edit, false);
-  assert.equal((await save(bob, s, 'Doomed', 'Again.')).status, 409, 'deleted pages are not recreated over');
-  assert.ok((await alice.get(`wiki/${s.slug}/pages?deleted=1`)).body.items.some(p => p.slug === 'Doomed'));
-  assert.ok(!(await anon.get(`wiki/${s.slug}/pages`)).body.items.some(p => p.slug === 'Doomed'));
-  assert.equal((await alice.get(`wiki/${s.slug}`)).body.space.page_count, 1);
-  assert.equal((await bob.post(page(s, 'Doomed', '/undelete'))).status, 404);
-  assert.equal((await alice.post(page(s, 'Doomed', '/undelete'))).status, 200);
-  assert.equal((await anon.get(page(s, 'Doomed'))).status, 200);
+  assert.equal(seen.body.page.deleted, false);
+  assert.equal(seen.body.content, 'Text.');
+  assert.equal((await bob.get(page(s, 'Doomed', '/history'))).status, 200);
+  assert.equal((await bob.get(page(s, 'Doomed'))).body.viewer.can_edit, true);
+  assert.deepEqual((await alice.get(`wiki/${s.slug}/pages?deleted=1`)).body.items, [], 'nothing is in the deleted list');
   assert.equal((await alice.get(`wiki/${s.slug}`)).body.space.page_count, 2);
+  assert.equal((await bob.post(page(s, 'Doomed', '/undelete'))).status, 403, 'restoring is still for admins');
 
   const all = await anon.get(`wiki/${s.slug}/pages?limit=1`);
   assert.equal(all.body.items[0].slug, 'Doomed', 'all pages are A to Z');
@@ -317,13 +323,13 @@ test('wiki: talk threads', async () => {
   assert.equal((await carol.post(page(s, 'Topic', '/talk'), { body: 'x', parent_id: 'nope' })).status, 404);
   assert.equal((await anon.get(page(s, 'Nothing', '/talk'))).status, 404);
 
-  assert.equal((await carol.del(page(s, 'Topic', `/talk/${first.body.comment.id}`))).status, 403);
-  assert.equal((await bob.del(page(s, 'Topic', `/talk/${first.body.comment.id}`))).status, 200);
-  assert.equal((await alice.del(page(s, 'Topic', `/talk/${reply.body.comment.id}`))).status, 200, 'admins can delete');
+  // Comments can't be deleted by anyone: not others, not the author, not admins.
+  refused(await carol.del(page(s, 'Topic', `/talk/${first.body.comment.id}`)));
+  refused(await bob.del(page(s, 'Topic', `/talk/${first.body.comment.id}`)));
+  refused(await alice.del(page(s, 'Topic', `/talk/${reply.body.comment.id}`)));
   const talk = await anon.get(page(s, 'Topic', '/talk'));
-  assert.equal(talk.body.items.length, 2);
-  assert.ok(talk.body.items.every(c => c.deleted && c.body === '' && c.author === null));
-  assert.equal(talk.body.count, 0);
+  assert.deepEqual(talk.body.items.map(c => [c.body, c.author.handle, c.deleted]), [['Should we add more?', 'bob', false], ['Yes.', 'carol', false]]);
+  assert.equal(talk.body.count, 2);
 });
 
 test('wiki: watchers are notified of edits and talk', async () => {

@@ -37,13 +37,18 @@ on `/welcome` to pick theirs.
   time-sortable (`newId()`), so `WHERE id < ? ORDER BY id DESC` is newest-first keyset paging.
 - Posts: never build post JSON by hand. Query post rows (use `visibleTo(viewerId)` for the WHERE
   clause and filter `deleted_at IS NULL` in lists), then `hydrate(env, viewer, rows)` →
-  `PostJson[]`. Create posts with `createPost()` and delete with `deletePost()` (they keep
-  counters, tags and notifications right).
+  `PostJson[]`. Create posts with `createPost()` (it keeps counters, tags and notifications
+  right). `deletePost()` is only for undoing a plain repost.
 - Users in responses: `userCard(row)` (`{ id, handle, name, avatar_url, verified }`), selecting
   `userCardColumns`. Add `is_following` etc. alongside when useful.
 - Notifications: `notify(env, {...})` or `notifyStatement()` inside a batch.
 - Files: `ownedReadyMedia()` to validate media ids a user attaches; `mediaJson()` for output;
-  `deleteMedia()` to remove files and chunks.
+  `deleteMedia()` / `deleteUnusedMedia()` only for files nothing shows any more (abandoned
+  uploads, replaced pictures, expired stories).
+- **Nothing can be deleted.** No route deletes something a person made. Refuse with
+  `fail(403, NO_DELETING)`; unmatched `DELETE /api/*` requests get that from `src/index.ts`.
+  Undoing an action (unlike, unfollow, leave, withdraw) is fine. Community moderators can hide
+  threads and comments (`removed`): hidden things stay readable by moderators and their author.
 
 ## Frontend conventions (`public/js`, no build step)
 

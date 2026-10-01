@@ -7,7 +7,7 @@ import { api } from '../api.js';
 import { h, mount } from '../dom.js';
 import { count, fullDate, plural, relative } from '../format.js';
 import { login, store } from '../store.js';
-import { confirm, dialog, empty, infiniteList, menu, share, toast, toastError } from '../ui.js';
+import { dialog, empty, infiniteList, menu, refuseDelete, share, toast, toastError } from '../ui.js';
 import { carousel } from '../components/media.js';
 import { REACTIONS, postUrl, richText } from '../components/post.js';
 import { avatar, verifiedBadge } from '../components/user.js';
@@ -157,11 +157,7 @@ export function igCard(post) {
     { label: 'Go to post', href: postUrl(post) },
     { label: 'Copy link', onClick: () => share(postUrl(post)) },
     post.viewer.can_edit
-      ? { label: 'Delete', onClick: async () => {
-          if (!(await confirm('Delete this post?', { title: 'Delete post', ok: 'Delete' }))) return;
-          try { await api.del(`posts/${post.id}`); card.remove(); toast('Deleted.'); }
-          catch (err) { toastError(err); }
-        } }
+      ? { label: 'Delete', onClick: refuseDelete }
       : { label: 'Report', onClick: () => toast('Reported.') },
   ]));
 

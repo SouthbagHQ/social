@@ -1,6 +1,6 @@
 // The post card: every surface renders posts with this (feed, profiles, groups, search, threads).
 //
-//   postCard(post, { compact, onDeleted, onReply, link = true })
+//   postCard(post, { compact, onReply, link = true })
 //
 // Handles reposts ("x reposted"), quotes, reactions (click = like, hover/long-press = picker),
 // comments, reposting/quoting, sharing, saving, editing, deleting, polls (components/poll.js) and
@@ -11,7 +11,7 @@ import { h, mount } from '../dom.js';
 import { count, fullDate, timeAgo } from '../format.js';
 import { navigate } from '../router.js';
 import { login, store } from '../store.js';
-import { confirm, dialog, menu, share, shake, toast, toastError } from '../ui.js';
+import { confirm, dialog, menu, refuseDelete, share, shake, toast, toastError } from '../ui.js';
 import { postMedia } from './media.js';
 import { pollSummary, pollView } from './poll.js';
 import { avatar, userName } from './user.js';
@@ -54,7 +54,7 @@ export function richText(text) {
 
 const visibilityLabel = v => v === 'friends' ? 'Friends' : v === 'followers' ? 'Followers' : null;
 
-function header(post, { onDeleted, onEdited }) {
+function header(post, { onEdited }) {
   const a = post.author;
   const sub = h('div.sub',
     h('span.handle', `@${a.handle}`),
@@ -64,7 +64,7 @@ function header(post, { onDeleted, onEdited }) {
     post.sponsored ? h('span.sponsored-tag', 'Sponsored') : null,
   );
   const more = h('button.icon-btn', { type: 'button' }, 'More');
-  more.addEventListener('click', e => { e.stopPropagation(); postMenu(more, post, { onDeleted, onEdited }); });
+  more.addEventListener('click', e => { e.stopPropagation(); postMenu(more, post, { onEdited }); });
   return h('div.post-head',
     avatar(a),
     h('div.meta',
@@ -103,7 +103,7 @@ async function endPoll(post) {
   } catch (err) { toastError(err); }
 }
 
-function postMenu(anchor, post, { onDeleted, onEdited }) {
+function postMenu(anchor, post, { onEdited }) {
   const mine = post.viewer?.can_edit;
   menu(anchor, [
     { label: 'Copy link', onClick: () => share(postUrl(post)) },
@@ -114,7 +114,7 @@ function postMenu(anchor, post, { onDeleted, onEdited }) {
     canPin(post) ? { label: isPinned(post) ? 'Unpin from profile' : 'Pin to profile', onClick: () => togglePin(post) } : null,
     mine && post.poll && !post.poll.closed ? { label: 'End poll', onClick: () => endPoll(post) } : null,
     mine ? { label: 'Edit', onClick: () => amend(post, onEdited) } : null,
-    mine || post.viewer?.can_delete ? { label: 'Delete', onClick: () => remove(post, onDeleted) } : null,
+    mine || post.viewer?.can_delete ? { label: 'Delete', onClick: refuseDelete } : null,
     !mine ? { label: 'Report', onClick: () => toast('Reported.') } : null,
   ]);
 }
@@ -145,16 +145,6 @@ async function amend(post, onEdited) {
     const { post: updated } = await api.patch(`posts/${post.id}`, { body: textarea.value, ...(title && { title: title.value }) });
     toast('Saved.');
     onEdited ? onEdited(updated) : replaceCards(updated);
-  } catch (err) { toastError(err); }
-}
-
-async function remove(post, onDeleted) {
-  if (!(await confirm('Delete this post?', { title: 'Delete post', ok: 'Delete' }))) return;
-  try {
-    await api.del(`posts/${post.id}`);
-    toast('Deleted.');
-    if (onDeleted) onDeleted(post);
-    else document.querySelectorAll(`[data-post-id="${post.id}"]`).forEach(el => el.remove());
   } catch (err) { toastError(err); }
 }
 
@@ -292,11 +282,11 @@ function embeddedPost(post) {
 
 /**
  * A post as a card.
- * options: compact (smaller, for replies), link (click body to open), onDeleted(post), onEdited(post),
+ * options: compact (smaller, for replies), link (click body to open), onEdited(post),
  *          onReply(post) (instead of navigating to the thread), card (wrap in .south-card, default true)
  */
 export function postCard(input, options = {}) {
-  const { compact = false, link = true, card = true, onReply, onDeleted, onEdited } = options;
+  const { compact = false, link = true, card = true, onReply, onEdited } = options;
   // A plain repost shows the original with a "reposted" line.
   const isRepost = input.repost_of && !input.body && !input.media.length;
   const post = isRepost ? input.repost_of : input;
@@ -317,7 +307,7 @@ export function postCard(input, options = {}) {
     el.append(h('p.deleted', 'This post was deleted.'));
     return el;
   }
-  el.append(header(post, { onDeleted, onEdited }));
+  el.append(header(post, { onEdited }));
   if (post.title) el.append(h('h3.post-title', link ? h('a', { href: postUrl(post), style: 'color:inherit' }, post.title) : post.title));
   if (post.body) el.append(h('div.post-body', richText(post.body)));
   if (post.poll) el.append(pollView(post));

@@ -3,7 +3,9 @@
 Southbag Social looks and reads like the other Southbag products: **Southbag Identity**
 (SouthbagHQ/identity, `src/routes/layout.css`), **Southbag Office** (SouthbagHQ/office,
 `src/routes/app.css`) and **Southbag Branch Locator** (SouthbagHQ/branch-locator, `styles.css`).
-It is presented as a real, ordinary service. The interface is janky; the words are not jokes.
+It is presented as a real, ordinary service. The interface is janky, like Southbag Online Banking
+and Service Table (`../support`); the words are not jokes. Jank should look like a site built badly,
+never like a gag (no "Do not press" buttons, no joke answers).
 
 ## Interface
 
@@ -27,18 +29,35 @@ It is presented as a real, ordinary service. The interface is janky; the words a
   fill it (`object-fit: fill` is forced globally). Never use `cover` or `contain`, never letterbox.
   Posts that aren't the box's aspect ratio just stretch.
 - **Logo.** Always stretched wider than it should be.
-- **Still usable.** Keyboard focus works, nothing blocks posting, liking, commenting, following or
-  messaging, nothing reloads the page, no forced pop-ups.
+- **Janky, but usable** (`public/js/chaos.js`, `public/css/chaos.css`). A splash screen with
+  promotional slides once per browser session; a cookie banner once per browser (two huge
+  "Accept" buttons, a tiny "Manage preferences" that lists dozens of required cookies); a strip of
+  six help buttons that all open the same support chat; an announcements ticker; buttons that
+  jitter on hover and bounce when pressed; swaying headings, a breathing logo, sidebar links that
+  slide in and cards that drop in crooked; a loading word that spins around its left edge; and the
+  page shifting a few pixels now and then while scrolling. Motion ignores
+  `prefers-reduced-motion`, like Banking. Limits: keyboard focus works, nothing blocks posting,
+  liking, commenting, following or messaging, nothing reloads the page, no `alert()`, no "Leave
+  site?" traps, no permission prompts.
+- **No deleting.** Delete buttons stay where they are, but call `refuseDelete()` from `ui.js`
+  ("Deletion isn't available. Kevin knows what you did.") instead of asking or deleting.
 
 ## Copy
 
+- Cold and institutional, a little ominous, like southbag.cc: "Everything you share is kept.",
+  "Activity on Southbag Social is reviewed.", "This path is withheld. Your request has been
+  logged.", "Continued use constitutes acceptance." Statements, never threats or punchlines, and
+  only in the furniture (landing, 404, ticker, cookie banner, splash). Everyday controls and
+  messages stay plain.
 - Short and plain, like a legitimate product. "Southbag Rewards", not a sentence about Southbag
   Rewards. Titles and buttons are one to three words.
 - Empty states: "No posts yet.", "No notifications.", "No messages.", "No results."
-- Toasts: "Posted.", "Saved.", "Deleted.", "Link copied.", "Following @bob."
+- Toasts: "Posted.", "Saved.", "Link copied.", "Following @bob."
 - Errors: plain statements. "Post not found.", "Posts are limited to 280 characters."
 - Following is "Follow" / "Following" / "Followers".
-- No jokes about fees, surveillance, retention or consent, no Kevin (the shell's "Kevin is watching"
-  sidebar line, copied from Identity, is the only one), no The Pile, Floor 3, 2019 or Canberra.
-- Nothing about banking: no branches, balances, loans or "Online Banking" promotions.
+- No jokes about fees, surveillance, retention or consent. Kevin is rare and never explained: the
+  sidebar ("Kevin is watching"), the deletion refusal, and a `kevin_session` cookie in the cookie
+  preferences. Add more only with a good reason. No The Pile, Floor 3, 2019 or Canberra.
+- Nothing about banking: no branches, balances, loans or "Online Banking" promotions. (The splash
+  screen borrows Banking's promotional slides; that is the one exception.)
 - Australian spelling. Sentence case.

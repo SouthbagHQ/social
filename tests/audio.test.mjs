@@ -6,6 +6,15 @@ const alice = as('alice');
 const bob = as('bob');
 const carol = as('carol');
 
+const NO_DELETING = "Deletion isn't available. Kevin knows what you did.";
+
+/** Every DELETE of something a user made is refused with the same message. */
+async function cannotDelete(who, path) {
+  const res = await who.del(path);
+  assert.equal(res.status, 403, res.text);
+  assert.deepEqual(res.body, { error: NO_DELETING });
+}
+
 async function upload(who, { kind = 'audio', type = 'audio/mpeg', size = 3000, duration = 120 } = {}) {
   const { body } = await who.post('media', { kind, content_type: type, size, duration });
   const bytes = new Uint8Array(size).map((_, i) => i % 251);
@@ -26,7 +35,7 @@ async function track(who, showId, input = {}) {
   return res.body.track;
 }
 
-test('audio: shows can be created, listed, searched, edited and deleted by their owner', async () => {
+test('audio: shows can be created, listed, searched and edited by their owner, and not deleted', async () => {
   assert.equal((await anon.get('audio/shows')).status, 200);
   assert.equal((await alice.post('audio/shows', { kind: 'radio', title: 'x' })).status, 422);
   assert.equal((await alice.post('audio/shows', { kind: 'podcast', title: '' })).status, 422);
@@ -55,16 +64,19 @@ test('audio: shows can be created, listed, searched, edited and deleted by their
   const mine = await alice.get('audio/shows/mine');
   assert.ok(mine.body.items.some(s => s.id === pod.id));
 
-  // A show with tracks cannot be deleted until they are gone.
+  // Neither the show nor its tracks can be deleted, by anyone.
   const ep = await track(alice, pod.id, { title: 'Episode one' });
-  assert.equal((await alice.del(`audio/shows/${pod.id}`)).status, 409);
-  assert.equal((await bob.del(`audio/tracks/${ep.id}`)).status, 403);
-  assert.equal((await alice.del(`audio/tracks/${ep.id}`)).status, 200);
-  assert.equal((await bob.del(`audio/shows/${pod.id}`)).status, 403);
-  assert.equal((await alice.del(`audio/shows/${pod.id}`)).status, 200);
-  assert.equal((await anon.get(`audio/shows/${pod.id}`)).status, 404);
-  // The cover went with it.
-  assert.equal((await fetch(`${BASE}/media/${cover.id}`)).status, 404);
+  await cannotDelete(alice, `audio/shows/${pod.id}`);
+  await cannotDelete(bob, `audio/tracks/${ep.id}`);
+  await cannotDelete(alice, `audio/tracks/${ep.id}`);
+  await cannotDelete(bob, `audio/shows/${pod.id}`);
+  const kept = await anon.get(`audio/shows/${pod.id}`);
+  assert.equal(kept.status, 200);
+  assert.equal(kept.body.show.track_count, 1);
+  assert.equal(kept.body.tracks[0].id, ep.id);
+  assert.equal((await anon.get(`audio/tracks/${ep.id}`)).status, 200);
+  // The cover stays too.
+  assert.equal((await fetch(`${BASE}/media/${cover.id}`)).status, 200);
 });
 
 test('audio: publishing a track checks ownership and files, makes a feed post, and serves ranges', async () => {
@@ -124,13 +136,14 @@ test('audio: publishing a track checks ownership and files, makes a feed post, a
   assert.equal(edited.body.track.cover_url, `/media/${cover.id}`);
   assert.equal(edited.body.track.season, null);
 
-  // Deleting the track deletes the feed post and the files.
-  assert.equal((await bob.del(`audio/tracks/${song.id}`)).status, 200);
-  assert.equal((await anon.get(`audio/tracks/${song.id}`)).status, 404);
-  const gone = await bob.get(`posts/${song.post_id}`);
-  assert.ok(gone.status === 404 || (gone.body.post || gone.body).deleted);
-  assert.equal((await fetch(`${BASE}/media/${file.id}`)).status, 404);
-  assert.equal((await fetch(`${BASE}/media/${cover.id}`)).status, 404);
+  // The track can't be deleted; it, its feed post and its files all stay.
+  await cannotDelete(bob, `audio/tracks/${song.id}`);
+  assert.equal((await anon.get(`audio/tracks/${song.id}`)).status, 200);
+  const kept = await bob.get(`posts/${song.post_id}`);
+  assert.equal(kept.status, 200);
+  assert.ok(!(kept.body.post || kept.body).deleted);
+  assert.equal((await fetch(`${BASE}/media/${file.id}`)).status, 200);
+  assert.equal((await fetch(`${BASE}/media/${cover.id}`)).status, 200);
 });
 
 test('audio: follows, likes, play counts and listening progress', async () => {
@@ -235,15 +248,16 @@ test('audio: playlists keep their order and are private when asked', async () =>
   assert.equal(pub.body.playlist.title, 'Commute mix');
   assert.equal((await bob.get(`audio/playlists/${pl.id}`)).status, 200);
   assert.equal((await bob.patch(`audio/playlists/${pl.id}`, { title: 'x' })).status, 403);
-  assert.equal((await bob.del(`audio/playlists/${pl.id}`)).status, 403);
+  await cannotDelete(bob, `audio/playlists/${pl.id}`);
   assert.ok((await alice.get('audio/playlists')).body.items.some(p => p.id === pl.id));
 
-  // Deleting a track takes it out of playlists.
-  await carol.del(`audio/tracks/${b.id}`);
+  // Tracks can't be deleted, so a playlist keeps them.
+  await cannotDelete(carol, `audio/tracks/${b.id}`);
   got = await alice.get(`audio/playlists/${pl.id}`);
-  assert.deepEqual(got.body.tracks.map(t => t.title), ['C', 'A']);
-  assert.equal(got.body.playlist.track_count, 2);
+  assert.deepEqual(got.body.tracks.map(t => t.title), ['C', 'B', 'A']);
+  assert.equal(got.body.playlist.track_count, 3);
 
-  assert.equal((await alice.del(`audio/playlists/${pl.id}`)).status, 200);
-  assert.equal((await alice.get(`audio/playlists/${pl.id}`)).status, 404);
+  // Nor can the playlist itself, even by its owner.
+  await cannotDelete(alice, `audio/playlists/${pl.id}`);
+  assert.equal((await alice.get(`audio/playlists/${pl.id}`)).status, 200);
 });

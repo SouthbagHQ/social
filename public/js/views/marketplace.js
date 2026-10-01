@@ -13,7 +13,7 @@ import { h, mount } from '../dom.js';
 import { fullDate, money, plural, timeAgo } from '../format.js';
 import { navigate } from '../router.js';
 import { login, store } from '../store.js';
-import { confirm, dialog, empty, errorBox, infiniteList, loading, share, shake, tabs, toast, toastError } from '../ui.js';
+import { confirm, dialog, empty, errorBox, infiniteList, loading, refuseDelete, share, shake, tabs, toast, toastError } from '../ui.js';
 import { pickFiles, uploadFile } from '../upload.js';
 import { carousel } from '../components/media.js';
 import { avatar, userName } from '../components/user.js';
@@ -273,17 +273,9 @@ function savedTab(ctx) {
   const searches = h('div.mk-searches', loading());
   api.get('marketplace/searches', null, { signal: ctx.signal }).then(({ items }) => {
     if (!items.length) return mount(searches, h('p.muted', 'No saved searches. Use "Save search" on the Browse tab to hear about new listings.'));
-    mount(searches, items.map(s => {
-      const row = h('div.mk-search-row',
-        h('a', { href: searchUrl(s) }, searchSummary(s)),
-        h('button.btn-small', {
-          type: 'button',
-          onclick: async () => {
-            try { await api.del(`marketplace/searches/${s.id}`); row.remove(); toast('Removed.'); } catch (err) { toastError(err); }
-          },
-        }, 'Remove'));
-      return row;
-    }));
+    mount(searches, items.map(s => h('div.mk-search-row',
+      h('a', { href: searchUrl(s) }, searchSummary(s)),
+      h('button.btn-small', { type: 'button', onclick: refuseDelete }, 'Remove'))));
   }).catch(err => { if (err.name !== 'AbortError') mount(searches, errorBox(err)); });
 
   return h('div.mk-tab',
@@ -588,15 +580,6 @@ async function listingPage(ctx, id) {
     paint();
   }
 
-  async function remove() {
-    if (!(await confirm('Delete this listing? This cannot be undone.', { title: 'Delete listing', ok: 'Delete' }))) return;
-    try {
-      await api.del(`marketplace/${listing.id}`);
-      toast('Deleted.');
-      navigate('/marketplace?tab=yours');
-    } catch (err) { toastError(err); }
-  }
-
   // -- Painting --
 
   function actions() {
@@ -609,7 +592,7 @@ async function listingPage(ctx, id) {
         listing.status !== 'available' && !locked ? h('button', { type: 'button', onclick: () => setStatus('available') }, 'Mark as available') : null,
         listing.status !== 'sold' ? h('button', { type: 'button', onclick: markSold }, 'Mark as sold') : null,
         h('button', { type: 'button', onclick: () => share(`/marketplace/${listing.id}`, listing.title) }, 'Share'),
-        h('button', { type: 'button', onclick: remove }, 'Delete'));
+        h('button', { type: 'button', onclick: refuseDelete }, 'Delete'));
     }
     const saveBtn = h('button', { type: 'button', 'aria-pressed': String(listing.saved), onclick: () => toggleSave(saveBtn) }, listing.saved ? 'Saved' : 'Save');
     const offer = v.offer;

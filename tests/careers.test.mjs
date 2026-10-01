@@ -7,6 +7,15 @@ import { anon, as } from './helpers.mjs';
 const alice = as('alice'), bob = as('bob'), carol = as('carol'), kevin = as('kevin');
 const tag = Date.now().toString(36);
 
+const NO_DELETING = "Deletion isn't available. Kevin knows what you did.";
+
+/** Every DELETE of something a user made is refused with the same message. */
+async function cannotDelete(who, path) {
+  const res = await who.del(path);
+  assert.equal(res.status, 403, res.text);
+  assert.deepEqual(res.body, { error: NO_DELETING });
+}
+
 before(async () => {
   // kevin and alice are friends; kevin and bob follow each other; carol is connected to nobody.
   await kevin.put('users/alice/friend');
@@ -34,7 +43,7 @@ test('careers: headline and open to work show on the profile', async () => {
   assert.equal((await anon.get('careers/profile/nobody-here')).status, 404);
 });
 
-test('careers: experience CRUD, validation and ordering', async () => {
+test('careers: experiences are added, edited and reordered, not deleted', async () => {
   const add = body => alice.post('careers/experiences', body);
   const a = await add({ company_name: 'First Co', title: 'Graduate', start_month: '2015-02', end_month: '2017-06' });
   assert.equal(a.status, 201);
@@ -65,13 +74,13 @@ test('careers: experience CRUD, validation and ordering', async () => {
   assert.equal(edit.body.experience.current, true);
   assert.equal(edit.body.experience.employment_type, 'contract', 'untouched fields stay');
   assert.equal((await bob.patch(`careers/experiences/${b.body.experience.id}`, { title: 'Mine now' })).status, 404);
-  assert.equal((await bob.del(`careers/experiences/${a.body.experience.id}`)).status, 404);
-  assert.equal((await alice.del(`careers/experiences/${a.body.experience.id}`)).status, 200);
-  assert.ok(!(await anon.get('careers/profile/alice')).body.experiences.some(e => e.id === a.body.experience.id));
+  await cannotDelete(bob, `careers/experiences/${a.body.experience.id}`);
+  await cannotDelete(alice, `careers/experiences/${a.body.experience.id}`);
+  assert.ok((await anon.get('careers/profile/alice')).body.experiences.some(e => e.id === a.body.experience.id));
   assert.equal((await anon.get('careers/experiences')).status, 404);
 });
 
-test('careers: education CRUD and ordering', async () => {
+test('careers: education is added, edited and reordered, not deleted', async () => {
   const one = await carol.post('careers/educations', { school: 'University of Sydney', degree: 'Bachelor of Arts', field: 'History', start_year: 2010, end_year: 2013 });
   assert.equal(one.status, 201);
   const two = await carol.post('careers/educations', { school: 'TAFE NSW', degree: 'Certificate IV', start_year: 2014 });
@@ -86,10 +95,12 @@ test('careers: education CRUD and ordering', async () => {
   assert.equal(edit.body.education.end_year, 2015);
   assert.equal(edit.body.education.degree, 'Certificate IV');
   assert.equal((await alice.patch(`careers/educations/${two.body.education.id}`, { end_year: 2016 })).status, 404);
-  assert.equal((await carol.del(`careers/educations/${two.body.education.id}`)).status, 200);
+  await cannotDelete(carol, `careers/educations/${two.body.education.id}`);
+  schools = (await anon.get('careers/profile/carol')).body.educations.map(e => e.school);
+  assert.deepEqual(schools, ['University of Sydney', 'TAFE NSW']);
 });
 
-test('careers: skills are unique per person and can be reordered', async () => {
+test('careers: skills are unique per person, can be reordered and are not deleted', async () => {
   for (const name of ['Logistics', 'Excel', 'Forklift licence']) assert.equal((await kevin.post('careers/skills', { name })).status, 201);
   assert.equal((await kevin.post('careers/skills', { name: 'excel' })).status, 409);
   assert.equal((await kevin.post('careers/skills', { name: '  ' })).status, 422);
@@ -98,8 +109,9 @@ test('careers: skills are unique per person and can be reordered', async () => {
   assert.equal((await kevin.put('careers/skills/order', { names: ['forklift licence', 'Logistics', 'Excel'] })).status, 200);
   skills = (await anon.get('careers/profile/kevin')).body.skills.map(s => s.name);
   assert.deepEqual(skills, ['Forklift licence', 'Logistics', 'Excel']);
-  assert.equal((await kevin.del('careers/skills/Forklift%20licence')).status, 200);
-  assert.equal((await kevin.del('careers/skills/Forklift%20licence')).status, 404);
+  await cannotDelete(kevin, 'careers/skills/Forklift%20licence');
+  skills = (await anon.get('careers/profile/kevin')).body.skills.map(s => s.name);
+  assert.deepEqual(skills, ['Forklift licence', 'Logistics', 'Excel']);
 });
 
 test('careers: only friends or mutual follows can endorse', async () => {
@@ -166,8 +178,9 @@ test('careers: recommendations are requested, written and approved', async () =>
   assert.equal((await anon.get('careers/profile/kevin')).body.recommendations.length, 0);
   assert.equal((await kevin.get('careers/recommendations')).body.received[0].status, 'hidden');
   assert.equal((await alice.get('careers/recommendations')).body.written[0].user.handle, 'kevin');
-  assert.equal((await bob.del(`careers/recommendations/${id}`)).status, 404);
-  assert.equal((await alice.del(`careers/recommendations/${id}`)).status, 200);
+  await cannotDelete(bob, `careers/recommendations/${id}`);
+  await cannotDelete(alice, `careers/recommendations/${id}`);
+  assert.equal((await alice.get('careers/recommendations')).body.written[0].id, id);
 });
 
 let company, job, remoteJob, externalJob;
@@ -192,7 +205,8 @@ test('careers: companies, admins and follows', async () => {
   assert.deepEqual(added.body.admins.map(a => a.handle), ['alice', 'bob']);
   assert.equal((await bob.patch(`careers/companies/${company.slug}`, { industry: 'Shipping' })).body.company.industry, 'Shipping');
   assert.equal((await bob.del(`careers/companies/${company.slug}/admins/alice`)).status, 422, 'owner stays');
-  assert.equal((await bob.del(`careers/companies/${company.slug}`)).status, 403, 'only the owner deletes');
+  await cannotDelete(bob, `careers/companies/${company.slug}`);
+  await cannotDelete(alice, `careers/companies/${company.slug}`);
 
   // Follows are counted once.
   await carol.put(`careers/companies/${company.slug}/follow`);

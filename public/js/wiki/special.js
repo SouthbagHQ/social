@@ -2,11 +2,10 @@
 //   RecentChanges, AllPages, Random, Search, CreatePage, Members, Settings
 
 import { api } from '../api.js';
-import { track } from '../analytics.js';
 import { h, mount } from '../dom.js';
 import { navigate } from '../router.js';
 import { login, store } from '../store.js';
-import { confirm, empty, infiniteList, shake, toast, toastError } from '../ui.js';
+import { confirm, empty, infiniteList, refuseDelete, shake, toast, toastError } from '../ui.js';
 import { avatar } from '../components/user.js';
 import { pictureField } from '../views/group-new.js';
 import { communitySelect, delta, enc, forgetSpace, loadSpace, pagePath, pageTitle, policySelect, shortWhen, specialPath, userLink, wikiFrame } from './common.js';
@@ -242,15 +241,6 @@ async function settings(ctx, main, { space, viewer }) {
   const danger = viewer.role === 'owner' ? h('div.south-card.flat',
     h('h3', 'Delete wiki'),
     h('p.fine', 'Deletes every page, revision and comment. This cannot be undone.'),
-    h('button.btn', { type: 'button', onclick: async () => {
-      if (!(await confirm(`Delete ${space.title} and all of its pages?`, { title: 'Delete wiki', ok: 'Delete' }))) return;
-      try {
-        await api.del(`wiki/${enc(space.slug)}`);
-        forgetSpace(space.slug);
-        track('social_wiki_deleted', { wiki: space.slug });
-        toast('Deleted.');
-        navigate('/wiki');
-      } catch (err) { toastError(err); }
-    } }, 'Delete wiki')) : null;
+    h('button.btn', { type: 'button', onclick: refuseDelete }, 'Delete wiki')) : null;
   mount(main, pageTitle('Settings', `From ${space.title}`), form, danger);
 }

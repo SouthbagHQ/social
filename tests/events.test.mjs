@@ -4,6 +4,7 @@ import { anon, as, BASE } from './helpers.mjs';
 
 const alice = as('alice'), bob = as('bob'), carol = as('carol'), kevin = as('kevin');
 const HOUR = 3600e3, DAY = 24 * HOUR;
+const NO_DELETING = "Deletion isn't available. Kevin knows what you did.";
 const soon = (offset = 3 * DAY, length = 2 * HOUR) => ({ starts_at: Date.now() + offset, ends_at: Date.now() + offset + length });
 let n = 0;
 const uniq = title => `${title} ${Date.now().toString(36)}${n++}`;
@@ -205,9 +206,13 @@ test('events: discussion', async () => {
   await carol.post(`events/${event.id}/comments`, { body: 'Following.' });
   const list = (await anon.get(`events/${event.id}/comments`)).body.items;
   assert.deepEqual(list.map(c => c.body), ['Following.', 'Is there parking?'], 'newest first');
-  assert.equal((await carol.del(`events/${event.id}/comments/${comment.id}`)).status, 403);
-  assert.equal((await alice.del(`events/${event.id}/comments/${comment.id}`)).status, 200, 'hosts can remove comments');
-  assert.equal((await anon.get(`events/${event.id}`)).body.event.comment_count, 1);
+  for (const who of [carol, bob, alice]) {
+    const refused = await who.del(`events/${event.id}/comments/${comment.id}`);
+    assert.equal(refused.status, 403);
+    assert.deepEqual(refused.body, { error: NO_DELETING }, 'not even the host or the author can remove a comment');
+  }
+  assert.equal((await anon.get(`events/${event.id}`)).body.event.comment_count, 2);
+  assert.ok((await anon.get(`events/${event.id}/comments`)).body.items.some(c => c.id === comment.id), 'the comment stays');
   assert.ok((await alice.get('notifications')).body.items.some(x => x.type === 'event_comment' && x.body.includes(event.title)));
   assert.equal((await as('nobody').post(`events/${event.id}/comments`, { body: 'Hi' })).status, 401);
 });

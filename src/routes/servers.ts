@@ -7,9 +7,8 @@
 //   POST   /api/servers/join/:code                    join -> { server, joined }
 //   GET    /api/servers/:id                           -> ServerDetail (server, categories, channels, roles, me, online_count)
 //   PATCH  /api/servers/:id                           manage_server: { name?, description?, icon_media_id? } -> { server }
-//   DELETE /api/servers/:id                           owner only
 //   POST   /api/servers/:id/invite                    manage_server: new invite code -> { invite_code }
-//   POST   /api/servers/:id/leave                     leave (the owner must delete instead)
+//   POST   /api/servers/:id/leave                     leave (the owner cannot leave)
 //   POST   /api/servers/:id/reorder                   manage_channels: { categories: [id], channels: [{ id, category_id }] } (in order)
 // Members, bans
 //   GET    /api/servers/:id/members                   -> { items: [{ user, nickname, display_name, role_ids, online, is_owner, joined_at }], online_count }
@@ -23,20 +22,16 @@
 // Roles
 //   POST   /api/servers/:id/roles                     manage_roles: { name, permissions? } -> 201 { role }
 //   PATCH  /api/servers/:id/roles/:roleId             manage_roles: { name?, permissions? } -> { role }
-//   DELETE /api/servers/:id/roles/:roleId             manage_roles
 //   POST   /api/servers/:id/roles/reorder             manage_roles: { ids: [roleId, ...] } highest first (not @everyone)
 // Channels and categories
 //   POST   /api/servers/:id/channels                  manage_channels: { name, category_id?, kind?, topic?, slowmode_seconds? } -> 201 { channel }
 //   PATCH  /api/servers/:id/channels/:cid             manage_channels: { name?, topic?, kind?, slowmode_seconds?, category_id? } -> { channel }
-//   DELETE /api/servers/:id/channels/:cid             manage_channels (its messages go with it)
 //   POST   /api/servers/:id/categories                manage_channels: { name } -> 201 { category }
 //   PATCH  /api/servers/:id/categories/:catId         manage_channels: { name } -> { category }
-//   DELETE /api/servers/:id/categories/:catId         manage_channels (its channels become uncategorised)
 // Messages (every member can read every channel)
 //   GET    .../channels/:cid/messages?before=&limit=  newest first -> { items: MessageJson[], next, now }
 //   POST   .../channels/:cid/messages                 { body?, reply_to_id?, media_id? } -> 201 { message }
 //   PATCH  .../channels/:cid/messages/:mid            own only: { body } -> { message }
-//   DELETE .../channels/:cid/messages/:mid            own, or manage_messages
 //   PUT    .../channels/:cid/messages/:mid/pin        manage_messages (DELETE to unpin) -> { message }
 //   PUT    .../channels/:cid/messages/:mid/reactions/:word   (DELETE to remove) -> { message }
 //   GET    .../channels/:cid/pins                     -> { items: MessageJson[] } newest pin first
@@ -641,15 +636,6 @@ servers.patch('/:id', async c => {
   return c.json({ server: serverJson(server!) });
 });
 
-servers.delete('/:id', async c => {
-  const user = requireUser(c);
-  const a = await access(c.env, user.id, c.req.param('id'));
-  if (!a.isOwner) fail(403, 'Only the owner can delete the server.');
-  await c.env.DB.prepare('DELETE FROM servers WHERE id = ?').bind(a.server.id).run();
-  track(c, 'social_server_deleted', { server_id: a.server.id, member_count: a.server.member_count });
-  return c.json({ ok: true });
-});
-
 servers.post('/:id/invite', async c => {
   const user = requireUser(c);
   const a = await access(c.env, user.id, c.req.param('id'));
@@ -662,7 +648,7 @@ servers.post('/:id/invite', async c => {
 servers.post('/:id/leave', async c => {
   const user = requireUser(c);
   const a = await access(c.env, user.id, c.req.param('id'));
-  if (a.isOwner) fail(422, 'Owners cannot leave. Delete the server instead.');
+  if (a.isOwner) fail(422, 'Owners cannot leave.');
   await c.env.DB.batch(removeMember(c.env, a.server.id, user.id));
   track(c, 'social_server_left', { server_id: a.server.id });
   return c.json({ ok: true });
@@ -917,21 +903,6 @@ servers.patch('/:id/roles/:roleId', async c => {
   return c.json({ role: roleJson(await roleFor(c.env, a.server.id, role.id)) });
 });
 
-servers.delete('/:id/roles/:roleId', async c => {
-  const user = requireUser(c);
-  const a = await access(c.env, user.id, c.req.param('id'));
-  need(a, 'manage_roles');
-  const role = await roleFor(c.env, a.server.id, c.req.param('roleId'));
-  if (role.id === a.server.id) fail(422, 'The @everyone role cannot be deleted.');
-  mustManageRole(a, role);
-  await c.env.DB.batch([
-    c.env.DB.prepare('DELETE FROM server_roles WHERE id = ?').bind(role.id),
-    c.env.DB.prepare('UPDATE server_roles SET position = position - 1 WHERE server_id = ?1 AND id != ?1 AND position > ?2').bind(a.server.id, role.position),
-    bump(c.env, a.server.id, Date.now()),
-  ]);
-  return c.json({ ok: true });
-});
-
 // -- Channels and categories ----------------------------------------------
 
 async function categoryFor(env: Env, serverId: string, value: unknown): Promise<string | null> {
@@ -998,17 +969,6 @@ servers.patch('/:id/channels/:cid', async c => {
   return c.json({ channel: channelJson(ch!) });
 });
 
-servers.delete('/:id/channels/:cid', async c => {
-  const user = requireUser(c);
-  const a = await access(c.env, user.id, c.req.param('id'), c.req.param('cid'));
-  need(a, 'manage_channels');
-  await c.env.DB.batch([
-    c.env.DB.prepare('DELETE FROM channels WHERE id = ?').bind(a.channel!.id),
-    bump(c.env, a.server.id, Date.now()),
-  ]);
-  return c.json({ ok: true });
-});
-
 servers.post('/:id/categories', async c => {
   const user = requireUser(c);
   const a = await access(c.env, user.id, c.req.param('id'));
@@ -1043,18 +1003,6 @@ servers.patch('/:id/categories/:catId', async c => {
   if (!res.meta.changes) fail(404, 'Category not found.');
   const row = await c.env.DB.prepare('SELECT * FROM channel_categories WHERE id = ?').bind(c.req.param('catId')).first<CategoryRow>();
   return c.json({ category: categoryJson(row!) });
-});
-
-servers.delete('/:id/categories/:catId', async c => {
-  const user = requireUser(c);
-  const a = await access(c.env, user.id, c.req.param('id'));
-  need(a, 'manage_channels');
-  const [res] = await c.env.DB.batch([
-    c.env.DB.prepare('DELETE FROM channel_categories WHERE id = ? AND server_id = ?').bind(c.req.param('catId'), a.server.id),
-    bump(c.env, a.server.id, Date.now()),
-  ]);
-  if (!res.meta.changes) fail(404, 'Category not found.');
-  return c.json({ ok: true });
 });
 
 // -- Messages -------------------------------------------------------------
@@ -1173,21 +1121,6 @@ servers.patch('/:id/channels/:cid/messages/:mid', async c => {
     await c.env.DB.prepare('UPDATE channel_messages SET body = ?, edited_at = ?, updated_at = ? WHERE id = ?').bind(text, now, now, row.id).run();
   }
   return c.json({ message: await oneMessage(c.env, user, a.server.id, a.channel!.id, row.id) });
-});
-
-servers.delete('/:id/channels/:cid/messages/:mid', async c => {
-  const user = requireUser(c);
-  const a = await access(c.env, user.id, c.req.param('id'), c.req.param('cid'));
-  const row = await loadMessage(c.env, a.channel!.id, c.req.param('mid'));
-  if (row.author_id !== user.id) need(a, 'manage_messages');
-  const now = Date.now();
-  await c.env.DB.batch([
-    c.env.DB.prepare(`UPDATE channel_messages SET body = '', media_id = NULL, pinned = 0, pinned_at = NULL, mention_everyone = 0,
-        deleted_at = ?, updated_at = ? WHERE id = ?`).bind(now, now, row.id),
-    c.env.DB.prepare('DELETE FROM channel_reactions WHERE message_id = ?').bind(row.id),
-    c.env.DB.prepare('DELETE FROM channel_mentions WHERE message_id = ?').bind(row.id),
-  ]);
-  return c.json({ ok: true });
 });
 
 async function pin(c: Ctx, on: boolean) {

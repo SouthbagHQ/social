@@ -7,6 +7,7 @@ import { HTTPException } from 'hono/http-exception';
 import type { AppEnv, Env } from './env';
 import { callback, login, logout, safeReturnTo, session } from './lib/auth';
 import { deleteMedia, serveMedia } from './lib/media';
+import { NO_DELETING, fail } from './lib/http';
 import feed from './routes/feed';
 import groups from './routes/groups';
 import me from './routes/me';
@@ -104,6 +105,9 @@ app.route('/api/boards', boards);
 app.route('/api/streaks', streaks);
 app.route('/api/wiki', wiki);
 app.route('/api/dating', dating);
+// Nothing can be deleted. The routers keep their DELETEs for undoing things (unlike, unfollow,
+// leave…); anything else that tries to delete lands here.
+app.delete('/api/*', () => fail(403, NO_DELETING));
 
 /** Hourly: expire stories, drop abandoned uploads and dead sessions. */
 async function janitor(env: Env): Promise<void> {

@@ -3,7 +3,6 @@
 //   GET    /api/posts/:id                → { post, ancestors }   (ancestors = reply chain, oldest first)
 //   GET    /api/posts/:id/replies        ?cursor&limit&sort=new|top → { items, next }
 //   PATCH  /api/posts/:id                { body?, title? } → { post }   ("Amend")
-//   DELETE /api/posts/:id
 //   PUT    /api/posts/:id/reaction       { type } → { post }
 //   DELETE /api/posts/:id/reaction       → { post }
 //   POST   /api/posts/:id/repost         → { post }  (the original, updated)
@@ -95,12 +94,6 @@ posts.patch('/:id', async c => {
   ]);
   track(c, 'social_post_edited', { post_id: post.id, kind: post.kind });
   return c.json({ post: await one(c, post.id) });
-});
-
-posts.delete('/:id', async c => {
-  await deletePost(c.env, requireUser(c), c.req.param('id'));
-  track(c, 'social_post_deleted', { post_id: c.req.param('id') });
-  return c.json({ ok: true });
 });
 
 posts.put('/:id/reaction', async c => {

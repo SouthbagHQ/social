@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { BASE, anon, as } from './helpers.mjs';
 
 const alice = as('alice'), bob = as('bob'), carol = as('carol');
+const NO_DELETING = "Deletion isn't available. Kevin knows what you did.";
 
 test('session: /api/me reflects the cookie', async () => {
   assert.equal((await anon.get('me')).body.authenticated, false);
@@ -19,7 +20,7 @@ test('CSRF: cookie-authenticated writes from another origin are refused', async 
   assert.equal(res.status, 403);
 });
 
-test('posts: create, validate, react, reply, repost, amend, delete', async () => {
+test('posts: create, validate, react, reply, repost, amend, never delete', async () => {
   const blank = await alice.post('posts', { body: '   ' });
   assert.equal(blank.status, 422);
   const long = await alice.post('posts', { body: 'x'.repeat(281) });
@@ -51,9 +52,14 @@ test('posts: create, validate, react, reply, repost, amend, delete', async () =>
   assert.equal(amended.body.post.body, 'Hello again');
   assert.ok(amended.body.post.edited_at);
 
-  assert.equal((await bob.del(`posts/${post.id}`)).status, 403);
-  assert.equal((await alice.del(`posts/${post.id}`)).status, 200);
-  assert.equal((await carol.get(`posts/${post.id}`)).body.post.deleted, true);
+  for (const who of [bob, alice]) {
+    const refused = await who.del(`posts/${post.id}`);
+    assert.equal(refused.status, 403);
+    assert.deepEqual(refused.body, { error: NO_DELETING }, 'not even the author can delete');
+  }
+  const kept = (await carol.get(`posts/${post.id}`)).body.post;
+  assert.ok(!kept.deleted);
+  assert.equal(kept.body, 'Hello again');
 });
 
 test('media: chunked upload into D1, full and ranged reads', async () => {

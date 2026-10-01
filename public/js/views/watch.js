@@ -11,7 +11,7 @@ import { h, mount } from '../dom.js';
 import { fullDate, plural, relative } from '../format.js';
 import { navigate } from '../router.js';
 import { login, store } from '../store.js';
-import { confirm, dialog, empty, errorBox, infiniteList, menu, share, toast, toastError } from '../ui.js';
+import { dialog, empty, errorBox, infiniteList, menu, refuseDelete, share, toast, toastError } from '../ui.js';
 import { videoEl } from '../components/media.js';
 import { postCard, reactionButton, richText } from '../components/post.js';
 import { composer } from '../components/composer.js';
@@ -115,7 +115,7 @@ export default async function watch(ctx) {
   moreBtn.addEventListener('click', () => menu(moreBtn, [
     { label: 'Copy link at current time', onClick: () => share(`/watch/${post.id}?t=${Math.floor(video.currentTime)}`, post.title) },
     post.viewer.can_edit ? { label: 'Edit', onClick: amend } : null,
-    post.viewer.can_edit ? { label: 'Delete', onClick: remove } : null,
+    post.viewer.can_edit ? { label: 'Delete', onClick: refuseDelete } : null,
     !post.viewer.can_edit ? { label: 'Report', onClick: () => toast('Reported.') } : null,
   ]));
 
@@ -274,15 +274,6 @@ export default async function watch(ctx) {
       mount(descText, fresh.body ? richText(fresh.body) : h('span.muted', 'No description.'));
       ctx.title(fresh.title);
       toast('Saved.');
-    } catch (err) { toastError(err); }
-  }
-
-  async function remove() {
-    if (!(await confirm('Delete this video?', { title: 'Delete video', ok: 'Delete' }))) return;
-    try {
-      await api.del(`posts/${post.id}`);
-      toast('Deleted.');
-      navigate('/videos');
     } catch (err) { toastError(err); }
   }
 

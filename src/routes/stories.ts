@@ -8,7 +8,6 @@
 //   GET    /api/stories/:handle       -> { user, items: [StoryJson] } oldest first
 //   POST   /api/stories/:id/view      records a view (idempotent) -> { ok, seen }
 //   GET    /api/stories/:id/viewers   owner only -> { items: [{ user, created_at }], count }
-//   DELETE /api/stories/:id           owner only; deletes the story and its file
 //
 // StoryJson: { id, media: MediaJson, caption, background, created_at, expires_at, seen, view_count? }
 // (view_count only on your own stories). Text-only stories are drawn to a canvas in the browser and
@@ -18,7 +17,7 @@ import { Hono } from 'hono';
 import type { AppEnv, Ctx, Env } from '../env';
 import { body, fail, requireUser, str } from '../lib/http';
 import { newId } from '../lib/ids';
-import { deleteUnusedMedia, mediaJson, ownedReadyMedia, type MediaRow } from '../lib/media';
+import { mediaJson, ownedReadyMedia, type MediaRow } from '../lib/media';
 import { track } from '../lib/palantir';
 import { userByHandle, userCard, userCardColumns, userCards, type UserRow } from '../lib/users';
 
@@ -177,15 +176,6 @@ stories.get('/:id/viewers', async c => {
     c.env.DB.prepare('SELECT COUNT(*) AS n FROM story_views WHERE story_id = ? AND viewer_id != ?').bind(story.id, user.id).first<{ n: number }>(),
   ]);
   return c.json({ items: results.map(r => ({ user: userCard(r), created_at: r.viewed_at })), count: total?.n ?? 0 });
-});
-
-stories.delete('/:id', async c => {
-  const user = requireUser(c);
-  const story = await ownStory(c, user.id, true);
-  await c.env.DB.prepare('DELETE FROM stories WHERE id = ?').bind(story.id).run();
-  await deleteUnusedMedia(c.env, [story.media_id]);
-  track(c, 'social_story_deleted', { story_id: story.id });
-  return c.json({ ok: true });
 });
 
 /** The signed-in user's story (expired ones too when `anyAge`), or a 404/403. */

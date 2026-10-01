@@ -13,7 +13,7 @@ import { h } from '../dom.js';
 import { plural, timeAgo } from '../format.js';
 import { navigate } from '../router.js';
 import { login, store } from '../store.js';
-import { confirm, empty, infiniteList, menu, share, toast, toastError } from '../ui.js';
+import { empty, infiniteList, menu, refuseDelete, share, toast, toastError } from '../ui.js';
 import { composer } from '../components/composer.js';
 import { postCard, reactionButton, richText } from '../components/post.js';
 import { avatar } from '../components/user.js';
@@ -287,7 +287,7 @@ export default async function shorts(ctx) {
       menu(more, [
         { label: 'Open post', href: `/post/${post.id}` },
         post.viewer.can_edit
-          ? { label: 'Delete', onClick: () => removeShort(it) }
+          ? { label: 'Delete', onClick: refuseDelete }
           : { label: 'Report', onClick: () => toast('Reported.') },
       ]);
     });
@@ -307,23 +307,6 @@ export default async function shorts(ctx) {
   function likeQuietly(it) {
     if (!store.me) return login();
     it.rail.querySelector('.rail-like button')?.click();
-  }
-
-  async function removeShort(it) {
-    if (!(await confirm('Delete this short?', { title: 'Delete short', ok: 'Delete' }))) return;
-    try {
-      await api.del(`posts/${it.post.id}`);
-      toast('Deleted.');
-      const i = state.items.indexOf(it);
-      unload(it);
-      observer.unobserve(it.el);
-      it.el.remove();
-      state.items.splice(i, 1);
-      state.ids.delete(it.post.id);
-      state.active = -1;
-      if (state.items.length) activate(Math.min(i, state.items.length - 1));
-      else navigate('/shorts', { replace: true });
-    } catch (err) { toastError(err); }
   }
 
   function load(it, preload) {

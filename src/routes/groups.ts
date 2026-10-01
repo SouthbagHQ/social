@@ -6,9 +6,8 @@
 //   GET    /api/groups                        ?tab=mine|discover&q&cursor -> { items: GroupJson[], next }
 //   GET    /api/groups/:slug                  -> { group: GroupJson & { owner }, viewer: { role } }
 //   PATCH  /api/groups/:slug                  owner/admin: { name?, description?, privacy?, avatar_media_id?, banner_media_id? } -> { group }
-//   DELETE /api/groups/:slug                  owner only (posts go with it)
 //   POST   /api/groups/:slug/join             -> { viewer: { role } }  public -> member, private -> pending
-//   DELETE /api/groups/:slug/join             leave, or withdraw a request (owners must delete instead)
+//   DELETE /api/groups/:slug/join             leave, or withdraw a request (owners cannot leave)
 //   GET    /api/groups/:slug/members          ?cursor -> { items: [{ user, role, created_at }], next }
 //   POST   /api/groups/:slug/members/:handle  admins: { action: approve|promote|demote|remove } -> { member }
 //   GET    /api/groups/:slug/posts            ?cursor -> { items: PostJson[], next }
@@ -19,7 +18,7 @@
 
 import { Hono } from 'hono';
 import type { AppEnv, Ctx, Env, SessionUser } from '../env';
-import { body, cursor, fail, limit, page, placeholders, requireUser, str } from '../lib/http';
+import { body, cursor, fail, limit, page, requireUser, str } from '../lib/http';
 import { newId } from '../lib/ids';
 import { deleteUnusedMedia, getMedia } from '../lib/media';
 import { notifyStatement } from '../lib/notify';
@@ -233,26 +232,6 @@ groups.patch('/:slug', async c => {
   return c.json({ group: groupJson(fresh!, role) });
 });
 
-groups.delete('/:slug', async c => {
-  requireUser(c);
-  const { group, role } = await load(c);
-  if (role !== 'owner') fail(403, 'Only the owner can delete a group.');
-  // Files attached to the group's posts go too (a bounded number per request: free-plan query limits).
-  const { results: files } = await c.env.DB.prepare(`SELECT pm.media_id FROM post_media pm JOIN posts p ON p.id = pm.post_id
-      WHERE p.group_id = ? LIMIT 20`).bind(group.id).all<{ media_id: string }>();
-  await c.env.DB.batch([
-    // Keep everyone's post counts right before the posts cascade away.
-    c.env.DB.prepare(`UPDATE users SET post_count = MAX(0, post_count - (SELECT COUNT(*) FROM posts p
-        WHERE p.group_id = ?1 AND p.author_id = users.id AND p.reply_to_id IS NULL AND p.deleted_at IS NULL))
-      WHERE id IN (SELECT DISTINCT author_id FROM posts WHERE group_id = ?1 AND reply_to_id IS NULL AND deleted_at IS NULL)`)
-      .bind(group.id),
-    c.env.DB.prepare('DELETE FROM groups WHERE id = ?').bind(group.id),
-  ]);
-  await dropUnused(c.env, [group.avatar_media_id, group.banner_media_id, ...files.map(f => f.media_id)]);
-  track(c, 'social_group_deleted', { group_id: group.id, member_count: group.member_count, post_count: group.post_count });
-  return c.json({ ok: true });
-});
-
 // Membership
 
 groups.post('/:slug/join', async c => {
@@ -288,7 +267,7 @@ groups.delete('/:slug/join', async c => {
   const user = requireUser(c);
   const { group, role } = await load(c);
   if (!role) return c.json({ viewer: { role: null } });
-  if (role === 'owner') fail(409, 'Owners cannot leave. Delete the group instead.');
+  if (role === 'owner') fail(409, 'Owners cannot leave.');
   const statements = [c.env.DB.prepare('DELETE FROM group_members WHERE group_id = ? AND user_id = ?').bind(group.id, user.id)];
   if (role !== 'pending') statements.push(c.env.DB.prepare('UPDATE groups SET member_count = MAX(0, member_count - 1) WHERE id = ?').bind(group.id));
   await c.env.DB.batch(statements);

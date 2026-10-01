@@ -4,6 +4,8 @@ import { anon, as } from './helpers.mjs';
 
 const alice = as('alice'), bob = as('bob'), carol = as('carol');
 
+const NO_DELETING = "Deletion isn't available. Kevin knows what you did.";
+
 async function png(who) {
   const bytes = new Uint8Array(1000);
   const { body } = await who.post('media', { kind: 'image', content_type: 'image/png', size: bytes.length, width: 10, height: 10 });
@@ -11,7 +13,7 @@ async function png(who) {
   return (await who.post(`media/${body.id}/complete`)).body;
 }
 
-test('stories: post, tray, view once, owner-only viewers and delete', async () => {
+test('stories: post, tray, view once, owner-only viewers, and no deleting', async () => {
   const media = await png(bob);
   const { status, body: { story } } = await bob.post('stories', { media_id: media.id, caption: 'Retained.' });
   assert.equal(status, 201);
@@ -23,7 +25,10 @@ test('stories: post, tray, view once, owner-only viewers and delete', async () =
   assert.equal((await bob.get(`stories/${story.id}/viewers`)).body.count, 1);
   assert.equal((await alice.get(`stories/${story.id}/viewers`)).status, 403);
   assert.equal((await alice.get('stories/bob')).body.items[0].seen, true);
-  assert.equal((await bob.del(`stories/${story.id}`)).status, 200);
+  const refused = await bob.del(`stories/${story.id}`);
+  assert.equal(refused.status, 403);
+  assert.deepEqual(refused.body, { error: NO_DELETING });
+  assert.ok((await alice.get('stories/bob')).body.items.some(i => i.id === story.id), 'the story stays until it expires');
 });
 
 test('groups: private groups gate posts behind approval', async () => {

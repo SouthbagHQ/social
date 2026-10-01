@@ -12,7 +12,7 @@ import { h, mount } from '../dom.js';
 import { plural } from '../format.js';
 import { navigate } from '../router.js';
 import { login, store } from '../store.js';
-import { confirm, dialog, empty, errorBox, infiniteList, loading, promptDialog, share, tabs, toast, toastError } from '../ui.js';
+import { confirm, dialog, empty, errorBox, infiniteList, loading, promptDialog, refuseDelete, share, tabs, toast, toastError } from '../ui.js';
 import { pickFiles, uploadFile } from '../upload.js';
 import { field, formDialog, saveToBoard } from '../components/board-picker.js';
 import { avatar, userName } from '../components/user.js';
@@ -283,20 +283,11 @@ async function editBoard(board, reload) {
   const secret = h('input', { type: 'checkbox', checked: board.visibility === 'secret' });
   const saved = await formDialog({
     title: 'Edit board',
-    extra: close => h('button', { type: 'button', onclick: () => { close(null); removeBoard(board); } }, 'Delete board'),
+    extra: () => h('button', { type: 'button', onclick: refuseDelete }, 'Delete board'),
     content: [field('Name', title), field('Description', description), h('label.checkbox', secret, h('span', 'Keep this board secret'))],
     onSubmit: () => api.patch(`boards/${board.id}`, { title: title.value, description: description.value, visibility: secret.checked ? 'secret' : 'public' }),
   });
   if (saved) { toast('Saved.'); reload(); }
-}
-
-async function removeBoard(board) {
-  if (!(await confirm('Delete this board and all of its pins?', { title: 'Delete board', ok: 'Delete' }))) return;
-  try {
-    await api.del(`boards/${board.id}`);
-    toast('Deleted.');
-    navigate('/boards?tab=yours');
-  } catch (err) { toastError(err); }
 }
 
 async function invite(board, reload) {
@@ -409,16 +400,7 @@ function pinView(pin, { tile, close, show, onBoard, onChange, canArrange }) {
   if (pin.viewer.can_edit) {
     tools.append(
       h('button.btn', { type: 'button', onclick: () => editPin(pin, { tile, close, show, onBoard, onChange, canArrange }) }, 'Edit'),
-      h('button.btn', { type: 'button', onclick: async () => {
-        if (!(await confirm('Delete this pin?', { title: 'Delete pin', ok: 'Delete' }))) return;
-        try {
-          await api.del(`boards/pins/${pin.id}`);
-          toast('Deleted.');
-          document.querySelectorAll(`.pin-tile[data-pin-id="${pin.id}"]`).forEach(t => t.remove());
-          close(null);
-          onChange?.();
-        } catch (err) { toastError(err); }
-      } }, 'Delete'));
+      h('button.btn', { type: 'button', onclick: refuseDelete }, 'Delete'));
   }
   if (onThisBoard && canArrange?.() && tile?.isConnected) {
     tools.append(

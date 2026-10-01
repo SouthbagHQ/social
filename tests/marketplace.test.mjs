@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { anon, as, BASE } from './helpers.mjs';
 
 const alice = as('alice'), bob = as('bob'), carol = as('carol'), kevin = as('kevin');
+const NO_DELETING = "Deletion isn't available. Kevin knows what you did.";
 const word = () => `mk${Math.random().toString(36).slice(2, 9)}`;
 
 async function png(who) {
@@ -24,7 +25,7 @@ async function listing(who = alice, extra = {}) {
 
 const notifications = async who => (await who.get('notifications?limit=50')).body.items;
 
-test('marketplace: create, validate, edit, photos and delete', async () => {
+test('marketplace: create, validate, edit, photos, never delete', async () => {
   const [p1, p2, p3] = [await png(alice), await png(alice), await png(alice)];
   const l = await listing(alice, { photo_ids: [p1.id, p2.id] });
   assert.equal(l.title, 'Timber desk');
@@ -86,10 +87,14 @@ test('marketplace: create, validate, edit, photos and delete', async () => {
   assert.equal((await alice.del(`media/${p2.id}`)).status, 409, 'photos in a listing are in use');
   assert.equal((await bob.put(`marketplace/${l.id}/photos`, { ids: [bobPhoto.id] })).status, 403);
 
-  assert.equal((await alice.del(`marketplace/${l.id}`)).body.ok, true);
-  assert.equal((await anon.get(`marketplace/${l.id}`)).status, 404);
-  assert.equal((await fetch(`${BASE}/media/${p2.id}`)).status, 404, 'photos go with the listing');
-  assert.equal((await alice.patch(`marketplace/${l.id}`, { title: 'Back' })).status, 404);
+  const refused = await alice.del(`marketplace/${l.id}`);
+  assert.equal(refused.status, 403);
+  assert.deepEqual(refused.body, { error: NO_DELETING }, 'not even the seller can delete a listing');
+  const kept = await anon.get(`marketplace/${l.id}`);
+  assert.equal(kept.status, 200);
+  assert.equal(kept.body.listing.title, 'Oak desk');
+  assert.deepEqual(kept.body.listing.photos.map(p => p.id), [extra.id, p2.id]);
+  assert.equal((await fetch(`${BASE}/media/${p2.id}`)).status, 200, 'photos stay with the listing');
 });
 
 test('marketplace: views count once per viewer per day, never the seller', async () => {
@@ -268,8 +273,10 @@ test('marketplace: saved searches notify on new matching listings', async () => 
   assert.equal(saved.status, 201, saved.text);
   assert.equal((await carol.post('marketplace/searches', { q: `${tag} chair`, max_price: 5000, location: 'marrickville' })).status, 409);
   assert.ok((await carol.get('marketplace/searches')).body.items.some(s => s.id === saved.body.search.id));
-  assert.equal((await bob.del(`marketplace/searches/${saved.body.search.id}`)).status, 404, 'not yours');
-  const own = await alice.post('marketplace/searches', { q: tag });
+  const notYours = await bob.del(`marketplace/searches/${saved.body.search.id}`);
+  assert.equal(notYours.status, 403);
+  assert.deepEqual(notYours.body, { error: NO_DELETING });
+  await alice.post('marketplace/searches', { q: tag }); // matches alice's own listings below
 
   const match = await listing(alice, { title: `Chair ${tag}`, price: 4000, location: 'Marrickville 2204' });
   const tooDear = await listing(alice, { title: `Chair ${tag}`, price: 9000, location: 'Marrickville 2204' });
@@ -283,8 +290,11 @@ test('marketplace: saved searches notify on new matching listings', async () => 
 
   const patched = await carol.patch(`marketplace/searches/${saved.body.search.id}`, { max_price: null });
   assert.equal(patched.body.search.max_price, null);
-  assert.equal((await carol.del(`marketplace/searches/${saved.body.search.id}`)).body.ok, true);
-  await alice.del(`marketplace/searches/${own.body.search.id}`);
+  const refused = await carol.del(`marketplace/searches/${saved.body.search.id}`);
+  assert.equal(refused.status, 403);
+  assert.deepEqual(refused.body, { error: NO_DELETING }, 'saved searches cannot be deleted either');
+  const searches = (await carol.get('marketplace/searches')).body.items;
+  assert.equal(searches.find(s => s.id === saved.body.search.id)?.max_price, null, 'the search stays, as edited');
   assert.equal((await anon.get('marketplace/searches')).status, 401);
 });
 

@@ -13,7 +13,6 @@
 //   POST   /api/events/:id/invite         { handles: [handle] } -> { invited, already }
 //   GET    /api/events/:id/comments       ?cursor -> { items: CommentJson[], next }   (newest first)
 //   POST   /api/events/:id/comments       { body } -> { comment }
-//   DELETE /api/events/:id/comments/:cid  author or hosts
 //   GET    /api/events/:id/calendar.ics   iCalendar download (no sign-in needed for public events)
 //
 // EventJson: { id, title, description, starts_at, ends_at, timezone, location_name, location_address,
@@ -716,20 +715,6 @@ events.post('/:id/comments', async c => {
   const row: CommentRow = { id, event_id: event.id, author_id: user.id, body: bodyText, created_at: now, deleted_at: null };
   track(c, 'social_event_comment_created', { comment_id: id, event_id: event.id });
   return c.json({ comment: commentJson(row, userCard(user), true) }, 201);
-});
-
-events.delete('/:id/comments/:cid', async c => {
-  const user = requireUser(c);
-  const l = await load(c);
-  const row = await c.env.DB.prepare('SELECT * FROM event_comments WHERE id = ? AND event_id = ? AND deleted_at IS NULL')
-    .bind(c.req.param('cid'), l.event.id).first<CommentRow>();
-  if (!row) fail(404, 'Comment not found.');
-  if (row.author_id !== user.id && l.role === null) fail(403, 'You cannot delete this comment.');
-  await c.env.DB.batch([
-    c.env.DB.prepare('UPDATE event_comments SET deleted_at = ? WHERE id = ?').bind(Date.now(), row.id),
-    c.env.DB.prepare('UPDATE events SET comment_count = MAX(0, comment_count - 1) WHERE id = ?').bind(l.event.id),
-  ]);
-  return c.json({ ok: true });
 });
 
 // ── Calendar file ────────────────────────────────────────────────────────

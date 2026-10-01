@@ -1,10 +1,12 @@
 // Southbag Social — boot, shell and route table.
 //
-// Shell (top to bottom): promotional strip, header (stretched logo, search, account), then the
-// layout: sidebar of links, the page, and a column of extras. Same furniture as Identity and Office.
+// Shell (top to bottom): promotional strip, news ticker, header (stretched logo, search, account),
+// a strip of help buttons, then the layout: sidebar of links, the page, and a column of extras. Same
+// furniture as Identity and Office, plus the jank in chaos.js.
 
 import { h, mount } from './dom.js';
 import { applyTheme, promoStrip } from './gags.js';
+import { cookieBanner, helpStrip, jank, splash, ticker } from './chaos.js';
 import { navigate, route, startRouter } from './router.js';
 import { login, store } from './store.js';
 import { errorBox, loading, menu } from './ui.js';
@@ -100,7 +102,9 @@ const sections = [
 const app = document.getElementById('app');
 const shell = {
   promo: h('div'),
+  ticker: ticker(),
   header: h('header.site-header'),
+  help: helpStrip(),
   nav: h('nav.south-nav', { 'aria-label': 'Southbag Social' }),
   main: h('main', { id: 'main', tabIndex: -1 }),
   aside: h('aside'),
@@ -195,11 +199,14 @@ async function render(ctx, matched, controller, scroll) {
 // ── Boot ────────────────────────────────────────────────────────────────
 async function boot() {
   applyTheme();
+  splash();
   mount(app, loading());
   await store.refresh();
   mount(shell.promo, promoStrip());
   mount(shell.player, audioPlayer());
-  mount(app, shell.promo, shell.header, shell.layout, shell.footer, shell.player);
+  mount(app, shell.promo, shell.ticker, shell.header, shell.help, shell.layout, shell.footer, shell.player);
+  cookieBanner();
+  jank();
   const params = new URLSearchParams(location.search);
   if (params.get('login_error') || params.get('signed_out')) {
     const { toast } = await import('./ui.js');

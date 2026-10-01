@@ -14,7 +14,7 @@ import { h, mount } from '../dom.js';
 import { bytes, duration as fmt, fullDate, plural, timeAgo } from '../format.js';
 import { navigate } from '../router.js';
 import { login, store } from '../store.js';
-import { confirm, dialog, empty, errorBox, infiniteList, loading, share, shake, tabs, toast, toastError } from '../ui.js';
+import { confirm, dialog, empty, errorBox, infiniteList, loading, refuseDelete, share, shake, tabs, toast, toastError } from '../ui.js';
 import { pickFiles, uploadBlob, uploadFile } from '../upload.js';
 import { richText } from '../components/post.js';
 import { enqueue, playButton, playTrack } from '../components/player.js';
@@ -670,14 +670,7 @@ async function showPage(ctx, id) {
       const saved = await showForm({ show });
       if (saved) navigate(`/audio/show/${show.id}`, { replace: true, scroll: false });
     } }, 'Edit') : null,
-    owner ? h('button.btn', { type: 'button', onclick: async () => {
-      if (!(await confirm(`Delete ${show.title}?`, { title: 'Delete show', ok: 'Delete' }))) return;
-      try {
-        await api.del(`audio/shows/${show.id}`);
-        toast('Deleted.');
-        navigate('/audio/library');
-      } catch (err) { toastError(err); }
-    } }, 'Delete') : null,
+    owner ? h('button.btn', { type: 'button', onclick: refuseDelete }, 'Delete') : null,
     h('button.btn', { type: 'button', onclick: () => share(`/audio/show/${show.id}`, show.title) }, 'Share'));
 
   return h('div.audio-page', header(null),
@@ -728,14 +721,7 @@ async function trackPage(ctx, id) {
     owner ? h('button.btn', { type: 'button', onclick: async () => {
       if (await trackForm(track)) navigate(`/audio/track/${track.id}`, { replace: true, scroll: false });
     } }, 'Edit') : null,
-    owner ? h('button.btn', { type: 'button', onclick: async () => {
-      if (!(await confirm(`Delete ${track.title}? The file and its feed post are deleted too.`, { title: 'Delete', ok: 'Delete' }))) return;
-      try {
-        await api.del(`audio/tracks/${track.id}`);
-        toast('Deleted.');
-        navigate(`/audio/show/${track.show.id}`);
-      } catch (err) { toastError(err); }
-    } }, 'Delete') : null);
+    owner ? h('button.btn', { type: 'button', onclick: refuseDelete }, 'Delete') : null);
 
   return h('div.audio-page', header(null),
     h('div.south-card.audio-hero',
@@ -806,14 +792,7 @@ async function playlistPage(ctx, id) {
     owner ? h('button.btn', { type: 'button', onclick: async () => {
       if (await playlistForm(playlist)) navigate(`/audio/playlist/${playlist.id}`, { replace: true, scroll: false });
     } }, 'Edit') : null,
-    owner ? h('button.btn', { type: 'button', onclick: async () => {
-      if (!(await confirm(`Delete ${playlist.title}?`, { title: 'Delete playlist', ok: 'Delete' }))) return;
-      try {
-        await api.del(`audio/playlists/${playlist.id}`);
-        toast('Deleted.');
-        navigate('/audio/library');
-      } catch (err) { toastError(err); }
-    } }, 'Delete') : null);
+    owner ? h('button.btn', { type: 'button', onclick: refuseDelete }, 'Delete') : null);
 
   return h('div.audio-page', header(null),
     h('div.south-card.audio-hero',

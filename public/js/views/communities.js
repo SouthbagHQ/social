@@ -9,7 +9,7 @@ import { h, mount } from '../dom.js';
 import { count, fullDate, plural, timeAgo } from '../format.js';
 import { navigate, refresh } from '../router.js';
 import { login, store } from '../store.js';
-import { confirm, dialog, empty, errorBox, infiniteList, lightbox, menu, promptDialog, share, shake, tabs, toast, toastError } from '../ui.js';
+import { confirm, dialog, empty, errorBox, infiniteList, lightbox, menu, promptDialog, refuseDelete, share, shake, tabs, toast, toastError } from '../ui.js';
 import { uploadFile } from '../upload.js';
 import { richText } from '../components/post.js';
 import { avatar } from '../components/user.js';
@@ -103,10 +103,8 @@ function modButton(thread, name, onChange) {
     thread.pinned ? { label: 'Unpin', onClick: () => set({ pinned: false }, 'Unpinned.') } : { label: 'Pin', onClick: () => set({ pinned: true }, 'Pinned.') },
     thread.locked ? { label: 'Unlock', onClick: () => set({ locked: false }, 'Unlocked.') } : { label: 'Lock', onClick: () => set({ locked: true }, 'Locked.') },
     thread.removed
-      ? { label: 'Approve', onClick: () => set({ removed: false }, 'Approved.') }
-      : { label: 'Remove', onClick: async () => {
-          if (await confirm('Remove this post from the community?', { title: 'Remove post', ok: 'Remove' })) set({ removed: true }, 'Removed.');
-        } },
+      ? { label: 'Unhide', onClick: () => set({ removed: false }, 'Unhidden.') }
+      : { label: 'Hide', onClick: () => set({ removed: true }, 'Hidden.') },
   ]));
   return more;
 }
@@ -114,7 +112,7 @@ function modButton(thread, name, onChange) {
 const flags = t => [
   t.pinned ? h('span.chip.teal', 'Pinned') : null,
   t.locked ? h('span.chip', 'Locked') : null,
-  t.removed ? h('span.chip', 'Removed') : null,
+  t.removed ? h('span.chip', 'Hidden') : null,
 ];
 
 /** A row in a thread list. */
@@ -138,7 +136,7 @@ function threadRow(thread, { showCommunity = false } = {}) {
       h('div.cm-thread-actions',
         h('a', { href }, plural(thread.comment_count, 'comment')),
         h('button.btn-small', { type: 'button', onclick: () => share(href, thread.title) }, 'Share'),
-        thread.viewer?.can_moderate ? modButton(thread, thread.community.name, t => (t.removed ? row.remove() : paint())) : null)));
+        thread.viewer?.can_moderate ? modButton(thread, thread.community.name, paint) : null)));
   paint();
   return row;
 }
@@ -562,11 +560,11 @@ async function threadPage(ctx, name, threadId) {
     actions.push(h('span.cm-count', plural(thread.comment_count, 'comment')));
     actions.push(h('button.btn-small', { type: 'button', onclick: () => share(threadUrl(thread), thread.title) }, 'Share'));
     if (thread.viewer.can_edit) actions.push(h('button.btn-small', { type: 'button', onclick: editThread }, 'Edit'));
-    if (thread.viewer.can_delete) actions.push(h('button.btn-small', { type: 'button', onclick: deleteThread }, 'Delete'));
+    if (thread.viewer.can_delete) actions.push(h('button.btn-small', { type: 'button', onclick: refuseDelete }, 'Delete'));
     if (thread.viewer.can_moderate) actions.push(modButton(thread, c.name, () => { paintThread(); paintComposer(); }));
     let content = null;
     if (thread.deleted) content = h('p.muted', 'This post was deleted.');
-    else if (thread.removed && !thread.body && !thread.url && !thread.image_url) content = h('p.muted', 'This post was removed by the moderators.');
+    else if (thread.removed && !thread.body && !thread.url && !thread.image_url) content = h('p.muted', 'This post was hidden by the moderators.');
     else if (thread.kind === 'image' && thread.image_url) {
       content = h('a.cm-image', { href: thread.image_url, 'aria-label': 'View image', onclick: e => { e.preventDefault(); lightbox(thread.image_url, thread.title); } },
         h('img', { src: thread.image_url, alt: '' }));
@@ -582,7 +580,7 @@ async function threadPage(ctx, name, threadId) {
           ' ', when(thread.created_at),
           thread.edited_at ? h('span', { title: fullDate(thread.edited_at) }, ', edited') : null),
         h('h2.cm-full-title', thread.title, ' ', flags(thread)),
-        thread.removed && (thread.body || thread.url || thread.image_url) ? h('p.fine', 'Removed by the moderators. Only you and the moderators can see this.') : null,
+        thread.removed && (thread.body || thread.url || thread.image_url) ? h('p.fine', 'Hidden by the moderators. Only you and the moderators can see this.') : null,
         content,
         h('div.cm-thread-actions', actions)));
   };
@@ -601,15 +599,6 @@ async function threadPage(ctx, name, threadId) {
       Object.assign(thread, res.thread);
       toast('Saved.');
       paintThread();
-    } catch (err) { toastError(err); }
-  }
-
-  async function deleteThread() {
-    if (!(await confirm('Delete this post?', { title: 'Delete post', ok: 'Delete' }))) return;
-    try {
-      await api.del(`communities/${enc(c.name)}/threads/${thread.id}`);
-      toast('Deleted.');
-      navigate(`/c/${c.name}`, { replace: true });
     } catch (err) { toastError(err); }
   }
 
@@ -661,18 +650,30 @@ async function threadPage(ctx, name, threadId) {
       if (!gone) actions.push(voteColumn('comment', comment, { horizontal: true }));
       if (canReply) actions.push(h('button.btn-small', { type: 'button', onclick: reply }, 'Reply'));
       if (comment.viewer.can_edit) actions.push(h('button.btn-small', { type: 'button', onclick: edit }, 'Edit'));
-      if (comment.viewer.can_delete) actions.push(h('button.btn-small', { type: 'button', onclick: remove }, 'Delete'));
+      if (comment.viewer.can_delete) actions.push(h('button.btn-small', { type: 'button', onclick: refuseDelete }, 'Delete'));
+      if (comment.viewer.can_moderate) actions.push(h('button.btn-small', { type: 'button', onclick: hide }, comment.removed ? 'Unhide' : 'Hide'));
       actions.push(h('button.btn-small', { type: 'button', 'aria-expanded': String(!collapsed), onclick: () => { collapsed = !collapsed; paint(); } }, collapsed ? 'Expand' : 'Collapse'));
       const meta = h('p.cm-meta',
         comment.author ? h('a', { href: `/@${comment.author.handle}` }, `u/${comment.author.handle}`) : '[deleted]',
         ' ', when(comment.created_at),
         comment.edited_at && !gone ? h('span', { title: fullDate(comment.edited_at) }, ', edited') : null,
         collapsed ? h('span', `, ${plural(comment.score, 'point')}`) : null);
-      const bodyNode = gone
-        ? h('p.muted.cm-comment-body', comment.removed ? '[removed]' : '[deleted]')
-        : h('div.cm-comment-body', richText(comment.body));
+      // Hidden comments still have their text for their author and the moderators.
+      const bodyNode = comment.deleted || (comment.removed && !comment.body)
+        ? h('p.muted.cm-comment-body', comment.removed ? '[hidden]' : '[deleted]')
+        : [h('div.cm-comment-body', richText(comment.body)),
+          comment.removed ? h('p.fine', 'Hidden by the moderators. Only you and the moderators can see this.') : null];
       mount(el, meta, collapsed ? null : [bodyNode, h('div.cm-comment-actions', actions), replyHost, children], collapsed ? h('div.cm-comment-actions', actions.at(-1)) : null);
     };
+    async function hide() {
+      try {
+        const res = await api.patch(`communities/${enc(c.name)}/threads/${thread.id}/comments/${comment.id}`, { removed: !comment.removed });
+        bumpCount(res.comment.removed ? -1 : 1);
+        Object.assign(comment, res.comment);
+        toast(comment.removed ? 'Hidden.' : 'Unhidden.');
+        paint();
+      } catch (err) { toastError(err); }
+    }
     function reply() {
       if (replyHost.firstChild) return replyHost.querySelector('textarea')?.focus();
       const form = commentForm({
@@ -704,19 +705,6 @@ async function threadPage(ctx, name, threadId) {
       const bodyEl = el.querySelector(':scope > .cm-comment-body');
       bodyEl?.replaceWith(form);
       form.focusInput();
-    }
-    async function remove() {
-      const mine = comment.author?.id === store.me?.id;
-      if (!(await confirm(mine ? 'Delete this comment?' : 'Remove this comment?', { title: mine ? 'Delete comment' : 'Remove comment', ok: mine ? 'Delete' : 'Remove' }))) return;
-      try {
-        await api.del(`communities/${enc(c.name)}/threads/${thread.id}/comments/${comment.id}`);
-        toast(mine ? 'Deleted.' : 'Removed.');
-        if (mine) { comment.deleted = true; comment.author = null; } else comment.removed = true;
-        comment.body = '';
-        comment.viewer = { can_edit: false, can_delete: false };
-        if (!comment.children.length) el.remove(); else paint();
-        bumpCount(-1);
-      } catch (err) { toastError(err); }
     }
     paint();
     return el;

@@ -6,12 +6,10 @@
 //   PATCH  /profile                         { headline?, open_to_work? } -> { headline, open_to_work }
 //   POST   /experiences                     { company_id?, company_name, title, employment_type, location, start_month, end_month?, description } -> 201 { experience }
 //   PATCH  /experiences/:id                 same fields, all optional -> { experience }
-//   DELETE /experiences/:id                 -> { ok }
 //   PUT    /experiences/order               { ids: [...] } -> { ok }   (every one of your ids, in the new order)
 //   POST   /educations                      { school, degree, field, start_year?, end_year?, description } -> 201 { education }
-//   PATCH  /educations/:id, DELETE /educations/:id, PUT /educations/order { ids }
+//   PATCH  /educations/:id, PUT /educations/order { ids }
 //   POST   /skills                          { name } -> 201 { skill }
-//   DELETE /skills/:name                    -> { ok }
 //   PUT    /skills/order                    { names: [...] } -> { ok }
 //   PUT    /endorse/:handle/:skill          DELETE ... -> { skill: { name, endorsement_count, endorsed } }
 //                                           (friends, or people who follow each other, only)
@@ -21,13 +19,11 @@
 //   DELETE /recommendations/requests/:handle -> { ok }   (decline a request from :handle)
 //   PUT    /recommendations/:handle         { relationship, body } -> { recommendation }   (write or edit yours about :handle)
 //   PATCH  /recommendations/:id             { status: 'visible' | 'hidden' } -> { recommendation }   (the person it is about)
-//   DELETE /recommendations/:id             -> { ok }   (author or subject)
 // Companies
 //   GET    /companies                       ?q&mine=1&cursor -> { items: Company[], next }
 //   POST   /companies                       { name, slug?, description, website, industry, size, location, logo_media_id? } -> 201 { company }
 //   GET    /companies/:slug                 -> { company, employees: [UserCard + { headline, title }], admins: UserCard[] }
 //   PATCH  /companies/:slug                 admins: same fields -> { company }
-//   DELETE /companies/:slug                 owner -> { ok }
 //   PUT    /companies/:slug/follow          DELETE ... -> { is_following, follower_count }
 //   PUT    /companies/:slug/admins/:handle  admins -> { admins }
 //   DELETE /companies/:slug/admins/:handle  owner, or an admin removing themselves -> { admins }
@@ -38,7 +34,6 @@
 //   GET    /jobs/:id                        -> { job: Job }
 //   PATCH  /jobs/:id                        managers: same fields + status open|closed -> { job }
 //   POST   /jobs/:id/close                  managers -> { job }
-//   DELETE /jobs/:id                        managers -> { ok }
 //   PUT    /jobs/:id/save                   DELETE ... -> { saved }
 //   POST   /jobs/:id/apply                  { note } -> 201 { application }   (once; 409 after that)
 //   DELETE /jobs/:id/apply                  withdraw -> { ok }
@@ -55,7 +50,7 @@
 
 import { Hono } from 'hono';
 import type { AppEnv, Ctx, Env, SessionUser } from '../env';
-import { body, cursor, fail, limit, page, placeholders, requireUser, str } from '../lib/http';
+import { body, cursor, fail, limit, page, requireUser, str } from '../lib/http';
 import { newId } from '../lib/ids';
 import { deleteUnusedMedia, getMedia } from '../lib/media';
 import { notify, notifyStatement } from '../lib/notify';
@@ -346,13 +341,6 @@ careers.patch('/experiences/:id', async c => {
   return c.json({ experience: experienceJson(row!) });
 });
 
-careers.delete('/experiences/:id', async c => {
-  const me = requireUser(c);
-  const existing = await ownExperience(c, me);
-  await c.env.DB.prepare('DELETE FROM experiences WHERE id = ? AND user_id = ?').bind(existing.id, me.id).run();
-  return c.json({ ok: true });
-});
-
 /** PUT /:section/order — every id (or skill name) the user has, in the new order. */
 async function reorder(c: Ctx, table: 'experiences' | 'educations' | 'skills') {
   const me = requireUser(c);
@@ -425,13 +413,6 @@ careers.patch('/educations/:id', async c => {
   return c.json({ education: educationJson(row!) });
 });
 
-careers.delete('/educations/:id', async c => {
-  const me = requireUser(c);
-  const existing = await ownEducation(c, me);
-  await c.env.DB.prepare('DELETE FROM educations WHERE id = ? AND user_id = ?').bind(existing.id, me.id).run();
-  return c.json({ ok: true });
-});
-
 // -- Skills and endorsements -----------------------------------------------
 
 const skillName = (value: unknown) => str(value, 50).replace(/\s+/g, ' ');
@@ -451,17 +432,6 @@ careers.post('/skills', async c => {
 });
 
 careers.put('/skills/order', c => reorder(c, 'skills'));
-
-careers.delete('/skills/:name', async c => {
-  const me = requireUser(c);
-  const name = skillName(c.req.param('name'));
-  const res = await c.env.DB.batch([
-    c.env.DB.prepare('DELETE FROM endorsements WHERE user_id = ? AND skill = ?').bind(me.id, name),
-    c.env.DB.prepare('DELETE FROM skills WHERE user_id = ? AND name = ?').bind(me.id, name),
-  ]);
-  if (!res[1].meta.changes) fail(404, 'Skill not found.');
-  return c.json({ ok: true });
-});
 
 async function endorse(c: Ctx, on: boolean) {
   const { me, them } = await connectedPerson(c, 'You cannot endorse yourself.',
@@ -570,14 +540,6 @@ careers.patch('/recommendations/:id', async c => {
   if (!res.meta.changes) fail(404, 'Recommendation not found.');
   const row = await c.env.DB.prepare(`${recommendationSelect} WHERE r.id = ?`).bind(c.req.param('id')).first<RecommendationRow>();
   return c.json({ recommendation: recommendationJson(row!) });
-});
-
-careers.delete('/recommendations/:id', async c => {
-  const me = requireUser(c);
-  const res = await c.env.DB.prepare('DELETE FROM recommendations WHERE id = ? AND (user_id = ? OR author_id = ?)')
-    .bind(c.req.param('id'), me.id, me.id).run();
-  if (!res.meta.changes) fail(404, 'Recommendation not found.');
-  return c.json({ ok: true });
 });
 
 // -- Companies -------------------------------------------------------------
@@ -766,15 +728,6 @@ careers.patch('/companies/:slug', async c => {
   }
   if (oldLogo) await dropLogo(c.env, oldLogo);
   return c.json({ company: await companyById(c.env, co.id, me.id) });
-});
-
-careers.delete('/companies/:slug', async c => {
-  const me = requireUser(c);
-  const co = await loadCompany(c);
-  if (co.owner_id !== me.id) fail(403, 'Only the owner can delete this page.');
-  await c.env.DB.prepare('DELETE FROM companies WHERE id = ?').bind(co.id).run();
-  await dropLogo(c.env, co.logo_media_id);
-  return c.json({ ok: true });
 });
 
 careers.put('/companies/:slug/follow', async c => {
@@ -1002,12 +955,6 @@ careers.post('/jobs/:id/close', async c => {
   await c.env.DB.prepare(`UPDATE jobs SET status = 'closed', closed_at = ?, updated_at = ? WHERE id = ? AND status = 'open'`).bind(now, now, job.id).run();
   if (job.status === 'open') track(c, 'social_job_closed', { job_id: job.id, applicant_count: job.applicant_count });
   return c.json({ job: await jobJson(c.env, await loadJob(c)) });
-});
-
-careers.delete('/jobs/:id', async c => {
-  const { job } = await manageJob(c);
-  await c.env.DB.prepare('DELETE FROM jobs WHERE id = ?').bind(job.id).run();
-  return c.json({ ok: true });
 });
 
 careers.put('/jobs/:id/save', async c => {

@@ -12,13 +12,11 @@
 //   GET    /searches                  -> { items: SavedSearch[] }
 //   POST   /searches                  { q?, category?, condition?, min_price?, max_price?, location? } -> 201 { search }
 //   PATCH  /searches/:id              same fields -> { search }
-//   DELETE /searches/:id              -> { ok }
 //   GET    /sellers/:handle           -> { seller: UserCard, rating, listing_count, sold_count, reviews: Review[] }
 //                                     (listings: GET /?seller=<handle>&include_sold=1)
 //   GET    /:id                       -> { listing: Listing }   (counts one view per viewer per day; not the seller's)
 //   PATCH  /:id                       seller: any create fields -> { listing }   (photo_ids replaces the photos)
 //   PUT    /:id/photos                seller: { ids: [...] } (new order, may add or drop) -> { listing }
-//   DELETE /:id                       seller -> { ok }
 //   PUT    /:id/save, DELETE /:id/save -> { saved, save_count }
 //   POST   /:id/status                seller: { status: available|pending|sold, buyer?: handle|null } -> { listing }
 //                                     (the buyer must have made an offer or messaged the seller; locked once reviewed)
@@ -569,13 +567,6 @@ marketplace.patch('/searches/:id', async c => {
   return c.json({ search: searchJson({ ...existing, ...s }) });
 });
 
-marketplace.delete('/searches/:id', async c => {
-  const user = requireUser(c);
-  const res = await c.env.DB.prepare('DELETE FROM marketplace_searches WHERE id = ? AND user_id = ?').bind(c.req.param('id'), user.id).run();
-  if (!res.meta.changes) fail(404, 'Saved search not found.');
-  return c.json({ ok: true });
-});
-
 marketplace.get('/sellers/:handle', async c => {
   const viewer = c.get('user');
   const seller = await userByHandle(c.env, c.req.param('handle'));
@@ -658,22 +649,6 @@ marketplace.put('/:id/photos', async c => {
   ]);
   await deleteUnusedMedia(c.env, results.map(r => r.media_id).filter(id => !photos.includes(id)));
   return c.json({ listing: await listingOr404(c.env, row.id, user) });
-});
-
-marketplace.delete('/:id', async c => {
-  const user = requireUser(c);
-  const row = await ownListing(c, user);
-  const { results } = await c.env.DB.prepare('SELECT media_id FROM marketplace_photos WHERE listing_id = ?').bind(row.id).all<{ media_id: string }>();
-  const now = Date.now();
-  await c.env.DB.batch([
-    c.env.DB.prepare('UPDATE marketplace_listings SET deleted_at = ?, updated_at = ?, save_count = 0 WHERE id = ?').bind(now, now, row.id),
-    c.env.DB.prepare('DELETE FROM marketplace_saves WHERE listing_id = ?').bind(row.id),
-    c.env.DB.prepare('DELETE FROM marketplace_views WHERE listing_id = ?').bind(row.id),
-    c.env.DB.prepare(`UPDATE marketplace_offers SET status = 'withdrawn', responded_at = ? WHERE listing_id = ? AND status = 'pending'`).bind(now, row.id),
-  ]);
-  await deleteUnusedMedia(c.env, results.map(r => r.media_id));
-  track(c, 'social_listing_deleted', { listing_id: row.id, status: row.status });
-  return c.json({ ok: true });
 });
 
 // -- Save --------------------------------------------------------------------
