@@ -1,1 +1,27 @@
-/* dating styles */
+/* Dating: one centred card with a fixed 4:5 photo box. Buttons keep the shared style. */
+.dating { box-shadow: none; }
+.dating-stack { max-width: 440px; margin: 0 auto; box-shadow: none; }
+.dating-panel { max-width: 560px; }
+.dating-panel h2 { margin-bottom: 0.5rem; }
+.dating-card { margin: 0 0 1rem; transform: rotate(0.3deg); }
+.dating-photo { position: relative; width: 100%; aspect-ratio: 4 / 5; overflow: hidden; border: 2px inset var(--sb-inset); background: var(--sb-bg); }
+.dating-photo img { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; display: block; object-fit: fill; user-select: none; }
+.dating-who { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 12px 0 4px; box-shadow: none; }
+.dating-name { margin: 0; font-size: 1.8rem; }
+.dating-distance { margin: 0; }
+.dating-bio { margin: 0 0 10px; }
+.dating-prompt { border-top: 1px dashed #000; padding: 8px 0 2px; box-shadow: none; }
+:root[data-theme='dark'] .dating-prompt { border-top-color: var(--sb-hairline); }
+.dating-prompt p { margin: 0 0 4px; }
+.dating-prompt-q { font-weight: 700; }
+.dating-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin: 4px 0 10px; box-shadow: none; }
+.dating-stack .dating-actions button { flex: 1 1 0; min-width: 0; }
+.dating-intro .dating-actions { justify-content: flex-start; }
+.dating-keys { text-align: center; margin: 0; }
+.dating-finding { min-height: 180px; display: flex; align-items: center; justify-content: center; }
+@media (max-width: 480px) {
+  .dating-name { font-size: 1.5rem; }
+}
+@media (hover: none) {
+  .dating-keys { display: none; }
+}
