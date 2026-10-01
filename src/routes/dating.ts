@@ -12,7 +12,7 @@
 //
 // Every POST returns 403 "You no longer have access to Dating." once you are banned.
 //
-// Card: { name, age, distance, bio, prompts: [{ prompt, answer }], image_url }
+// Card: { name: 'Garlic bread', image_url } and nothing else.
 
 import { Hono } from 'hono';
 import type { AppEnv, Env } from '../env';
@@ -25,19 +25,11 @@ const BANNED = 'You no longer have access to Dating.';
 
 const CARD = {
   name: 'Garlic bread',
-  age: null,
-  distance: 'Nearby',
-  bio: 'Warm, golden, a little bit extra.',
-  prompts: [
-    { prompt: 'My ideal Sunday', answer: 'Next to a bowl of pasta.' },
-    { prompt: 'I get along best with', answer: 'People who share.' },
-    { prompt: 'You should know', answer: 'I am better with butter.' },
-  ],
   image_url: '/img/garlic-bread.jpg',
 } as const;
 
 /** A fresh copy every time, so nothing downstream can change the original. */
-const card = () => ({ ...CARD, prompts: CARD.prompts.map(p => ({ ...p })) });
+const card = () => ({ ...CARD });
 
 interface State { banned: boolean; started: boolean; interested_count: number }
 

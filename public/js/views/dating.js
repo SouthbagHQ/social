@@ -45,14 +45,8 @@ export default async function view(ctx) {
 
   function cardNode(card) {
     return h('article.south-card.dating-card', { 'aria-label': card.name },
-      h('div.dating-photo', h('img', { src: card.image_url, alt: card.name, width: 1080, height: 1350, draggable: false })),
-      h('div.dating-who',
-        h('h2.dating-name', card.age ? `${card.name}, ${card.age}` : card.name),
-        card.distance ? h('p.dating-distance.muted', card.distance) : null),
-      card.bio ? h('p.dating-bio', card.bio) : null,
-      (card.prompts || []).map(p => h('div.dating-prompt',
-        h('p.dating-prompt-q.fine', p.prompt),
-        h('p.dating-prompt-a', p.answer))));
+      h('div.dating-photo', h('img', { src: card.image_url, alt: card.name, width: 964, height: 1350, draggable: false })),
+      h('h2.dating-name', card.name));
   }
 
   function renderCard(card) {

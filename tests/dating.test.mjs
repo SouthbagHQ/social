@@ -12,17 +12,12 @@ const BANNED = 'You no longer have access to Dating.';
 
 const EXPECTED_CARD = {
   name: 'Garlic bread',
-  age: null,
   image_url: '/img/garlic-bread.jpg',
 };
 
+/** The card is exactly the name and the photo, nothing else. */
 function assertGarlicBread(card) {
-  assert.ok(card, 'card present');
-  for (const [k, v] of Object.entries(EXPECTED_CARD)) assert.equal(card[k], v, k);
-  assert.equal(typeof card.distance, 'string');
-  assert.equal(typeof card.bio, 'string');
-  assert.ok(Array.isArray(card.prompts) && card.prompts.length >= 2 && card.prompts.length <= 3);
-  for (const p of card.prompts) assert.ok(typeof p.prompt === 'string' && typeof p.answer === 'string');
+  assert.deepEqual(card, EXPECTED_CARD);
 }
 
 /** Every seeded user's id, handle and name, as they appear through the API. */
