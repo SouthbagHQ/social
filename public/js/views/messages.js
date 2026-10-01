@@ -11,10 +11,16 @@
 //   /messages?share=<postId> open the "New message" dialog to send that post to someone
 //
 // Free plan: there is no push, so an open conversation polls /api/messages/:id/poll. See POLL below.
+//
+// Streaks (src/routes/streaks.ts): one-to-one conversations carry `streak` ({ current, longest,
+// at_risk, completed_today } or null). The list and the header show "Streak: 12 days" (Southbag blue
+// with ", ends tonight" while today hasn't counted yet), a "Streaks" section tops the list, and the
+// chat gets a "Streak extended to 13 days." line when the send response or a poll shows today count.
+// Styles for those live in public/css/streaks.css.
 
 import { api } from '../api.js';
 import { h, mount } from '../dom.js';
-import { fullDate, timeAgo } from '../format.js';
+import { fullDate, plural, timeAgo } from '../format.js';
 import { store } from '../store.js';
 import { confirm, dialog, empty, errorBox, lightbox, loading, menu, promptDialog, toast, toastError } from '../ui.js';
 import { pickFiles, uploadFile } from '../upload.js';
@@ -34,6 +40,10 @@ const SUPPORT_AVATAR = '/img/s-256.png';
 
 // The conversation list survives re-renders (back/forward re-runs this view), so it paints instantly.
 const cache = { items: null, next: null, error: null };
+// GET /api/streaks, for the "Streaks" section. Loaded with the view and when a streak extends; the
+// conversation list (refreshed every 30 s) keeps the numbers current in between.
+const streakCache = { items: null };
+const STREAKS_SHOWN = 5;
 
 const phoneQuery = matchMedia('(max-width: 640px)');
 
@@ -86,8 +96,17 @@ function excerpt(item) {
 
 const itemFromConversation = c => ({
   id: c.id, title: c.title, is_group: c.is_group, is_support: c.is_support, members: c.members,
-  last_message: null, unread: false, last_message_at: c.last_message_at,
+  last_message: null, unread: false, last_message_at: c.last_message_at, streak: c.streak ?? null,
 });
+
+/** "Streak: 12 days", or "Streak: 12 days, ends tonight" while today hasn't counted yet. */
+const streakText = s => `Streak: ${plural(s.current, 'day')}${s.at_risk ? ', ends tonight' : ''}`;
+function streakLabel(s, cls = '') {
+  if (!s || !s.current) return null;
+  return h(`span.streak-label${cls ? `.${cls}` : ''}`, { class: { 'at-risk': s.at_risk } }, streakText(s));
+}
+const sameStreak = (a, b) => (a?.current ?? 0) === (b?.current ?? 0) && Boolean(a?.at_risk) === Boolean(b?.at_risk)
+  && (a?.longest ?? 0) === (b?.longest ?? 0) && Boolean(a?.completed_today) === Boolean(b?.completed_today);
 
 function lastMessageSummary(m) {
   return { body: (m.body || '').slice(0, 140), sender_id: m.sender?.id ?? null, created_at: m.created_at, kind: m.post || m.post_unavailable ? 'post' : m.media ? 'media' : 'text' };
@@ -178,7 +197,35 @@ export default async function view(ctx) {
           }, convTitle(item)),
           item.unread ? h('span.dm-unread', 'Unread') : null,
           h('time.dm-item-time', { datetime: new Date(item.last_message_at).toISOString(), title: fullDate(item.last_message_at) }, timeAgo(item.last_message_at))),
+        item.streak ? h('div.dm-item-streak', streakLabel(item.streak)) : null,
         h('div.dm-item-excerpt', excerpt(item))));
+  }
+
+  /** Top streaks, with the numbers from the conversation list where it has them (it's fresher). */
+  function streaksSection() {
+    if (!streakCache.items) return null;
+    const live = streakCache.items.map(s => {
+      const item = s.conversation_id ? cache.items?.find(i => i.id === s.conversation_id) : null;
+      if (!item || !('streak' in item)) return s;
+      return item.streak ? { ...s, ...item.streak } : null;
+    }).filter(s => s && s.current > 0).sort((a, b) => b.current - a.current).slice(0, STREAKS_SHOWN);
+    if (!live.length) return null;
+    return h('section.dm-streaks', { 'aria-labelledby': 'dm-streaks-title' },
+      h('h3.dm-streaks-title', { id: 'dm-streaks-title' }, 'Streaks'),
+      h('ul.dm-streak-list', live.map(s => h('li.dm-streak', { class: { active: s.conversation_id === openId } },
+        h('a.dm-streak-name', {
+          href: s.conversation_id ? `/messages/${s.conversation_id}` : `/messages?to=${encodeURIComponent(s.user.handle)}`,
+          onclick: e => { if (s.conversation_id) openFromList(e, s.conversation_id); },
+        }, s.user.name),
+        h('span.dm-streak-meta', streakLabel(s), h('span.dm-streak-longest', `Longest: ${plural(s.longest, 'day')}`))))));
+  }
+
+  async function refreshStreaks() {
+    try {
+      const data = await api.get('streaks', {}, { signal: ctx.signal });
+      streakCache.items = data.items || [];
+      renderList();
+    } catch { /* the section is optional; the list still shows each streak */ }
   }
 
   function supportEntry() {
@@ -207,6 +254,7 @@ export default async function view(ctx) {
     mount(listPane,
       h('div.dm-list-head', h('h2', 'Conversations')),
       h('div.dm-list-scroll',
+        streaksSection(),
         h('ul.dm-items.pinned', supportEntry()),
         body,
         cache.next ? h('div.dm-pad.center', h('button.btn-small', { type: 'button', onclick: loadMoreList }, 'Load more')) : null));
@@ -309,7 +357,20 @@ export default async function view(ctx) {
           renderList();
         } else if (!item) store.refresh();
       },
-      onConversation: c => { upsertItem({ ...itemFromConversation(c), last_message_at: c.last_message_at }, { keepExisting: false }); renderList(); ctx.title(convTitle(c)); },
+      onConversation: c => {
+        // Keep the list's excerpt and unread state; the conversation payload doesn't carry them.
+        const { last_message: _m, unread: _u, ...fresh } = itemFromConversation(c);
+        const existing = cache.items?.find(i => i.id === c.id);
+        upsertItem(existing ? fresh : { ...fresh, last_message: null, unread: false }, { keepExisting: false });
+        renderList();
+        ctx.title(convTitle(c));
+      },
+      onStreak: (streak, { extended }) => {
+        const item = cache.items?.find(i => i.id === id);
+        if (item) item.streak = streak;
+        renderList();
+        if (extended) refreshStreaks();
+      },
       onLeft: () => {
         if (cache.items) cache.items = cache.items.filter(i => i.id !== id);
         history.pushState({}, '', '/messages');
@@ -461,6 +522,7 @@ export default async function view(ctx) {
   renderList();
   openConversation(openId);
   refreshList();
+  refreshStreaks();
 
   const listTimer = setInterval(() => {
     const listVisible = !(phoneQuery.matches && openId);
@@ -501,7 +563,7 @@ export default async function view(ctx) {
 
 // -- One open conversation -----------------------------------------------
 
-function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLeft }) {
+function conversationPane(id, { onBack, onMessage, onRead, onConversation, onStreak, onLeft }) {
   const controller = new AbortController();
   let conv = null;
   let server = []; // confirmed messages, oldest -> newest
@@ -512,6 +574,7 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLef
   let pollTimer = null, sending = 0, lastActivity = Date.now(), wantRead = false, tempSeq = 0;
   const rows = new Map();
   const localUrls = [];
+  const streakNotes = []; // [{ afterId, text }]: "Streak extended to 13 days." after the message that did it
 
   const head = h('header.dm-head');
   const olderStatus = h('div.dm-older');
@@ -547,7 +610,7 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLef
     } else if (!conv.is_group && conv.members[0]) {
       const p = conv.members[0];
       title = h('h2.dm-title', h('a', { href: `/@${p.handle}` }, p.name));
-      sub = `@${p.handle}`;
+      sub = [`@${p.handle}`, conv.streak?.current ? [' ', streakLabel(conv.streak, 'dm-head-streak')] : null];
     } else {
       title = h('h2.dm-title', convTitle(conv));
       sub = `${conv.member_count} ${conv.member_count === 1 ? 'member' : 'members'}`;
@@ -656,12 +719,31 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLef
         row.classList.toggle('last', !nxt || !sameGroup(m, nxt));
       }
       out.push(row);
+      for (const note of streakNotes) if (note.afterId === m.id) out.push(h('div.dm-note.dm-streak-note', { role: 'status' }, note.text));
       if (m === lastMine && !pending.length) { seenEl.textContent = seenText(m); if (seenEl.textContent) out.push(seenEl); }
     });
     if (!msgs.length) out.push(h('div.dm-empty', h('p', 'No messages.')));
     list.replaceChildren(...out);
     mount(olderStatus, loadingOlder ? loading('Loading older messages')
       : !next && server.length ? h('p', 'Start of conversation.') : null);
+  }
+
+  /**
+   * A new streak state from a send response or a poll. `extended` (the send response says so; for a
+   * poll, today has just started counting) adds a line to the chat after `afterId`.
+   */
+  function updateStreak(next, afterId, extended) {
+    if (!conv || conv.is_group || conv.is_support) return;
+    const before = conv.streak || null;
+    if (extended === undefined) extended = Boolean(next?.completed_today && !before?.completed_today);
+    conv.streak = next ? { current: next.current, longest: next.longest, last_day: next.last_day, at_risk: next.at_risk, completed_today: next.completed_today } : null;
+    if (extended && next && afterId) {
+      streakNotes.push({ afterId, text: next.current > 1 ? `Streak extended to ${plural(next.current, 'day')}.` : 'Streak started.' });
+    }
+    if (!sameStreak(before, conv.streak) || extended) {
+      renderHead();
+      onStreak(conv.streak, { extended: Boolean(extended) });
+    }
   }
 
   function addServer(items) {
@@ -752,6 +834,11 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLef
       const wasNear = nearBottom();
       const fresh = addServer(data.items);
       conv.read = data.read || conv.read;
+      if ('streak' in data) {
+        const had = streakNotes.length;
+        updateStreak(data.streak, server.at(-1)?.id);
+        if (streakNotes.length > had && !fresh.length) { render(); if (wasNear) scrollToBottom(true); }
+      }
       if (data.title !== undefined && data.title !== conv.title && conv.is_group) { conv.title = data.title; renderHead(); onConversation(conv); }
       if (fresh.length) {
         lastActivity = Date.now();
@@ -824,6 +911,7 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onLef
       const sent = res.message;
       if (m.localMedia && sent.media) sent.media = { ...sent.media, url: m.localMedia.url };
       addServer([sent]);
+      if ('streak' in res) updateStreak(res.streak, sent.id, Boolean(res.streak?.extended));
       if (res.reply) {
         // Southbag Support: show "Typing" for a moment, then the reply.
         if (res.reply.id > after) after = res.reply.id;
