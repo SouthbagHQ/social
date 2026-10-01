@@ -21,7 +21,7 @@ import { Hono } from 'hono';
 import type { AppEnv, Ctx, Env } from '../env';
 import { body, fail, placeholders, requireUser } from '../lib/http';
 import { newId } from '../lib/ids';
-import { track } from '../lib/palantir';
+import { track, trackJob } from '../lib/palantir';
 import { userByHandle, userCard, userCardColumns, type UserCard, type UserRow } from '../lib/users';
 
 const streaks = new Hono<AppEnv>();
@@ -148,14 +148,6 @@ export function trackStreak(c: Ctx, streak: (StreakJson & { extended: boolean })
   if (streak?.extended) track(c, 'social_streak_extended', { days: streak.current, longest: streak.longest });
 }
 
-// The cron has no request, so no Hono context for track(); pass the bare minimum it could use.
-// TODO(palantir): give lib/palantir.ts an env-based variant for scheduled jobs.
-function trackFromCron(env: Env, event: string, properties: Record<string, unknown>) {
-  try {
-    track({ env, get: () => null, var: { user: null } } as unknown as Ctx, event, properties);
-  } catch { /* analytics never breaks the cron */ }
-}
-
 // -- Routes -------------------------------------------------------------------
 
 /** The newest one-to-one conversation between the viewer (?1) and `otherCol`, as a SQL subquery. */
@@ -214,7 +206,7 @@ streaks.get('/with/:handle', async c => {
  * streak who hasn't messaged the other today, once per streak per day (warned_day). Each step handles
  * at most CRON_BATCH streaks per run and costs a fixed handful of queries.
  */
-export async function streaksCron(env: Env, now = Date.now()): Promise<{ lost: number; warned: number }> {
+export async function streaksCron(env: Env, now = Date.now(), opts: { track?: boolean } = {}): Promise<{ lost: number; warned: number }> {
   const today = sydneyDay(now);
   const yesterday = addDays(today, -1);
 
@@ -226,7 +218,8 @@ export async function streaksCron(env: Env, now = Date.now()): Promise<{ lost: n
     // A message since the SELECT restarts the streak (and moves last_day), so check again.
     await env.DB.prepare(`UPDATE streaks SET current = 0, updated_at = ? WHERE rowid IN (${placeholders(lost.length)}) AND last_day < ?`)
       .bind(now, ...lost.map(r => r.rid), yesterday).run();
-    for (const r of lost) trackFromCron(env, 'social_streak_lost', { days: r.current, user_a: r.user_a, user_b: r.user_b });
+    await Promise.all(lost.map(r => trackJob(env, r.user_a, 'social_streak_lost',
+      { days: r.current, other_user_id: r.user_b }, { send: opts.track !== false })));
   }
 
   // 2. "Ends at midnight" warnings, from 6 pm.
@@ -269,7 +262,7 @@ streaks.post('/_test', async c => {
   const user = requireUser(c);
   const input = await body<{ op?: unknown; handle?: unknown; now?: unknown }>(c);
   const now = typeof input.now === 'number' && Number.isFinite(input.now) ? input.now : Date.now();
-  if (input.op === 'cron') return c.json(await streaksCron(c.env, now));
+  if (input.op === 'cron') return c.json(await streaksCron(c.env, now, { track: false }));
   if (input.op === 'day') return c.json({ day: sydneyDay(now), hour: sydneyHour(now) });
 
   const other = typeof input.handle === 'string' ? await userByHandle(c.env, input.handle) : null;

@@ -174,6 +174,19 @@ export function tracker(request: Request, env: Partial<Env>, ctx?: Waiter | null
   };
 }
 
+/**
+ * Records an event from a scheduled job (no request, no browser session). `send: false` keeps the
+ * job's localhost test endpoint quiet; `node --test` never sends either.
+ */
+export function trackJob(env: Partial<Env>, distinctId: string, event: string, properties: Props = {},
+  options: { send?: boolean; waitUntil?: WaitUntil } = {}): Promise<void> {
+  const vars = env as Record<string, unknown>;
+  const testing = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.NODE_TEST_CONTEXT
+    || vars.NODE_TEST_CONTEXT;
+  const host = options.send === false || testing ? null : PALANTIR_HOST;
+  return capture(event, distinctId, { ...properties, source: 'cron' }, { host, waitUntil: options.waitUntil }).catch(() => {});
+}
+
 /** Hono's executionCtx getter throws outside a Worker; analytics must never break a request. */
 function executionCtx(c: Ctx): Waiter | null {
   try { return c.executionCtx; } catch { return null; }
