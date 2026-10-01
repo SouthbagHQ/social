@@ -3,7 +3,7 @@
 import { api } from '../api.js';
 import { h, mount } from '../dom.js';
 import { navigate } from '../router.js';
-import { shake, toast, toastError } from '../ui.js';
+import { toast, toastError } from '../ui.js';
 import { pickFiles, uploadFile } from '../upload.js';
 
 export const PRIVACY = {
@@ -102,7 +102,6 @@ export default function groupNewView(ctx) {
       toast('Group created.');
       navigate(`/g/${group.slug}`);
     } catch (err) {
-      shake(form);
       toastError(err);
       submit.disabled = false;
     }

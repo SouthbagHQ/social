@@ -8,7 +8,7 @@ import { api } from '../api.js';
 import { track } from '../analytics.js';
 import { h, mount } from '../dom.js';
 import { login, store } from '../store.js';
-import { dialog, errorBox, loading, shake, toast, toastError } from '../ui.js';
+import { dialog, errorBox, loading, toast, toastError } from '../ui.js';
 
 export const field = (label, input, hint) =>
   h('label.field', h('span', label), input, hint ? h('small.fine', hint) : null);
@@ -31,7 +31,6 @@ export function formDialog({ title, content, ok = 'Save', onSubmit, wide = false
             close(result ?? true);
           } catch (err) {
             toastError(err);
-            shake(form);
             submit.disabled = false;
           }
         },
@@ -106,7 +105,7 @@ export function saveToBoard({ post = null, pin = null } = {}) {
           try {
             const { board } = await api.post('boards', { title: title.value, visibility: secret.checked ? 'secret' : 'public' });
             await save(board, null);
-          } catch (err) { toastError(err); shake(create); }
+          } catch (err) { toastError(err); }
           submit.disabled = false;
         },
       },

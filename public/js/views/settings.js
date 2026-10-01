@@ -6,7 +6,7 @@ import { api } from '../api.js';
 import { h, mount } from '../dom.js';
 import { applyTheme } from '../gags.js';
 import { store } from '../store.js';
-import { shake, toast, toastError } from '../ui.js';
+import { toast, toastError } from '../ui.js';
 import { pickFiles, uploadFile } from '../upload.js';
 import { avatar } from '../components/user.js';
 
@@ -107,7 +107,6 @@ function profileCard(me) {
       await store.refresh();
       toast('Saved.');
     } catch (err) {
-      shake(form);
       toastError(err);
     }
     save.disabled = false;

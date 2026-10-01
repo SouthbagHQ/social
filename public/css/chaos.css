@@ -1,5 +1,5 @@
-/* Jank (public/js/chaos.js): splash, cookie banner, help strip, ticker, and motion nobody asked
-   for. Like the rest of Southbag, it ignores prefers-reduced-motion. */
+/* Jank (public/js/chaos.js): splash, cookie banner, help strip, ticker and a spinning loading word.
+   Like the rest of Southbag, it ignores prefers-reduced-motion. */
 
 /* ── Splash (Banking's loader) ─────────────────────────────────────── */
 .splash { position: fixed; inset: 0; z-index: 5000; display: grid; place-content: center; justify-items: center; gap: 14px; padding: 16px; background: #000; color: #eee; transition: opacity 0.5s ease-out; }
@@ -29,26 +29,8 @@ html.splash-open, html.splash-open body { overflow: hidden; }
 /* Service Table's spinner: the word spins, around its left edge. */
 .loading .spin { display: inline-block; transform-origin: left center; }
 
-/* ── Motion nobody asked for ───────────────────────────────────────── */
-@keyframes chaos-slide-in { from { translate: -120% 0; rotate: -6deg; opacity: 0; } to { translate: 0 0; rotate: 0deg; opacity: 1; } }
-@keyframes chaos-jitter { 0%, 100% { translate: 0 0; } 25% { translate: -1px 1px; } 50% { translate: 1px -1px; } 75% { translate: -1px -1px; } }
-@keyframes chaos-boing { 0% { scale: 1; } 30% { scale: 1.25 0.8; } 55% { scale: 0.88 1.12; } 80% { scale: 1.05 0.97; } 100% { scale: 1; } }
-@keyframes chaos-sway { 0%, 100% { rotate: 0deg; } 50% { rotate: 1.4deg; } }
-@keyframes chaos-breathe { 0%, 100% { scale: 1 1; } 50% { scale: 1.06 0.97; } }
-@keyframes chaos-drop { from { translate: 0 -14px; rotate: -2deg; opacity: 0; } to { translate: 0 0; rotate: 0deg; opacity: 1; } }
+/* ── Motion ────────────────────────────────────────────────────────── */
 @keyframes chaos-ticker { to { transform: translateX(-100%); } }
-
-/* The sidebar links arrive one at a time, every page. */
-.south-nav li { animation: chaos-slide-in 0.7s ease-out both; }
-.south-nav li:nth-child(2n) { animation-delay: 0.05s; } .south-nav li:nth-child(3n) { animation-delay: 0.1s; }
-.south-nav li:nth-child(4n) { animation-delay: 0.15s; } .south-nav li:nth-child(5n) { animation-delay: 0.2s; }
-/* Buttons jitter while hovered and bounce when pressed. (translate/scale, so they stack with transforms.) */
-:is(button, .btn, .btn-large, .btn-small):hover { animation: chaos-jitter 0.18s linear infinite; }
-.boing { animation: chaos-boing 0.55s ease-out !important; }
-/* Headings sway, the logo breathes, cards drop in slightly crooked. */
-main h1, main > * > h2:first-child, .dialog-title { animation: chaos-sway 6s ease-in-out infinite, ambient-text 19s linear infinite; }
-.site-header .brand img { animation: chaos-breathe 7s ease-in-out infinite; transform-origin: left center; }
-main .south-card, main article { animation: chaos-drop 0.8s ease-out both; }
 .ticker-track { animation: chaos-ticker 60s linear infinite; }
 .help-strip button:nth-child(3) { animation: quiet-blink 2.4s linear infinite; }
 .loading .spin { animation: spin 1.4s linear infinite; }

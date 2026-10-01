@@ -12,7 +12,7 @@ import { api } from '../api.js';
 import { h, mount } from '../dom.js';
 import { navigate } from '../router.js';
 import { login, store } from '../store.js';
-import { dialog, shake, toast, toastError } from '../ui.js';
+import { dialog, toast, toastError } from '../ui.js';
 import { kindOf, pickFiles, uploadFile } from '../upload.js';
 import { avatar } from './user.js';
 
@@ -227,7 +227,6 @@ export function openStoryComposer() {
           const seconds = await videoDuration(url);
           if (seconds == null || seconds > STORY_MAX_SECONDS + 0.5) {
             URL.revokeObjectURL(url);
-            shake(form);
             return toast(seconds == null ? 'Could not read the video length. Stories are 60 seconds or less.'
               : `That video is ${Math.round(seconds)} seconds. Stories are ${STORY_MAX_SECONDS} seconds or less.`, { error: true });
           }
@@ -265,7 +264,6 @@ export function openStoryComposer() {
           changed();
           close(true);
         } catch (err) {
-          shake(form);
           toastError(err);
           share.disabled = false;
           share.textContent = 'Share story';

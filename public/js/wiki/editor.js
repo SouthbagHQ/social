@@ -5,7 +5,7 @@ import { api } from '../api.js';
 import { h, mount } from '../dom.js';
 import { navigate } from '../router.js';
 import { login } from '../store.js';
-import { loading, shake, tabs, toast, toastError } from '../ui.js';
+import { loading, tabs, toast, toastError } from '../ui.js';
 import { pickFiles, uploadFile } from '../upload.js';
 import { MAIN, ago, canEdit, forgetSpace, pageApi, pagePath, pageTabs, pageTitle, spacePath, userLink, wikiFrame } from './common.js';
 import { linkSlugs, render, titleOf } from './markup.js';
@@ -138,8 +138,8 @@ export function editorView(ctx, spaceSlug, slug) {
     const conflictBox = h('div');
     const form = h('form.wk-editor', { onsubmit: async e => {
       e.preventDefault();
-      if (!textarea.value.trim()) { shake(form); return toast('Write something first.', { error: true }); }
-      if (textarea.value.length > 100000) { shake(form); return toast('Pages are limited to 100,000 characters.', { error: true }); }
+      if (!textarea.value.trim()) return toast('Write something first.', { error: true });
+      if (textarea.value.length > 100000) return toast('Pages are limited to 100,000 characters.', { error: true });
       publish.disabled = true;
       try {
         const res = await api.put(pageApi(space.slug, realSlug), { content: textarea.value, summary: summary.value.trim(), base_revision_id: base });
@@ -150,7 +150,6 @@ export function editorView(ctx, spaceSlug, slug) {
       } catch (err) {
         publish.disabled = false;
         if (err.status === 409) return showConflict(err);
-        shake(form);
         toastError(err);
       }
     } },

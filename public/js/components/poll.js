@@ -10,7 +10,7 @@ import { api } from '../api.js';
 import { h } from '../dom.js';
 import { count, plural } from '../format.js';
 import { login, store } from '../store.js';
-import { shake, toastError } from '../ui.js';
+import { toastError } from '../ui.js';
 
 export const POLL_MAX_OPTIONS = 4;
 export const POLL_OPTION_MAX = 25;
@@ -42,7 +42,6 @@ async function send(post, el, request) {
     post.poll = fresh.poll;
   } catch (err) {
     if (err.status === 409) post.poll.closed = true;
-    shake(el);
     toastError(err);
   }
   repaint(post);

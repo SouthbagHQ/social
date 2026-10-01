@@ -9,7 +9,7 @@ import { h, mount } from '../dom.js';
 import { count, fullDate, plural, timeAgo } from '../format.js';
 import { navigate, refresh } from '../router.js';
 import { login, store } from '../store.js';
-import { confirm, dialog, empty, errorBox, infiniteList, lightbox, menu, promptDialog, refuseDelete, share, shake, tabs, toast, toastError } from '../ui.js';
+import { confirm, dialog, empty, errorBox, infiniteList, lightbox, menu, promptDialog, refuseDelete, share, tabs, toast, toastError } from '../ui.js';
 import { uploadFile } from '../upload.js';
 import { richText } from '../components/post.js';
 import { avatar } from '../components/user.js';
@@ -303,14 +303,14 @@ function createTab(ctx) {
   const form = h('form.south-card.flat.cm-form', { onsubmit: async e => {
     e.preventDefault();
     const value = name.value.trim().replace(/^c\//i, '');
-    if (!NAME_RE.test(value)) { shake(form); return toast('Community names are 3 to 21 letters, numbers or underscores.', { error: true }); }
+    if (!NAME_RE.test(value)) return toast('Community names are 3 to 21 letters, numbers or underscores.', { error: true });
     if (fields.busy()) return toast('Wait for the upload to finish.');
     submit.disabled = true;
     try {
       const { community } = await api.post('communities', { name: value, ...fields.values() });
       toast(`Created c/${community.name}.`);
       navigate(`/c/${community.name}`);
-    } catch (err) { shake(form); toastError(err); submit.disabled = false; }
+    } catch (err) { toastError(err); submit.disabled = false; }
   } },
     h('h2', 'Create community'),
     h('label.field', h('span', 'Name'), name, help, preview),
@@ -505,9 +505,9 @@ function createPost(ctx, community, onPosted) {
   const submit = h('button.btn', { type: 'submit' }, 'Post');
   const form = h('form.cm-create-form', { hidden: true, onsubmit: async e => {
     e.preventDefault();
-    if (!title.value.trim()) { shake(form); return toast('Add a title.', { error: true }); }
+    if (!title.value.trim()) return toast('Add a title.', { error: true });
     if (kind === 'image' && uploading) return toast('Wait for the upload to finish.');
-    if (kind === 'image' && !mediaId) { shake(form); return toast('Add an image.', { error: true }); }
+    if (kind === 'image' && !mediaId) return toast('Add an image.', { error: true });
     submit.disabled = true;
     try {
       const payload = { title: title.value, kind };
@@ -521,7 +521,7 @@ function createPost(ctx, community, onPosted) {
       form.hidden = true;
       open.hidden = false;
       onPosted(thread);
-    } catch (err) { shake(form); toastError(err); }
+    } catch (err) { toastError(err); }
     submit.disabled = false;
   } },
     h('h3', 'Create post'),
@@ -612,9 +612,9 @@ async function threadPage(ctx, name, threadId) {
     const submit = h('button.btn-small', { type: 'submit' }, label);
     const form = h('form.cm-comment-form', { onsubmit: async e => {
       e.preventDefault();
-      if (!input.value.trim()) { shake(form); return; }
+      if (!input.value.trim()) return;
       submit.disabled = true;
-      try { await onDone(input.value, form); input.value = ''; } catch (err) { shake(form); toastError(err); }
+      try { await onDone(input.value, form); input.value = ''; } catch (err) { toastError(err); }
       submit.disabled = false;
     } },
       input,

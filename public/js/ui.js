@@ -1,19 +1,20 @@
-// Shared UI kit: toasts, retro dialogs, menus, empty/loading states, tabs, infinite lists.
+// Shared UI kit: retro dialogs (also used for every message), menus, empty/loading states, tabs,
+// infinite lists.
 
 import { h, mount } from './dom.js';
 
-// ── Toasts ───────────────────────────────────────────────────────────────
-let toastHost;
-/** toast('Posted.') / toast(err, { error: true }) */
-export function toast(message, { error = false, timeout = 4200 } = {}) {
-  if (!toastHost) toastHost = document.body.appendChild(h('div.toasts', { role: 'status', 'aria-live': 'polite' }));
+// ── Messages ─────────────────────────────────────────────────────────────
+// There are no toasts: every message is a dialog with an OK button. The same message is never
+// open twice at once.
+const openMessages = new Set();
+/** toast('Posted.') / toast(err, { error: true }) — opens a dialog. Resolves when it is closed. */
+export async function toast(message, { error = false } = {}) {
   const text = message instanceof Error ? message.message : String(message);
-  const el = h('div.toast', { class: { error } }, text);
-  toastHost.append(el);
-  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 320); }, timeout);
-  return el;
+  if (openMessages.has(text)) return;
+  openMessages.add(text);
+  try { await dialog({ title: error ? 'Error' : 'Southbag Social', body: text }); } finally { openMessages.delete(text); }
 }
-export const toastError = err => toast(err?.message || String(err), { error: true, timeout: 6000 });
+export const toastError = err => toast(err?.message || String(err), { error: true });
 
 // ── Dialogs (Office style: stretched logo, heading, text, grey buttons) ────
 /**
@@ -176,20 +177,12 @@ const isVisible = el => {
 };
 
 // ── Effects ──────────────────────────────────────────────────────────────
-export function shake(el = document.body) {
-  el.classList.remove('shake');
-  void el.offsetWidth;
-  el.classList.add('shake');
-  setTimeout(() => el.classList.remove('shake'), 600);
-}
-
 /**
  * Nothing on Southbag Social can be deleted. Every Delete (and every Remove that would delete
  * something) calls this instead; the API refuses too, with the same words.
  */
 export function refuseDelete() {
-  shake();
-  toast("Deletion isn't available. Kevin knows what you did.", { error: true, timeout: 6000 });
+  toast("Deletion isn't available. Kevin knows what you did.", { error: true });
 }
 
 /** Removed. Kept so older call sites keep working. */

@@ -1,6 +1,6 @@
 // Jank, after Southbag Online Banking, Identity and Service Table (../support): a splash screen,
-// a cookie banner, more help buttons than anyone needs, an announcements ticker, a page that
-// jumps a little while you scroll, and buttons that bounce. None of it is a joke on screen; it is
+// a cookie banner, more help buttons than anyone needs, an announcements ticker, and a page that
+// jumps a little while you scroll. None of it is a joke on screen; it is
 // just a site that was built badly. Everything is once-per-session or harmless, and nothing here
 // stops anyone posting, reading or messaging. Motion lives in css/chaos.css.
 
@@ -112,16 +112,8 @@ export const ticker = () => h('div.ticker', { 'aria-hidden': 'true' },
   h('div.ticker-track', [...announcements, ...announcements].map(line => h('span', line))));
 
 // ── Jank ─────────────────────────────────────────────────────────────────
-// Buttons bounce when pressed, and the page shifts a little now and then while scrolling
-// (Service Table does the same).
+// The page shifts a little now and then while scrolling (Service Table does the same).
 export function jank() {
-  document.addEventListener('click', e => {
-    const btn = e.target.closest?.('button, .btn, .btn-large, .btn-small');
-    if (!btn) return;
-    btn.classList.remove('boing');
-    void btn.offsetWidth;
-    btn.classList.add('boing');
-  }, true);
   document.addEventListener('scroll', () => {
     if (Math.random() > 0.05) return;
     document.body.style.paddingTop = `${Math.round(Math.random() * 40)}px`;

@@ -63,14 +63,15 @@ on `/welcome` to pick theirs.
   is `async (ctx) => Node` (see the header comment in `router.js` for `ctx`: params, query, me,
   layout('default'|'wide'|'full'), title(), cleanup(), signal, requireAuth()).
 - API: `api.get('feed', { cursor })`, `api.post('posts', {...})` etc. (`api.js`). Paths are relative
-  to `/api/`. Errors are `ApiError` with the server's message — show with `toastError(err)`.
+  to `/api/`. Errors are `ApiError` with the server's message — show with `toastError(err)` (a dialog; there are no toasts).
 - Shared components — use them, don't re-implement:
   - `components/post.js` — `postCard(post, opts)`, `reactionButton`, `richText`, `postUrl`
   - `components/composer.js` — `composer({...})` / `composerCard()` (text, photos, video, uploads)
   - `components/media.js` — `photoGrid`, `carousel`, `videoEl`, `videoPlayer`, `videoThumb`, `postMedia`
   - `components/user.js` — `avatar`, `userName`, `verifiedBadge`, `followButton`, `userRow`
-  - `ui.js` — `toast`, `toastError`, `dialog`, `confirm`, `promptDialog`, `menu`, `loading`,
-    `empty`, `errorBox`, `tabs`, `infiniteList`, `lightbox`, `share`, `copy`, `shake`
+  - `ui.js` — `toast` / `toastError` (both open a dialog), `dialog`, `confirm`, `promptDialog`,
+    `menu`, `loading`, `empty`, `errorBox`, `tabs`, `infiniteList`, `lightbox`, `share`, `copy`,
+    `refuseDelete`
   - `upload.js` — `uploadFile(file, { onProgress })`, `pickFiles()`
   - `format.js` — `timeAgo`, `relative`, `count`, `plural`, `duration`, `money`
   - `store.js` — `store.me`, `store.unread`, `store.refresh()`, `store.patchMe()`, `login()`

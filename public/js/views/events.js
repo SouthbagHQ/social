@@ -11,7 +11,7 @@ import { h, mount } from '../dom.js';
 import { count, fullDate, timeAgo } from '../format.js';
 import { navigate, refresh } from '../router.js';
 import { login, store } from '../store.js';
-import { confirm, dialog, empty, infiniteList, loading, refuseDelete, shake, share, tabs, toast, toastError } from '../ui.js';
+import { confirm, dialog, empty, infiniteList, loading, refuseDelete, share, tabs, toast, toastError } from '../ui.js';
 import { pickFiles, uploadFile } from '../upload.js';
 import { avatar, userName, userRow } from '../components/user.js';
 
@@ -203,7 +203,6 @@ async function eventView(ctx) {
       if (!clear && status === 'going') toast('You are going.');
     } catch (err) {
       toastError(err);
-      shake(rsvpArea);
     }
   }
   paintRsvp();
@@ -291,7 +290,7 @@ function discussionTab(ctx, event, onCount) {
   const form = store.me
     ? h('form.event-comment-form', { onsubmit: async e => {
       e.preventDefault();
-      if (!text.value.trim()) return shake(form);
+      if (!text.value.trim()) return;
       post.disabled = true;
       try {
         const { comment } = await api.post(`events/${event.id}/comments`, { body: text.value });
@@ -494,7 +493,7 @@ async function formView(ctx, data) {
       privacy: privacy.value,
       capacity: capacity.value ? Number(capacity.value) : null,
     };
-    if (!payload.starts_at) { shake(form); return toast('Enter a start time.', { error: true }); }
+    if (!payload.starts_at) return toast('Enter a start time.', { error: true });
     if (cover.value !== undefined) payload.cover_media_id = cover.value;
     if (isMainHost) payload.cohosts = cohosts.value.split(/[\s,]+/).map(s => s.replace(/^@/, '').trim()).filter(Boolean);
     if (!editing && groupSelect.value) payload.group_id = groupSelect.value;
@@ -504,7 +503,6 @@ async function formView(ctx, data) {
       toast(editing ? 'Saved.' : 'Event created.');
       navigate(`/events/${res.event.id}`, { replace: editing });
     } catch (err) {
-      shake(form);
       toastError(err);
       submit.disabled = false;
     }

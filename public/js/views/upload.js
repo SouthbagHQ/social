@@ -8,7 +8,7 @@ import { api } from '../api.js';
 import { h, mount } from '../dom.js';
 import { bytes, duration as fmtDuration } from '../format.js';
 import { navigate } from '../router.js';
-import { dialog, shake, toast, toastError } from '../ui.js';
+import { dialog, toast, toastError } from '../ui.js';
 import { LIMITS, kindOf, pickFiles, uploadFile, videoMeta } from '../upload.js';
 
 const TYPES = [
@@ -116,7 +116,6 @@ function videoStudio(getType, setType, cleanups) {
     if (s.file) reset(true, { quiet: true });
     if (file.size > LIMITS.video) {
       toast(`Videos are limited to ${MB(LIMITS.video)}.`, { error: true });
-      shake(drop);
       return;
     }
     s.file = file;
@@ -220,7 +219,7 @@ function videoStudio(getType, setType, cleanups) {
   async function submit() {
     const t = getType();
     if (publish.disabled) return;
-    if (t === 'video' && !title.value.trim()) { toast('Videos need a title.', { error: true }); shake(title); return; }
+    if (t === 'video' && !title.value.trim()) { toast('Videos need a title.', { error: true }); return; }
     s.publishing = true;
     refresh();
     try {
@@ -231,7 +230,6 @@ function videoStudio(getType, setType, cleanups) {
       toast('Published.');
       navigate(t === 'short' ? `/shorts/${post.id}` : `/watch/${post.id}`);
     } catch (err) {
-      shake(form);
       toastError(err);
     }
     s.publishing = false;
@@ -351,7 +349,6 @@ function photoStudio(cleanups) {
       navigate(`/post/${post.id}`);
     } catch (err) {
       publishing = false;
-      shake(form);
       toastError(err);
       paint();
     }

@@ -3,7 +3,7 @@
 import { api } from '../api.js';
 import { h, mount } from '../dom.js';
 import { login, store } from '../store.js';
-import { empty, refuseDelete, shake, toast, toastError } from '../ui.js';
+import { empty, refuseDelete, toast, toastError } from '../ui.js';
 import { avatar } from '../components/user.js';
 import { canEdit, pageApi, pageTabs, pageTitle, userLink, when, wikiFrame } from './common.js';
 
@@ -48,7 +48,7 @@ export function talkView(ctx, spaceSlug, slug) {
 
     const post = async (text, parentId, form, done) => {
       if (!store.me) return login();
-      if (!text.trim()) { shake(form); return toast('Write a comment first.', { error: true }); }
+      if (!text.trim()) return toast('Write a comment first.', { error: true });
       const btn = form.querySelector('button[type=submit]');
       btn.disabled = true;
       try {
@@ -57,7 +57,7 @@ export function talkView(ctx, spaceSlug, slug) {
         paint();
         done();
         toast('Posted.');
-      } catch (err) { shake(form); toastError(err); }
+      } catch (err) { toastError(err); }
       btn.disabled = false;
     };
 

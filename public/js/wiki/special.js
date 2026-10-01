@@ -5,7 +5,7 @@ import { api } from '../api.js';
 import { h, mount } from '../dom.js';
 import { navigate } from '../router.js';
 import { login, store } from '../store.js';
-import { confirm, empty, infiniteList, refuseDelete, shake, toast, toastError } from '../ui.js';
+import { confirm, empty, infiniteList, refuseDelete, toast, toastError } from '../ui.js';
 import { avatar } from '../components/user.js';
 import { pictureField } from '../views/group-new.js';
 import { communitySelect, delta, enc, forgetSpace, loadSpace, pagePath, pageTitle, policySelect, shortWhen, specialPath, userLink, wikiFrame } from './common.js';
@@ -136,7 +136,7 @@ async function createPage(ctx, main, { space, viewer }) {
   const form = h('form.south-card.flat.wk-form', { onsubmit: async e => {
     e.preventDefault();
     const title = normalizeTitle(input.value);
-    if (!isValidTitle(title)) { shake(form); return toast('Page titles cannot be empty or contain # < > [ ] { } | / or \\.', { error: true }); }
+    if (!isValidTitle(title)) return toast('Page titles cannot be empty or contain # < > [ ] { } | / or \\.', { error: true });
     navigate(pagePath(space.slug, slugOf(title), 'edit'));
   } },
     h('label.field', h('span', 'Title'), input),
@@ -188,7 +188,7 @@ async function members(ctx, main, { space, viewer }) {
     addForm = h('form.south-card.flat.wk-add-member', { onsubmit: async e => {
       e.preventDefault();
       const value = handle.value.trim().replace(/^@/, '');
-      if (!value) return shake(addForm);
+      if (!value) return;
       await setRole(value, role.value);
       handle.value = '';
     } },
@@ -230,7 +230,7 @@ async function settings(ctx, main, { space, viewer }) {
       await loadSpace(space.slug, undefined, true);
       toast('Saved.');
       navigate(specialPath(space.slug, 'Settings'), { replace: true, scroll: false });
-    } catch (err) { shake(form); toastError(err); save.disabled = false; }
+    } catch (err) { toastError(err); save.disabled = false; }
   } },
     h('label.field', h('span', 'Name'), title),
     h('label.field', h('span', 'Description'), description),

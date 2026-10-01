@@ -14,7 +14,7 @@ import { h, mount } from '../dom.js';
 import { bytes, duration as fmt, fullDate, plural, timeAgo } from '../format.js';
 import { navigate } from '../router.js';
 import { login, store } from '../store.js';
-import { confirm, dialog, empty, errorBox, infiniteList, loading, refuseDelete, share, shake, tabs, toast, toastError } from '../ui.js';
+import { confirm, dialog, empty, errorBox, infiniteList, loading, refuseDelete, share, tabs, toast, toastError } from '../ui.js';
 import { pickFiles, uploadBlob, uploadFile } from '../upload.js';
 import { richText } from '../components/post.js';
 import { enqueue, playButton, playTrack } from '../components/player.js';
@@ -358,8 +358,8 @@ async function uploadTab(ctx) {
 
   async function chooseFile(file) {
     const type = contentTypeOf(file);
-    if (!type) { toast('That file is not audio.', { error: true }); shake(chooseAudio); return; }
-    if (file.size > AUDIO_LIMIT) { toast(`Audio files are limited to ${AUDIO_LIMIT / 1048576} MB.`, { error: true }); shake(chooseAudio); return; }
+    if (!type) { toast('That file is not audio.', { error: true }); return; }
+    if (file.size > AUDIO_LIMIT) { toast(`Audio files are limited to ${AUDIO_LIMIT / 1048576} MB.`, { error: true }); return; }
     s.audioCtl?.abort();
     if (s.audio) api.del(`media/${s.audio.id}`).catch(() => {});
     const ctl = new AbortController();
@@ -442,7 +442,6 @@ async function uploadTab(ctx) {
       navigate(`/audio/track/${track.id}`);
       return;
     } catch (err) {
-      shake(form);
       toastError(err);
     }
     s.publishing = false;

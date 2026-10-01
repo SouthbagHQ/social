@@ -13,7 +13,7 @@ import { h, mount } from '../dom.js';
 import { fullDate, money, plural, timeAgo } from '../format.js';
 import { navigate } from '../router.js';
 import { login, store } from '../store.js';
-import { confirm, dialog, empty, errorBox, infiniteList, loading, refuseDelete, share, shake, tabs, toast, toastError } from '../ui.js';
+import { confirm, dialog, empty, errorBox, infiniteList, loading, refuseDelete, share, tabs, toast, toastError } from '../ui.js';
 import { pickFiles, uploadFile } from '../upload.js';
 import { carousel } from '../components/media.js';
 import { avatar, userName } from '../components/user.js';
@@ -112,7 +112,7 @@ function formDialog({ title, content, ok = 'Save', onSubmit }) {
         onsubmit: async e => {
           e.preventDefault();
           submit.disabled = true;
-          try { close((await onSubmit()) ?? true); } catch (err) { toastError(err); shake(form); submit.disabled = false; }
+          try { close((await onSubmit()) ?? true); } catch (err) { toastError(err); submit.disabled = false; }
         },
       }, content, h('div.mk-dialog-actions', h('button', { type: 'button', onclick: () => close(null) }, 'Cancel'), submit));
       return form;
@@ -396,7 +396,7 @@ function sellForm(ctx, existing) {
         : !location.value.trim() ? 'Add a suburb or postcode.'
         : !pickup.input.checked && !postage.input.checked ? 'Choose pickup, postage or both.'
         : null;
-      if (problem) { toastError(new Error(problem)); shake(form); return; }
+      if (problem) { toastError(new Error(problem)); return; }
       const data = {
         title: title.value.trim(), price: cents, negotiable: negotiable.input.checked, category: category.value,
         condition: condition.value, description: description.value.trim(), location: location.value.trim(),
@@ -410,7 +410,6 @@ function sellForm(ctx, existing) {
         navigate(`/marketplace/${listing.id}`);
       } catch (err) {
         toastError(err);
-        shake(form);
         submit.disabled = false;
       }
     },

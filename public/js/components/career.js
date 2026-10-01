@@ -9,7 +9,7 @@ import { h, mount } from '../dom.js';
 import { plural, timeAgo } from '../format.js';
 import { refresh } from '../router.js';
 import { login, store } from '../store.js';
-import { dialog, errorBox, loading, promptDialog, refuseDelete, shake, toast, toastError } from '../ui.js';
+import { dialog, errorBox, loading, promptDialog, refuseDelete, toast, toastError } from '../ui.js';
 import { avatar, userName } from './user.js';
 
 // -- Labels and formatting ---------------------------------------------------
@@ -93,7 +93,6 @@ export function formDialog({ title, content, ok = 'Save', onSubmit, wide = false
             close(result ?? true);
           } catch (err) {
             toastError(err);
-            shake(form);
             submit.disabled = false;
           }
         },

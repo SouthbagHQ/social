@@ -9,7 +9,7 @@
 import { api } from '../api.js';
 import { h } from '../dom.js';
 import { login, store } from '../store.js';
-import { shake, toast, toastError } from '../ui.js';
+import { toast, toastError } from '../ui.js';
 import { kindOf, pickFiles, uploadFile } from '../upload.js';
 import { pollEditor } from './poll.js';
 import { celebrateFirstPost } from './post.js';
@@ -141,7 +141,7 @@ export function composer(options = {}) {
     if (submit.disabled) return;
     submit.disabled = true;
     const failed = attachments.filter(a => a.error);
-    if (failed.length) { toast('Remove the failed uploads first.', { error: true }); shake(form); update(); return; }
+    if (failed.length) { toast('Remove the failed uploads first.', { error: true }); update(); return; }
     const media = attachments.map(a => a.media).filter(Boolean);
     const video = media.find(m => m.kind === 'video');
     const kind = video
@@ -168,7 +168,6 @@ export function composer(options = {}) {
       if (!replyTo && !quoteOf) toast('Posted.');
       onPosted?.(post);
     } catch (err) {
-      shake(form);
       toastError(err);
     }
     update();

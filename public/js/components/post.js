@@ -11,7 +11,7 @@ import { h, mount } from '../dom.js';
 import { count, fullDate, timeAgo } from '../format.js';
 import { navigate } from '../router.js';
 import { login, store } from '../store.js';
-import { confirm, dialog, menu, refuseDelete, share, shake, toast, toastError } from '../ui.js';
+import { confirm, dialog, menu, refuseDelete, share, toast, toastError } from '../ui.js';
 import { postMedia } from './media.js';
 import { pollSummary, pollView } from './poll.js';
 import { avatar, userName } from './user.js';
@@ -190,7 +190,6 @@ export function reactionButton(post, { onChange } = {}) {
     } catch (err) {
       Object.assign(post, before);
       paint();
-      shake(btn);
       toastError(err);
     }
   };

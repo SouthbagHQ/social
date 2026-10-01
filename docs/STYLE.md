@@ -32,13 +32,14 @@ never like a gag (no "Do not press" buttons, no joke answers).
 - **Janky, but usable** (`public/js/chaos.js`, `public/css/chaos.css`). A splash screen with
   promotional slides once per browser session; a cookie banner once per browser (two huge
   "Accept" buttons, a tiny "Manage preferences" that lists dozens of required cookies); a strip of
-  six help buttons that all open the same support chat; an announcements ticker; buttons that
-  jitter on hover and bounce when pressed; swaying headings, a breathing logo, sidebar links that
-  slide in and cards that drop in crooked; a loading word that spins around its left edge; and the
-  page shifting a few pixels now and then while scrolling. Motion ignores
-  `prefers-reduced-motion`, like Banking. Limits: keyboard focus works, nothing blocks posting,
-  liking, commenting, following or messaging, nothing reloads the page, no `alert()`, no "Leave
-  site?" traps, no permission prompts.
+  six help buttons that all open the same support chat; an announcements ticker; a loading word
+  that spins around its left edge; and the page shifting a few pixels now and then while
+  scrolling. Motion ignores `prefers-reduced-motion`, like Banking. No gimmicks that look
+  deliberate: nothing bounces, jitters, sways or shakes, not even on errors. Limits: keyboard
+  focus works, nothing blocks posting, liking, commenting, following or messaging, nothing reloads
+  the page, no `alert()`, no "Leave site?" traps, no permission prompts.
+- **No toasts.** Every message is a dialog with an OK button (`toast()` / `toastError()` in `ui.js`
+  open one; the same message is never open twice).
 - **No deleting.** Delete buttons stay where they are, but call `refuseDelete()` from `ui.js`
   ("Deletion isn't available. Kevin knows what you did.") instead of asking or deleting.
 
@@ -52,7 +53,7 @@ never like a gag (no "Do not press" buttons, no joke answers).
 - Short and plain, like a legitimate product. "Southbag Rewards", not a sentence about Southbag
   Rewards. Titles and buttons are one to three words.
 - Empty states: "No posts yet.", "No notifications.", "No messages.", "No results."
-- Toasts: "Posted.", "Saved.", "Link copied.", "Following @bob."
+- Messages: "Posted.", "Saved.", "Link copied.", "Following @bob."
 - Errors: plain statements. "Post not found.", "Posts are limited to 280 characters."
 - Following is "Follow" / "Following" / "Followers".
 - No jokes about fees, surveillance, retention or consent. Kevin is rare and never explained: the

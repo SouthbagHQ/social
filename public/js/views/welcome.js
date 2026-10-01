@@ -6,7 +6,7 @@ import { api } from '../api.js';
 import { h, mount } from '../dom.js';
 import { navigate } from '../router.js';
 import { store } from '../store.js';
-import { errorBox, loading, shake, toast, toastError } from '../ui.js';
+import { errorBox, loading, toast, toastError } from '../ui.js';
 import { pickFiles, uploadFile } from '../upload.js';
 import { avatar, userRow } from '../components/user.js';
 
@@ -79,7 +79,6 @@ export default function welcome(ctx) {
     const name = nameInput.value.trim();
     const handle = handleInput.value.trim().replace(/^@/, '');
     if (!name) {
-      shake(nameStep);
       mount(error, errorBox('Enter a display name.'));
       return;
     }
@@ -93,7 +92,6 @@ export default function welcome(ctx) {
       toast('Welcome to Southbag Social.');
       navigate('/');
     } catch (err) {
-      shake(next);
       mount(error, errorBox(err));
       next.disabled = false;
     }

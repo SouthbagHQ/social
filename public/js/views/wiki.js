@@ -12,7 +12,7 @@ import { h, mount } from '../dom.js';
 import { plural } from '../format.js';
 import { navigate } from '../router.js';
 import { login, store } from '../store.js';
-import { dialog, empty, infiniteList, loading, menu, refuseDelete, shake, tabs, toast, toastError } from '../ui.js';
+import { dialog, empty, infiniteList, loading, menu, refuseDelete, tabs, toast, toastError } from '../ui.js';
 import { pictureField } from './group-new.js';
 import {
   MAIN, ago, canEdit, communitySelect, enc, forgetSpace, logoBox, pageApi, pagePath, pageTabs, pageTitle, policySelect, spacePath, userLink,
@@ -122,7 +122,7 @@ function createWiki(ctx) {
       track('social_wiki_created', { wiki: space.slug });
       toast('Wiki created.');
       navigate(spacePath(space.slug));
-    } catch (err) { shake(form); toastError(err); submit.disabled = false; }
+    } catch (err) { toastError(err); submit.disabled = false; }
   } },
     h('h2', 'Create a wiki'),
     h('label.field', h('span', 'Name'), title),

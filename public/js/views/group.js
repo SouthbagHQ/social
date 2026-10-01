@@ -8,7 +8,7 @@ import { h, mount } from '../dom.js';
 import { count, plural } from '../format.js';
 import { refresh } from '../router.js';
 import { login, store } from '../store.js';
-import { confirm, dialog, empty, infiniteList, menu, refuseDelete, share, shake, tabs, toast, toastError } from '../ui.js';
+import { confirm, dialog, empty, infiniteList, menu, refuseDelete, share, tabs, toast, toastError } from '../ui.js';
 import { composerCard } from '../components/composer.js';
 import { postCard } from '../components/post.js';
 import { avatar, userName } from '../components/user.js';
@@ -219,7 +219,7 @@ export default async function groupView(ctx) {
         toast(messages[action]);
         if (!res.member) { row.remove(); return; }
         row.replaceWith(memberRow(res.member, admin));
-      } catch (err) { shake(row); toastError(err); }
+      } catch (err) { toastError(err); }
     }
     return row;
   }

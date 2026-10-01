@@ -108,11 +108,6 @@
 }
 @keyframes quiet-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 @keyframes spin { to { transform: rotate(360deg); } }
-@keyframes violentShake {
-  0%, 100% { transform: translateX(0); }
-  20%, 60% { transform: translateX(-8px) rotate(-1deg); }
-  40%, 80% { transform: translateX(8px) rotate(1deg); }
-}
 
 *, *::before, *::after { box-sizing: border-box; }
 * { text-shadow: var(--sb-text-shadow); }
@@ -132,7 +127,7 @@ body {
 div, section, article, header, nav, aside, main, footer, form, li, ul, ol, img, video, button, input, textarea, select, label, a.btn, a.btn-large, a.btn-small {
   box-shadow: var(--sb-halo);
 }
-.layout, .layout > main, .layout > aside, .row, .stack, .grow, .sentinel, .toasts, .overlay, .track, .dots, svg { box-shadow: none; }
+.layout, .layout > main, .layout > aside, .row, .stack, .grow, .sentinel, .overlay, .track, .dots, svg { box-shadow: none; }
 
 h1, h2, h3, h4 { font-weight: 700; line-height: 1; margin: 0 0 0.4em; animation: ambient-text 19s linear infinite; }
 h1 { font-size: clamp(2rem, 6vw, 4rem); transform: rotate(-1deg); transform-origin: left; max-width: 16ch; }
@@ -426,11 +421,6 @@ aside .sticky { position: sticky; top: 96px; box-shadow: none; }
 .lightbox img { width: 90vw; height: 80vh; }
 .lightbox .close { position: fixed; top: 12px; right: 12px; }
 
-.toasts { position: fixed; right: 1rem; bottom: 1rem; z-index: 1100; display: grid; gap: 0.35rem; width: min(360px, calc(100vw - 2rem)); pointer-events: none; }
-.toast { pointer-events: auto; border: 2px outset #ddd; background: #eee; color: #000; padding: 0.45rem; font-size: 0.8rem; }
-:root[data-theme='dark'] .toast { background: #333; color: #eee; }
-.toast.error { border: 4px double #111; }
-.toast .fee { display: none; }
 
 .menu { position: absolute; z-index: 50; min-width: 170px; padding: 5px; background: #fff; border: 3px ridge #ccc; display: flex; flex-direction: column; gap: 4px; animation: dialog-arrival 0.9s linear both; transform-origin: top right; }
 :root[data-theme='dark'] .menu { background: #222; }
@@ -450,7 +440,6 @@ aside .sticky { position: sticky; top: 96px; box-shadow: none; }
 aside .site-footer { padding: 8px 0; }
 aside .site-footer .inner { display: flex; }
 
-.shake { animation: violentShake 0.5s linear 1; }
 .gag-darkmode body { background: #000; }
 .gag-darkmode h1, .gag-darkmode h2 { color: #000; }
 @media (prefers-reduced-motion: reduce) {

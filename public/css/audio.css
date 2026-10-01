@@ -91,7 +91,6 @@
 
 /* ── The player bar ─────────────────────────────────────────────────── */
 body.has-player { padding-bottom: var(--player-h, 80px); }
-body.has-player .toasts { bottom: calc(var(--player-h, 80px) + 1rem); }
 .audio-player {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 900;
   border: 3px ridge var(--sb-ridge); border-bottom: 0; background: var(--sb-paper);
