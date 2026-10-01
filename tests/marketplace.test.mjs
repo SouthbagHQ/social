@@ -216,6 +216,7 @@ test('marketplace: sold state and reviews between the two parties', async () => 
   assert.ok((await notifications(bob)).some(n => n.link === `/marketplace/${l.id}` && /sold to you/.test(n.body)));
   const offers = (await alice.get(`marketplace/${l.id}/offers`)).body.items;
   assert.equal(offers.find(o => o.buyer.handle === 'carol').status, 'declined', 'other offers are closed');
+  assert.equal(offers.find(o => o.buyer.handle === 'bob').status, 'accepted', "the buyer's offer is accepted");
   assert.equal((await kevin.post(`marketplace/${l.id}/offers`, { amount: 100 })).status, 409);
 
   assert.deepEqual((await anon.get(`marketplace?q=${tag}`)).body.items, [], 'sold listings leave the browse list');

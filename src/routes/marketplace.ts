@@ -743,7 +743,11 @@ marketplace.post('/:id/status', async c => {
     if (note) statements.push(note);
   }
   if (status === 'sold') {
-    // Anyone still waiting on an answer hears no.
+    // The buyer's own offer counts as accepted; anyone else still waiting on an answer hears no.
+    if (buyerId) {
+      statements.push(c.env.DB.prepare(`UPDATE marketplace_offers SET status = 'accepted', responded_at = ?
+          WHERE listing_id = ? AND status = 'pending' AND buyer_id = ?`).bind(now, row.id, buyerId));
+    }
     statements.push(c.env.DB.prepare(`UPDATE marketplace_offers SET status = 'declined', responded_at = ?
         WHERE listing_id = ? AND status = 'pending' AND buyer_id != ?`).bind(now, row.id, buyerId ?? ''));
   }
