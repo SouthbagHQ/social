@@ -26,8 +26,11 @@
       "migrations_dir": "migrations"
     }
   ],
+  // Southbag Verified is charged to Southbag Online Banking through its Billing entrypoint (RPC, not
+  // public). Deploy banking first. See src/lib/banking.ts.
+  "services": [{ "binding": "BANKING", "service": "southbag-online-banking", "entrypoint": "Billing" }],
   "triggers": {
-    // Hourly janitor: expired stories, abandoned uploads, dead sessions.
+    // Hourly janitor (expired stories, abandoned uploads, dead sessions) and Verified renewals.
     "crons": ["17 * * * *"]
   },
   "observability": { "enabled": true }

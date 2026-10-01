@@ -17,7 +17,7 @@ import notifications from './routes/notifications';
 import posts from './routes/posts';
 import search from './routes/search';
 import stories from './routes/stories';
-import users from './routes/users';
+import users, { renewVerified } from './routes/users';
 import videos from './routes/videos';
 import polls from './routes/polls';
 import pins from './routes/pins';
@@ -134,6 +134,8 @@ export default {
   fetch: app.fetch,
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(janitor(env));
+    // Southbag Verified: charge subscribers who are due through Southbag Online Banking.
+    ctx.waitUntil(renewVerified(env).catch(err => console.error('verified renewals', err)));
     // Events: remind people going to events that start in the next 24 hours (once each).
     ctx.waitUntil(sendEventReminders(env).catch(err => console.error('event reminders', err)));
     // Streaks: warn people whose message streaks are about to run out.

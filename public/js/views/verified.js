@@ -1,12 +1,13 @@
-// /verified - Southbag Verified: a monthly subscription that shows "Verified" next to your name.
-//   POST /api/users/me/verify   -> { verified, tier, charged, bag_balance, message }
+// /verified - Southbag Verified: a monthly subscription that shows "Verified" next to your name,
+// taken straight from your Southbag Online Banking account. No confirmation dialogs.
+//   POST /api/users/me/verify   -> { verified, tier, charged, bag_balance, bank_balance, message }
 //   DELETE /api/users/me/verify -> { verified, charged, bag_balance, message }
 
 import { api } from '../api.js';
 import { h, mount } from '../dom.js';
 import { money } from '../format.js';
 import { login, store } from '../store.js';
-import { confirm, toast, toastError } from '../ui.js';
+import { toast, toastError } from '../ui.js';
 import { avatar, userName } from '../components/user.js';
 
 const PRICE_CENTS = 800;
@@ -39,9 +40,6 @@ export default function verified(ctx) {
 
   async function subscribe() {
     if (!store.me) return login();
-    const ok = await confirm(`Subscribe to Southbag Verified for ${money(PRICE_CENTS)} per month?`,
-      { title: 'Southbag Verified', ok: 'Subscribe' });
-    if (!ok) return;
     try {
       const res = await api.post('users/me/verify');
       store.patchMe({ verified: true, bag_balance: res.bag_balance });
@@ -51,9 +49,6 @@ export default function verified(ctx) {
   }
 
   async function cancel() {
-    const ok = await confirm('Verified will be removed from your name.',
-      { title: 'Cancel subscription?', ok: 'Cancel subscription', cancel: 'Keep' });
-    if (!ok) return;
     try {
       const res = await api.del('users/me/verify');
       store.patchMe({ verified: false, bag_balance: res.bag_balance });
@@ -75,7 +70,8 @@ export default function verified(ctx) {
     h('section.south-card.flat',
       h('h2', 'Details'),
       h('ul.verified-details',
-        h('li', 'Billed monthly.'),
-        h('li', 'Cancel any time on this page.'),
+        h('li', 'Taken from your Southbag Online Banking account every 30 days.'),
+        h('li', 'No Southbag Online Banking account? One is opened for you.'),
+        h('li', 'Cancel any time on this page. Payments already taken are kept.'),
         h('li', 'Verified is removed as soon as you cancel.'))));
 }

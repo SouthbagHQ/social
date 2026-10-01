@@ -13,7 +13,12 @@ Read this before adding a feature. See also `docs/STYLE.md` (interface and copy)
   100k D1 row writes per day, 2 MB per D1 row, 500 MB per database. So: batch writes with
   `env.DB.batch`, keep list pages ≤ 50 items, use keyset pagination, avoid N+1 queries
   (`hydrate()` batches everything for a page of posts), no per-request fan-out writes.
-- Hourly cron (`scheduled` in `src/index.ts`) expires stories and cleans up.
+- Hourly cron (`scheduled` in `src/index.ts`) expires stories, cleans up and renews Southbag
+  Verified.
+- **Money.** Southbag Verified is charged to Southbag Online Banking through the `BANKING` service
+  binding (Banking's `Billing` entrypoint, RPC). Use `charge()` from `src/lib/banking.ts`; claim
+  the change in D1 first and undo it if the charge throws, so nothing is charged twice. No
+  confirmation dialogs before charging.
 
 ## Auth
 

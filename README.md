@@ -18,7 +18,15 @@ It signs in with **Southbag Identity™** and follows the look of the other Sout
   query. Chunks are immutable and cached with the Cache API on custom domains.
 - The browser shrinks photos to 2048 px WebP before uploading and grabs a poster frame from videos.
   Limits: photos 10 MB, videos 60 MB, audio 20 MB.
-- An hourly cron trigger expires stories and cleans up abandoned uploads and sessions.
+- An hourly cron trigger expires stories, cleans up abandoned uploads and sessions, and renews
+  Southbag Verified.
+- **Southbag Verified is paid for with real (fake) money.** Subscribing takes $8.00 straight from
+  the subscriber's [Southbag Online Banking](https://github.com/SouthbagHQ/banking) account, and
+  again every 30 days. Banking opens an account for anyone who doesn't have one. Social calls
+  Banking's `Billing` entrypoint over a service binding (`BANKING`; RPC between the two Workers,
+  not reachable from the internet), see `src/lib/banking.ts`. Locally there is no bank unless you
+  run Banking's `wrangler dev` too; `scripts/test.sh` sets `BANKING_DEV=1`, which makes charges
+  succeed without one.
 
 ## Southbag Identity
 
@@ -75,6 +83,9 @@ Social reports to Palantir, the PostHog instance every Southbag app uses (`palan
 ```sh
 npm run deploy         # applies migrations, then deploys
 ```
+
+Banking must already be deployed with its `Billing` entrypoint, or subscribing to Verified fails
+with "Southbag Online Banking is unavailable." (nothing is charged).
 
 It deploys to the Southbag account (`account_id` in `wrangler.jsonc`) at `social.southbag.cc`,
 with the `southbag-social` D1 database. For a fresh account, run

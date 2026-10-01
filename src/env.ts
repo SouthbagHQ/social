@@ -3,6 +3,8 @@ import type { Context } from 'hono';
 export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
+  /** Southbag Online Banking's Billing entrypoint (lib/banking.ts). */
+  BANKING?: import('./lib/banking').BankingBilling;
   [binding: string]: unknown;
 }
 

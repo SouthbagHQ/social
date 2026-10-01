@@ -3,7 +3,7 @@
 //
 //   GET    /api/users/suggested?limit&exclude=friends -> { items: [UserCard + { bio, is_following, mutual }] }
 //   GET    /api/users/me/friend-requests             -> { incoming: [...], outgoing: [...] }
-//   POST   /api/users/me/verify                      -> { verified, tier, charged, bag_balance, message }
+//   POST   /api/users/me/verify                      charges Southbag Online Banking -> { verified, tier, charged, bag_balance, bank_balance, message }
 //   DELETE /api/users/me/verify                      -> { verified, charged, bag_balance, message }
 //   GET    /api/users/:handle                        -> { user, viewer }
 //   PUT    /api/users/:handle/follow                 DELETE ...   -> { is_following, follower_count }
@@ -20,7 +20,8 @@
 // tables have no time-sortable id.
 
 import { Hono } from 'hono';
-import type { AppEnv, Ctx, SessionUser } from '../env';
+import type { AppEnv, Ctx, Env, SessionUser } from '../env';
+import { charge, money } from '../lib/banking';
 import { body, cursor, fail, limit, placeholders, requireUser, str } from '../lib/http';
 import { newId } from '../lib/ids';
 import { track } from '../lib/palantir';
@@ -144,38 +145,90 @@ users.get('/me/friend-requests', async c => {
 });
 
 // -- Southbag Verified (one monthly price; shows "Verified" next to your name) --
+// Charged to the subscriber's Southbag Online Banking account on subscribing and every 30 days
+// after (renewVerified, from the hourly cron). No confirmation: subscribing is the confirmation.
 
 const VERIFIED_CENTS = 800;
+const VERIFIED_PERIOD = 30 * 86400000;
 
 users.post('/me/verify', async c => {
   const me = requireUser(c);
-  const row = await c.env.DB.prepare('UPDATE users SET verified = 1, bag_balance = bag_balance + ?, updated_at = ? WHERE id = ? AND verified = 0 RETURNING bag_balance')
-    .bind(VERIFIED_CENTS, Date.now(), me.id).first<{ bag_balance: number }>();
-  if (!row) {
-    // Already subscribed: nothing to charge.
+  const now = Date.now();
+  // Claim first, then charge, so two quick clicks can't charge twice.
+  const claimed = await c.env.DB.prepare('UPDATE users SET verified = 1, verified_renews_at = ?, updated_at = ? WHERE id = ? AND verified = 0 RETURNING bag_balance')
+    .bind(now + VERIFIED_PERIOD, now, me.id).first<{ bag_balance: number }>();
+  if (!claimed) {
     const current = await c.env.DB.prepare('SELECT bag_balance FROM users WHERE id = ?').bind(me.id).first<{ bag_balance: number }>();
     return c.json({ verified: true, tier: 'standard', charged: 0, bag_balance: current?.bag_balance ?? 0, message: 'You are already subscribed.' });
   }
+  let bank: Awaited<ReturnType<typeof charge>>;
+  try {
+    bank = await charge(c.env, me, VERIFIED_CENTS, 'Southbag Verified');
+  } catch (err) {
+    console.error('verified charge', err);
+    await c.env.DB.prepare('UPDATE users SET verified = 0, verified_renews_at = NULL WHERE id = ?').bind(me.id).run();
+    fail(502, 'Southbag Online Banking is unavailable. Try again later.');
+  }
+  const taken = `${money(VERIFIED_CENTS)} was taken from your Southbag Online Banking account.`;
   await c.env.DB.prepare(`INSERT INTO notifications (id, user_id, actor_id, type, body, created_at) VALUES (?, ?, NULL, 'system', ?, ?)`)
-    .bind(newId(), me.id, 'Your Southbag Verified subscription is active.', Date.now()).run();
-  track(c, 'social_verified_subscribed', { charged: VERIFIED_CENTS });
+    .bind(newId(), me.id, `Your Southbag Verified subscription is active. ${taken}`, now).run();
+  track(c, 'social_verified_subscribed', { charged: VERIFIED_CENTS, bank_account_opened: bank.opened });
   return c.json({
-    verified: true, tier: 'standard', charged: VERIFIED_CENTS, bag_balance: row.bag_balance,
-    message: 'Subscribed to Southbag Verified.',
+    verified: true, tier: 'standard', charged: VERIFIED_CENTS, bag_balance: claimed.bag_balance, bank_balance: bank.balance,
+    message: bank.opened
+      ? `Subscribed. Southbag Online Banking opened an account for you. ${taken}`
+      : `Subscribed. ${taken}`,
   });
 });
 
 users.delete('/me/verify', async c => {
   const me = requireUser(c);
-  const row = await c.env.DB.prepare('UPDATE users SET verified = 0, updated_at = ? WHERE id = ? AND verified = 1 RETURNING bag_balance')
+  const row = await c.env.DB.prepare('UPDATE users SET verified = 0, verified_renews_at = NULL, updated_at = ? WHERE id = ? AND verified = 1 RETURNING bag_balance')
     .bind(Date.now(), me.id).first<{ bag_balance: number }>();
   if (!row) fail(409, 'You are not subscribed.');
   track(c, 'social_verified_cancelled');
   return c.json({
     verified: false, charged: 0, bag_balance: row.bag_balance,
-    message: 'Subscription cancelled.',
+    message: 'Subscription cancelled. Payments already taken are kept.',
   });
 });
+
+// Local development and tests only: make your renewal due now and run the renewal job. Answers 404
+// anywhere but localhost.
+users.post('/me/verify/_renew', async c => {
+  const host = new URL(c.req.url).hostname;
+  if (host !== 'localhost' && host !== '127.0.0.1') fail(404, 'Not found.');
+  const me = requireUser(c);
+  await c.env.DB.prepare('UPDATE users SET verified_renews_at = ? WHERE id = ? AND verified = 1').bind(Date.now() - 1, me.id).run();
+  await renewVerified(c.env);
+  const row = await c.env.DB.prepare('SELECT verified, verified_renews_at FROM users WHERE id = ?').bind(me.id)
+    .first<{ verified: number; verified_renews_at: number | null }>();
+  return c.json({ verified: Boolean(row?.verified), renews_at: row?.verified_renews_at ?? null });
+});
+
+/** Hourly: charge the next month to subscribers who are due. A few at a time (free-plan limits). */
+export async function renewVerified(env: Env): Promise<void> {
+  const now = Date.now();
+  const { results } = await env.DB.prepare(`SELECT id, email, name, verified_renews_at FROM users
+    WHERE verified = 1 AND verified_renews_at <= ? ORDER BY verified_renews_at LIMIT 10`)
+    .bind(now).all<{ id: string; email: string | null; name: string; verified_renews_at: number }>();
+  for (const u of results) {
+    const next = Math.max(u.verified_renews_at + VERIFIED_PERIOD, now + 3600000);
+    // Claim this renewal (so a cancel in between, or an overlapping run, isn't charged), then charge.
+    const claimed = await env.DB.prepare('UPDATE users SET verified_renews_at = ? WHERE id = ? AND verified = 1 AND verified_renews_at = ? RETURNING id')
+      .bind(next, u.id, u.verified_renews_at).first();
+    if (!claimed) continue;
+    try {
+      await charge(env, u, VERIFIED_CENTS, 'Southbag Verified (renewal)');
+    } catch (err) {
+      console.error('verified renewal', u.id, err);
+      await env.DB.prepare('UPDATE users SET verified_renews_at = ? WHERE id = ? AND verified_renews_at = ?').bind(u.verified_renews_at, u.id, next).run();
+      continue;
+    }
+    await env.DB.prepare(`INSERT INTO notifications (id, user_id, actor_id, type, body, created_at) VALUES (?, ?, NULL, 'system', ?, ?)`)
+      .bind(newId(), u.id, `Southbag Verified renewed. ${money(VERIFIED_CENTS)} was taken from your Southbag Online Banking account.`, now).run();
+  }
+}
 
 // -- Profiles --------------------------------------------------------------
 
