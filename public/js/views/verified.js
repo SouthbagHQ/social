@@ -43,6 +43,7 @@ export default function verified(ctx) {
     try {
       const res = await api.post('users/me/verify');
       store.patchMe({ verified: true, bag_balance: res.bag_balance });
+      window.dispatchEvent(new Event('bank:changed'));
       paint();
       toast(res.message || 'Subscribed.');
     } catch (err) { toastError(err); }

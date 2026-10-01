@@ -244,6 +244,7 @@ button:disabled, .btn:disabled, .btn-small:disabled, .btn-large:disabled { color
 /* ── Sidebar navigation (Identity) ─────────────────────────────────── */
 .south-nav { border: 2px ridge var(--sb-ridge); background: var(--sb-panel); padding: 0.75rem; align-self: start; position: sticky; top: 96px; }
 .south-nav .nav-title { font-size: 1.2rem; font-weight: 700; margin: 0 0 4px; }
+.south-nav .nav-apps { margin-top: 14px; padding-top: 10px; border-top: 2px dashed #000; }
 .south-nav .nav-hello { margin: 0 0 10px; }
 .south-nav ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; box-shadow: none; }
 .south-nav li { box-shadow: none; }

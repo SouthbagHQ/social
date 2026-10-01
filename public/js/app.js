@@ -4,7 +4,9 @@
 // a strip of help buttons, then the layout: sidebar of links, the page, and a column of extras. Same
 // furniture as Identity and Office, plus the jank in chaos.js.
 
+import { api } from './api.js';
 import { h, mount } from './dom.js';
+import { money } from './format.js';
 import { applyTheme, capitaliseKevin, promoStrip } from './gags.js';
 import { cookieBanner, helpStrip, jank, splash, ticker } from './chaos.js';
 import { navigate, route, startRouter } from './router.js';
@@ -27,6 +29,9 @@ route('/@:handle/:tab', () => import('./views/profile.js'));
 route('/notifications', () => import('./views/notifications.js'));
 route('/friends', () => import('./views/friends.js'));
 route('/settings', () => import('./views/settings.js'));
+route('/data', () => import('./views/data.js'));
+route('/activity', () => import('./views/activity.js'));
+route('/standing', () => import('./views/standing.js'));
 route('/welcome', () => import('./views/welcome.js'));
 route('/verified', () => import('./views/verified.js'));
 // Video & photos (YouTube / TikTok / Instagram)
@@ -99,6 +104,28 @@ const sections = [
   { href: '/friends', label: 'Friends', badge: 'friend_requests', auth: true },
   { href: '/bookmarks', label: 'Bookmarks', auth: true },
   { href: '/settings', label: 'Settings', auth: true },
+  { href: '/upload', label: 'Upload', auth: true },
+  { href: '/verified', label: 'Southbag Verified' },
+  { href: '/data', label: 'Your data', auth: true },
+  { href: '/activity', label: 'Activity log', auth: true },
+  { href: '/standing', label: 'Account standing', auth: true },
+  // Two Supports on purpose: the chat and the Southbag Support site. Help is the chat too.
+  { href: '/messages/support', label: 'Help' },
+  { href: '/messages/support', label: 'Support' },
+  { href: 'https://support.southbag.cc', label: 'Support', external: true },
+  { profile: true, auth: true },
+  { href: '/auth/logout', label: 'Log out', auth: true },
+  { href: '/', label: 'Log in', guest: true },
+];
+// The other Southbag apps, in a new tab. Online Banking shows the signed-in person's balance.
+const apps = [
+  { href: 'https://banking.southbag.cc', label: 'Southbag Online Banking', bank: true },
+  { href: 'https://southbag.cc', label: 'Southbag' },
+  { href: 'https://identity.southbag.cc/home', label: 'Southbag Identity' },
+  { href: 'https://office.southbag.cc', label: 'Southbag Office' },
+  { href: 'https://drive.southbag.cc', label: 'Southbag Drive' },
+  { href: 'https://code.southbag.cc', label: 'Southbag Code' },
+  { href: 'https://branch-locator.southbag.cc', label: 'Southbag Branch Locator' },
 ];
 
 const app = document.getElementById('app');
@@ -142,14 +169,33 @@ function renderHeader() {
       me ? accountBtn : h('button', { type: 'button', onclick: () => login() }, 'Log in')));
 }
 
+// Southbag Online Banking balance for the sidebar (cents), or null when unknown or signed out.
+let bankBalance = null;
+const bankLabel = () => (store.me && bankBalance != null ? `Southbag Online Banking (${money(bankBalance)})` : 'Southbag Online Banking');
+async function refreshBalance() {
+  if (!store.me) { bankBalance = null; return; }
+  try { bankBalance = (await api.get('payments/account')).account?.balance ?? null; } catch { return; }
+  // Only the link's text changes, so the sidebar isn't rebuilt (which would restart its animation).
+  const link = shell.nav.querySelector('a[data-bank]');
+  if (link) link.textContent = bankLabel();
+}
+
 function renderNav(path) {
   const me = store.me;
-  const items = [...sections.filter(s => !s.auth || me), me && { href: `/@${me.handle}`, label: 'Profile' }].filter(Boolean);
+  const items = sections.filter(s => (!s.auth || me) && !(s.guest && me))
+    .map(s => (s.profile ? { href: `/@${me.handle}`, label: 'Profile' } : s));
   const badge = key => key && store.unread[key] ? h('span.badge', store.unread[key] > 99 ? '99+' : String(store.unread[key])) : null;
+  const link = (s, i) => h('li', { style: `--i: ${i}` }, h('a', {
+    href: s.href,
+    'aria-current': !s.external && isCurrent(s.href, path) ? 'page' : null,
+    ...(s.external ? { target: '_blank', rel: 'noopener', dataset: s.bank ? { external: '', bank: '' } : { external: '' } } : {}),
+  }, s.bank ? bankLabel() : s.label, badge(s.badge)));
   mount(shell.nav,
     h('p.nav-title', 'Southbag Social'),
     me ? h('p.nav-hello.tiny', `Hello, "${me.email || me.handle}" !`) : null,
-    h('ul', items.map((s, i) => h('li', { style: `--i: ${i}` }, h('a', { href: s.href, 'aria-current': isCurrent(s.href, path) ? 'page' : null }, s.label, badge(s.badge))))),
+    h('ul', items.map(link)),
+    h('p.nav-title.nav-apps', 'Southbag'),
+    h('ul', apps.map((a, i) => link({ ...a, external: true }, items.length + i))),
     h('div.nav-footer',
       me ? h('button', { type: 'button', onclick: () => { location.href = '/auth/logout'; } }, 'Sign out')
         : h('button', { type: 'button', onclick: () => login() }, 'Log in'),
@@ -230,9 +276,13 @@ async function boot() {
   }
   startRouter(render);
   if (store.me) {
-    // Poll unread counts once a minute (cheap: one query).
+    // Poll unread counts once a minute (cheap: one query), and the bank balance every five.
     setInterval(() => { if (document.visibilityState === 'visible') store.refresh(); }, 60000);
+    setInterval(() => { if (document.visibilityState === 'visible') refreshBalance(); }, 300000);
+    refreshBalance();
   }
+  // Payments and Southbag Verified announce that money moved.
+  window.addEventListener('bank:changed', refreshBalance);
   window.addEventListener('auth:required', () => { if (store.me) store.refresh(); });
 }
 

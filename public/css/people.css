@@ -149,3 +149,12 @@
 .verified-status p { margin: 0; }
 .verified-details { margin: 0; padding-left: 1.2em; box-shadow: none; }
 .verified-details li { box-shadow: none; margin: 2px 0; }
+
+/* ── Your data, Activity log, Account standing (views/data.js, activity.js, standing.js) ── */
+.data-page, .activity-page, .standing-page { display: flex; flex-direction: column; gap: 12px; box-shadow: none; }
+.data-table { width: 100%; border-collapse: collapse; }
+.data-table th { text-align: left; font-weight: 400; padding: 4px 8px 4px 0; border-bottom: 1px dashed var(--sb-hairline); }
+.data-table td { text-align: right; padding: 4px 0; border-bottom: 1px dashed var(--sb-hairline); font-variant-numeric: tabular-nums; }
+.activity-list { padding: 0.4rem 0.8rem; }
+.activity-row { display: flex; gap: 12px; align-items: baseline; padding: 6px 0; border-bottom: 1px dashed var(--sb-hairline); box-shadow: none; }
+.activity-row time { white-space: nowrap; font-size: 0.8rem; }

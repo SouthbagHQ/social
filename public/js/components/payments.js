@@ -25,6 +25,7 @@ export async function sendPayment(to, amountText, note = '') {
   if (!amount) throw new Error('Enter an amount, like 12.50.');
   const res = await api.post('payments', { to, amount, note });
   track('social_payment_sent_ui', { amount, fees: res.payment.fees });
+  window.dispatchEvent(new Event('bank:changed'));
   toast(res.message);
   return res;
 }
