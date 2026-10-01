@@ -139,7 +139,7 @@ async function janitor(env: Env): Promise<void> {
     env.DB.prepare('DELETE FROM server_presence WHERE last_seen_at < ?').bind(now - 86400000),
   ]);
 }
-
+console.log("Kevin is watching")
 export default {
   fetch: app.fetch,
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
