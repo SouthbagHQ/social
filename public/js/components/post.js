@@ -109,6 +109,8 @@ function postMenu(anchor, post, { onDeleted, onEdited }) {
     { label: 'Copy link', onClick: () => share(postUrl(post)) },
     store.me ? { label: 'Send in a message', href: `/messages?share=${post.id}` } : null,
     { label: post.viewer?.bookmarked ? 'Unsave' : 'Save', onClick: () => toggleBookmark(post) },
+    post.media?.some(m => m.kind === 'image')
+      ? { label: 'Save to board', onClick: () => import('./board-picker.js').then(m => m.saveToBoard({ post })) } : null,
     canPin(post) ? { label: isPinned(post) ? 'Unpin from profile' : 'Pin to profile', onClick: () => togglePin(post) } : null,
     mine && post.poll && !post.poll.closed ? { label: 'End poll', onClick: () => endPoll(post) } : null,
     mine ? { label: 'Edit', onClick: () => amend(post, onEdited) } : null,

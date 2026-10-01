@@ -1,1 +1,103 @@
-/* boards styles */
+/* Boards (Pinterest): a masonry grid of pins, board covers, the board page and the pin dialog.
+   Each pin gets a box of a fixed shape picked by the page (see SHAPES in views/boards.js) and the
+   photo is stretched into it. Buttons use the shared style. */
+
+.boards-head .boards-search { display: flex; gap: 6px; align-items: center; box-shadow: none; min-width: min(320px, 100%); }
+.boards-head .boards-search input { flex: 1; min-width: 0; }
+.boards-sub { margin: -4px 0 12px; color: var(--sb-muted); font-size: 0.9rem; }
+.boards-crumbs { margin: 0 0 8px; font-size: 0.85rem; color: var(--sb-muted); }
+.boards-owner { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; box-shadow: none; }
+.boards-owner h2 { margin: 0; overflow-wrap: anywhere; }
+
+/* ── Masonry grid of pins ───────────────────────────────────────────── */
+.pin-grid { columns: 5 180px; column-gap: 14px; box-shadow: none; }
+.pin-grid-small { columns: 3 130px; column-gap: 10px; }
+.pin-tile {
+  display: block; break-inside: avoid; margin: 0 0 16px; padding: 4px; color: var(--sb-ink); text-decoration: none;
+  border: 1px solid transparent; transition: border-color 1.4s linear;
+}
+.pin-tile:hover { font-weight: inherit; border-color: var(--sb-hairline); }
+.pin-tile:nth-child(4n + 2) { transform: rotate(-0.4deg); }
+.pin-tile:nth-child(6n + 5) { transform: rotate(0.3deg); }
+.pin-img { display: block; position: relative; width: 100%; overflow: hidden; background: var(--sb-hairline); border: 2px inset var(--sb-bevel); }
+.pin-img img { display: block; width: 100%; height: 100%; box-shadow: none; }
+.pin-img.shape-tall { aspect-ratio: 3 / 4; }
+.pin-img.shape-square { aspect-ratio: 1 / 1; }
+.pin-img.shape-taller { aspect-ratio: 2 / 3; }
+.pin-img.shape-wide { aspect-ratio: 4 / 3; }
+.pin-img.shape-portrait { aspect-ratio: 4 / 5; }
+.pin-title { display: block; margin: 6px 0 0; font-weight: 700; font-size: 0.9rem; line-height: 1.25; overflow-wrap: anywhere; }
+.pin-by { display: block; margin: 2px 0 0; font-size: 0.75rem; color: var(--sb-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pin-grid .empty, .board-grid .empty { column-span: all; }
+
+/* ── Board covers ───────────────────────────────────────────────────── */
+.board-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 18px; box-shadow: none; }
+.board-card { display: block; min-width: 0; padding: 4px; color: var(--sb-ink); text-decoration: none; }
+.board-card:hover { font-weight: inherit; }
+.board-card:nth-child(3n + 2) { transform: rotate(-0.4deg); }
+.board-cover {
+  display: grid; grid-template-columns: 2fr 1fr; grid-template-rows: 1fr 1fr; gap: 3px; aspect-ratio: 3 / 2;
+  border: 2px ridge var(--sb-ridge); background: var(--sb-panel); overflow: hidden;
+}
+.cover-slot { display: block; min-width: 0; min-height: 0; overflow: hidden; background: var(--sb-hairline); }
+.cover-slot.big { grid-row: 1 / 3; }
+.cover-slot img { display: block; width: 100%; height: 100%; box-shadow: none; }
+.board-card-title { display: block; margin: 8px 0 0; font-weight: 700; font-size: 1.05rem; overflow-wrap: anywhere; }
+.board-card-meta { display: block; margin: 2px 0 0; font-size: 0.8rem; color: var(--sb-muted); }
+
+/* ── Board page ─────────────────────────────────────────────────────── */
+.board-head { margin-bottom: 18px; }
+.board-head .notice { margin-bottom: 12px; }
+.board-title { max-width: none; margin: 4px 0 10px; overflow-wrap: anywhere; }
+.board-owner { display: flex; align-items: center; gap: 8px; box-shadow: none; }
+.board-description { max-width: 70ch; white-space: pre-wrap; overflow-wrap: anywhere; }
+.board-stats { display: flex; flex-wrap: wrap; gap: 14px; margin: 8px 0; color: var(--sb-muted); font-size: 0.9rem; }
+.board-collaborators { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 8px 0; box-shadow: none; }
+.board-label { font-weight: 700; font-size: 0.85rem; }
+.board-person { display: inline-flex; align-items: center; gap: 5px; }
+.board-tools { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px dashed #999; box-shadow: none; }
+.board-create { max-width: 560px; }
+
+/* ── Forms in dialogs ───────────────────────────────────────────────── */
+.board-form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; box-shadow: none; }
+.pin-form { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; box-shadow: none; }
+.pin-form-photo { display: flex; flex-direction: column; gap: 8px; box-shadow: none; }
+.pin-upload-preview {
+  display: flex; align-items: center; justify-content: center; aspect-ratio: 4 / 5; width: 100%;
+  border: 2px inset var(--sb-bevel); background: var(--sb-hairline); overflow: hidden;
+}
+.pin-upload-preview img { display: block; width: 100%; height: 100%; box-shadow: none; }
+
+/* ── Save to board ──────────────────────────────────────────────────── */
+.picker-top { display: flex; gap: 14px; align-items: flex-start; box-shadow: none; }
+.picker-preview { flex: 0 0 110px; aspect-ratio: 4 / 5; border: 2px inset var(--sb-bevel); background: var(--sb-hairline); overflow: hidden; }
+.picker-preview img { display: block; width: 100%; height: 100%; box-shadow: none; }
+.picker-photos { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; box-shadow: none; }
+.picker-boards { max-height: 260px; overflow: auto; box-shadow: none; }
+.picker-row { display: flex; align-items: center; gap: 8px; padding: 6px 2px; border-bottom: 1px dashed #999; box-shadow: none; }
+.picker-row strong { overflow-wrap: anywhere; }
+.picker-create h3 { margin-top: 4px; }
+
+/* ── A pin, opened ──────────────────────────────────────────────────── */
+.pin-view-main { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 18px; box-shadow: none; }
+.pin-view-img { aspect-ratio: 4 / 5; width: 100%; border: 2px inset var(--sb-bevel); background: var(--sb-hairline); overflow: hidden; }
+.pin-view-img img { display: block; width: 100%; height: 100%; box-shadow: none; }
+.pin-view-info { min-width: 0; box-shadow: none; }
+.pin-note { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 0; }
+.pin-saved-by { display: flex; align-items: center; gap: 6px; margin: 10px 0; font-size: 0.9rem; box-shadow: none; overflow-wrap: anywhere; }
+.pin-tools { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; box-shadow: none; }
+.pin-related-title { margin: 22px 0 10px; padding-top: 12px; border-top: 2px dashed #000; }
+:root[data-theme='dark'] .pin-related-title { border-top-color: #666; }
+
+@media (max-width: 640px) {
+  .pin-grid { columns: 2; column-gap: 8px; }
+  .pin-grid-small { columns: 2; }
+  .pin-tile { margin-bottom: 10px; padding: 2px; }
+  .board-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .board-card-title { font-size: 0.95rem; }
+  .pin-view-main, .pin-form { grid-template-columns: minmax(0, 1fr); }
+  .pin-view-img { width: min(100%, 340px); }
+  .picker-preview { flex-basis: 80px; }
+  .pin-upload-preview { width: min(100%, 200px); }
+  .boards-head .boards-search { width: 100%; }
+}
