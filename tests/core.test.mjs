@@ -94,6 +94,13 @@ test('media: chunked upload into D1, full and ranged reads', async () => {
   assert.equal((await bob.post('posts', { body: 'steal', media_ids: [id] })).status, 422, 'cannot attach other people’s files');
 });
 
+test('media: audio accepts flac and refuses unknown types', async () => {
+  const flac = await alice.post('media', { kind: 'audio', content_type: 'audio/flac', size: 1000, duration: 12 });
+  assert.equal(flac.status, 201, flac.text);
+  assert.equal(flac.body.id.length > 0, true);
+  assert.equal((await alice.post('media', { kind: 'audio', content_type: 'audio/midi', size: 1000 })).status, 422);
+});
+
 test('visibility: followers-only posts stay hidden from strangers', async () => {
   const { body: { post } } = await alice.post('posts', { body: 'For The Pile only', visibility: 'followers' });
   assert.equal((await carol.get(`posts/${post.id}`)).status, 404);
