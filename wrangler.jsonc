@@ -33,5 +33,19 @@
     // Hourly janitor (expired stories, abandoned uploads, dead sessions) and Verified renewals.
     "crons": ["17 * * * *"]
   },
-  "observability": { "enabled": true }
+  "observability": { "enabled": true },
+  // `npx wrangler preview` (Workers Builds on non-main branches) does not inherit production
+  // bindings. There is only one D1 database, so previews use it. Cron and social.southbag.cc
+  // stay production-only. Banking RPCs go to the production billing entrypoint.
+  "previews": {
+    "d1_databases": [
+      {
+        "binding": "DB",
+        "database_name": "southbag-social",
+        "database_id": "7048f8ef-bf7d-440e-83bd-838bbe9e2ac8",
+        "migrations_dir": "migrations"
+      }
+    ],
+    "services": [{ "binding": "BANKING", "service": "southbag-online-banking", "entrypoint": "Billing" }]
+  }
 }
