@@ -346,7 +346,7 @@ async function uploadTab(ctx) {
   const form = h('form.south-card.audio-upload', { onsubmit: e => { e.preventDefault(); submit(); } },
     h('label.field', h('span', 'Type'), typeSelect),
     h('div.field', h('span.field-label', s.kind === 'episode' ? 'Podcast' : 'Artist'), h('div.row', showSelect, newShowBtn)),
-    h('div.field', h('span.field-label', 'Audio file'), h('p.fine', `MP3, M4A, OGG or WAV, up to ${AUDIO_LIMIT / 1048576} MB.`), chooseAudio, audioBox),
+    h('div.field', h('span.field-label', 'Audio file'), h('p.fine', `MP3, M4A, OGG, WAV or FLAC, up to ${AUDIO_LIMIT / 1048576} MB.`), chooseAudio, audioBox),
     h('div.field', h('span.field-label', 'Cover'), h('div.row.wrap.audio-cover-row', coverBox, h('div', coverBtn, coverNote))),
     h('label.field', h('span', 'Title'), title),
     h('label.field', h('span', 'Description'), desc, descCount),
@@ -463,6 +463,7 @@ function contentTypeOf(file) {
   if (t === 'audio/ogg' || ext === 'ogg' || ext === 'oga' || ext === 'opus') return 'audio/ogg';
   if (t === 'audio/webm' || ext === 'weba') return 'audio/webm';
   if (t === 'audio/wav' || t === 'audio/x-wav' || t === 'audio/wave' || ext === 'wav') return 'audio/wav';
+  if (t === 'audio/flac' || t === 'audio/x-flac' || ext === 'flac') return 'audio/flac';
   return null;
 }
 

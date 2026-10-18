@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
+    "build": "npm run check",
     "check": "tsc --noEmit && node --check public/js/app.js",
     "test": "bash scripts/test.sh",
     "deploy": "npm run db:migrate:remote && wrangler deploy",
