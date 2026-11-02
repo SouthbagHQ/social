@@ -1,5 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
+	// Account freeze: `wrangler secret put IDENTITY_INTERNAL_SECRET` (Social's entry from
+	// Identity's INTERNAL_API_SECRETS, key "southbag-social"). Required in production - npm run deploy checks.
   "name": "southbag-social",
   "account_id": "1044a3131c99356eba069325d3be3788",
   "main": "src/index.ts",

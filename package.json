@@ -7,7 +7,7 @@
     "dev": "wrangler dev",
     "check": "tsc --noEmit && node --check public/js/app.js",
     "test": "bash scripts/test.sh",
-    "deploy": "npm run db:migrate:remote && wrangler deploy",
+    "deploy": "node scripts/check-deploy.mjs && npm run db:migrate:remote && wrangler deploy",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
     "cf-typegen": "wrangler types",

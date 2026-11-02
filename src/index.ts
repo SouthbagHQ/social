@@ -6,6 +6,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import type { AppEnv, Env } from './env';
 import { callback, login, logout, safeReturnTo, session } from './lib/auth';
+import { centralStatus, FROZEN_TEXT, STATUS_UNKNOWN_TEXT } from './lib/identity';
 import { deleteMedia, serveMedia } from './lib/media';
 import { NO_DELETING, fail } from './lib/http';
 import { pushPending } from './lib/push';
@@ -73,6 +74,15 @@ app.use('/api/*', async (c, next) => {
     });
   }
   const user = await session(c.req.raw, c.env, c.executionCtx);
+  // The account-level freeze covers everything a signed-in user can do, reads included; while
+  // the central answer is UNKNOWN (Identity configured but unreachable) EVERYTHING fails closed.
+  if (user) {
+    const central = await centralStatus(c.env, user.id);
+    if (central === 'unknown')
+      return c.json({ error: STATUS_UNKNOWN_TEXT }, 503);
+    if (central !== 'off' && central.frozen)
+      return c.json({ error: FROZEN_TEXT }, 423);
+  }
   c.set('user', user);
   // Cookie sessions need a same-origin check against CSRF; a bearer token is proof by itself.
   if (!['GET', 'HEAD'].includes(c.req.method) && user && !user.bearer && origin !== new URL(c.req.url).origin)
