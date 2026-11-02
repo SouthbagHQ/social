@@ -8,7 +8,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 sql=""
 now=$(date +%s000)
-for who in alice bob carol kevin; do
+for who in alice bob carol kevin erin frank; do
   hash=$(node -e "console.log(require('crypto').createHash('sha256').update('dev-$who').digest('base64url'))")
   name="$(tr '[:lower:]' '[:upper:]' <<< "${who:0:1}")${who:1}"
   [ "$who" = kevin ] && name="Kevin" && verified=1 || verified=0
