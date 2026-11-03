@@ -30,6 +30,26 @@ const PROTOCOL_VERSION = '2025-06-18';
 const SUPPORTED_VERSIONS = new Set(['2025-06-18', '2025-03-26']);
 
 type Json = Record<string, unknown>;
+
+// Caller-fixable input problems: returned as isError tool results, never charged beyond the
+// request fee, and distinct from unknown-outcome failures.
+class ToolInputError extends Error {}
+
+// Text-post limits and tag/mention extraction, mirroring src/lib/posts.ts. posts.ts itself is not
+// imported here: it uses extensionless relative imports only the worker bundler resolves, and the
+// MCP tests run the real code under node. The SQL below mirrors createPost's text-post path.
+const MAX_TEXT = 280;
+const extractTags = (text: string): string[] =>
+  [...new Set([...text.matchAll(/(?:^|[^\w&])#(\w{1,50})/gu)].map(m => m[1].toLowerCase()))].slice(0, 20);
+const extractMentions = (text: string): string[] =>
+  [...new Set([...text.matchAll(/(?:^|[^\w])@(\w{3,20})/gu)].map(m => m[1].toLowerCase()))].slice(0, 20);
+const newPostId = (now: number): string => {
+  const alphabet = '0123456789abcdefghijklmnopqrstuvwxyz';
+  const bytes = crypto.getRandomValues(new Uint8Array(7));
+  let rand = '';
+  for (const b of bytes) rand += alphabet[b % 36];
+  return now.toString(36).padStart(9, '0') + rand;
+};
 const json = (data: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json', ...headers } });
 const rpcResult = (id: unknown, result: unknown) => ({ jsonrpc: '2.0', id, result });
@@ -89,6 +109,19 @@ function toolList() {
       inputSchema: { type: 'object', properties: {} },
     },
     {
+      name: 'create_post',
+      title: 'Create a post',
+      description: `Posts a text post (max 280 characters) as the token owner. Posting has no action fee on Social; only the ${money(MCP_REQUEST_FEE_CENTS)} MCP request fee applies. Media, polls, replies and reposts are not exposed to agents.`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          body: { type: 'string', description: 'Post text (max 280 characters)' },
+          visibility: { type: 'string', enum: ['public', 'followers', 'friends'], description: 'Who can see it (default public)' }
+        },
+        required: ['body']
+      }
+    },
+    {
       name: 'list_posts',
       title: 'List posts',
       description: `The token owner's own posts, newest first. Costs the ${money(MCP_REQUEST_FEE_CENTS)} MCP request fee; no additional action fee.`,
@@ -111,7 +144,36 @@ function initializeResult() {
   };
 }
 
-async function runSocialTool(env: Env, user: AgentIdentity['user'], name: string): Promise<{ text: string; data: Json }> {
+async function runSocialTool(env: Env, user: AgentIdentity['user'], name: string, args: Json): Promise<{ text: string; data: Json }> {
+  if (name === 'create_post') {
+    const body = typeof args.body === 'string' ? args.body.trim() : '';
+    if (!body) throw new ToolInputError('Write something first.');
+    if ([...body].length > MAX_TEXT) throw new ToolInputError(`Posts are limited to ${MAX_TEXT} characters.`);
+    const visibility = ['public', 'followers', 'friends'].includes(args.visibility as string) ? args.visibility as string : 'public';
+    const local = await env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(user.id).first<{ id: string }>();
+    if (!local) return { text: 'No Social profile for this account yet. Open social.southbag.cc once, then post.', data: { notFound: true } };
+    // Mirrors createPost's text-post path: the post row, hashtags, the author's post counter and
+    // mention notifications, in one batch.
+    const now = Date.now();
+    const id = newPostId(now);
+    const statements = [
+      env.DB.prepare("INSERT INTO posts (id, author_id, kind, title, body, reply_to_id, root_id, repost_of_id, group_id, wall_user_id, visibility, created_at) VALUES (?, ?, 'text', NULL, ?, NULL, NULL, NULL, NULL, NULL, ?, ?)")
+        .bind(id, user.id, body, visibility, now),
+      ...extractTags(body).map(tag => env.DB.prepare('INSERT OR IGNORE INTO post_tags (tag, post_id, created_at) VALUES (?, ?, ?)').bind(tag, id, now)),
+      env.DB.prepare('UPDATE users SET post_count = post_count + 1 WHERE id = ?').bind(user.id),
+    ];
+    const mentions = extractMentions(body);
+    if (mentions.length) {
+      const { results } = await env.DB.prepare(`SELECT id FROM users WHERE handle IN (${mentions.map(() => '?').join(',')})`).bind(...mentions).all<{ id: string }>();
+      for (const m of results) {
+        if (m.id === user.id) continue;
+        statements.push(env.DB.prepare('INSERT INTO notifications (id, user_id, actor_id, type, post_id, group_id, body, link, created_at) VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, ?)')
+          .bind(newPostId(now), m.id, user.id, 'mention', id, now));
+      }
+    }
+    await env.DB.batch(statements);
+    return { text: 'Posted.', data: { post: { id, visibility, url: `/post/${id}` } } };
+  }
   if (name === 'get_profile') {
     const row = await env.DB.prepare(
       'SELECT handle, name, bio, location, website, verified, follower_count, following_count, post_count FROM users WHERE id = ?')
@@ -204,7 +266,7 @@ async function handleToolsCall(request: Request, env: Env, message: { id: unknow
 
   let result: Json;
   try {
-    const { text, data } = await runSocialTool(env, auth.user, name);
+    const { text, data } = await runSocialTool(env, auth.user, name, (message.params?.arguments ?? {}) as Json);
     result = {
       content: [{ type: 'text', text }],
       isError: false,
@@ -218,6 +280,21 @@ async function handleToolsCall(request: Request, env: Env, message: { id: unknow
       },
     };
   } catch (error) {
+    if (error instanceof ToolInputError) {
+      result = {
+        content: [{ type: 'text', text: `${error.message} Only the ${money(MCP_REQUEST_FEE_CENTS)} request fee was charged.` }],
+        isError: true,
+        structuredContent: {
+          receipt: {
+            requestFee: { amount: MCP_REQUEST_FEE_CENTS, description: MCP_REQUEST_FEE_DESCRIPTION, duplicate: chargeResult.duplicate ?? false },
+            duplicate: false,
+          },
+        },
+      };
+      await db.prepare("UPDATE mcp_call SET status = 'done', response = ?, updated_at = ? WHERE idempotency_key = ?")
+        .bind(JSON.stringify(result), Date.now(), rowKey).run();
+      return json(rpcResult(message.id, result));
+    }
     console.error(`mcp tools/call ${name} failed after charging`, error);
     // The request fee was charged; the action's own outcome is unknown. The result is terminal
     // (journaled 'done'): the call is never re-run.

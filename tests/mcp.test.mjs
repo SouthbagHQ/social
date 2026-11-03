@@ -97,7 +97,7 @@ test('tools/list is authenticated but free', async () => {
   const { env, charges, restore } = setup('u1');
   assert.equal((await handleMcp(post(rpc(1, 'tools/list')), env)).status, 401);
   const res = await handleMcp(post(rpc(2, 'tools/list'), auth), env);
-  assert.deepEqual((await res.json()).result.tools.map(t => t.name), ['get_profile', 'list_posts']);
+  assert.deepEqual((await res.json()).result.tools.map(t => t.name), ['get_profile', 'create_post', 'list_posts']);
   assert.equal(charges.length, 0);
   restore();
 });
@@ -163,5 +163,41 @@ test('a pending row is terminal: never re-run, then replays once the original la
   const replay = await handleMcp(post(rpc(2, 'tools/call', { name: 'get_profile' }), { ...auth, ...key }), env);
   assert.equal((await replay.json()).result.structuredContent.receipt.duplicate, true);
   assert.equal(charges.length, 0);
+  restore();
+});
+
+test('create_post publishes a text post, charges only the $1 request fee, and replays safely', async () => {
+  const { db, env, charges, restore } = setup('u1');
+  const res = await handleMcp(post(rpc(1, 'tools/call', { name: 'create_post', arguments: { body: 'Shipping agents. #progress @ingo' } }), { ...auth, ...key }), env);
+  const body = await res.json();
+  assert.equal(body.result.isError, false);
+  const postId = body.result.structuredContent.post.id;
+  assert.equal(charges.length, 1);
+  assert.equal(charges[0].amount, 100);
+  const row = db.prepare('SELECT * FROM posts WHERE id = ?').get(postId);
+  assert.equal(row.kind, 'text');
+  assert.equal(row.visibility, 'public');
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM post_tags WHERE post_id = ?').get(postId).n, 1);
+  assert.equal(db.prepare('SELECT post_count AS n FROM users WHERE id = ?').get('u1').n, 1);
+  // Self-mention does not notify; a retry replays with no second post or charge.
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM notifications').get().n, 0);
+  const res2 = await handleMcp(post(rpc(2, 'tools/call', { name: 'create_post', arguments: { body: 'Shipping agents. #progress @ingo' } }), { ...auth, ...key }), env);
+  assert.equal((await res2.json()).result.structuredContent.receipt.duplicate, true);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM posts').get().n, 2); // seeded p1 + the new one
+  assert.equal(charges.length, 1);
+  restore();
+});
+
+test('create_post rejects empty and overlong text after the request fee only', async () => {
+  const { db, env, charges, restore } = setup('u1');
+  const res = await handleMcp(post(rpc(1, 'tools/call', { name: 'create_post', arguments: { body: '  ' } }), { ...auth, ...key }), env);
+  const body = await res.json();
+  assert.equal(body.result.isError, true);
+  assert.match(body.result.content[0].text, /Write something first/);
+  assert.equal(charges.length, 1);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM posts').get().n, 1); // only the seeded p1
+  const res2 = await handleMcp(post(rpc(2, 'tools/call', { name: 'create_post', arguments: { body: 'x'.repeat(281) } }), { ...auth, 'idempotency-key': 'test-key-0002' }), env);
+  assert.match((await res2.json()).result.content[0].text, /limited to 280/);
+  assert.equal(charges.length, 2);
   restore();
 });
