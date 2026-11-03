@@ -1,5 +1,5 @@
 import type { Env } from '../env';
-import { newId } from './ids';
+import { newId } from './ids.ts';
 
 export type NotificationType =
   | 'follow' | 'friend_request' | 'friend_accept' | 'reaction' | 'reply' | 'repost' | 'quote'

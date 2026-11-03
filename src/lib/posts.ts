@@ -3,11 +3,11 @@
 // Routes query post ids with `visibleTo()` and then call `hydrate()` to get API-ready JSON.
 
 import type { Env, SessionUser } from '../env';
-import { fail, placeholders } from './http';
-import { newId } from './ids';
-import { mediaJson, ownedReadyMedia, type MediaJson, type MediaRow } from './media';
-import { notifyStatement, type NotifyInput } from './notify';
-import { userCards, type UserCard } from './users';
+import { fail, placeholders } from './http.ts';
+import { newId } from './ids.ts';
+import { mediaJson, ownedReadyMedia, type MediaJson, type MediaRow } from './media.ts';
+import { notifyStatement, type NotifyInput } from './notify.ts';
+import { userCards, type UserCard } from './users.ts';
 
 export type PostKind = 'text' | 'photo' | 'video' | 'short';
 export type Visibility = 'public' | 'followers' | 'friends';

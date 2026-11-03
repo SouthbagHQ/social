@@ -1,5 +1,5 @@
 import type { Env } from '../env';
-import { placeholders } from './http';
+import { placeholders } from './http.ts';
 
 export interface UserRow {
   id: string;
