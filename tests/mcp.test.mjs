@@ -39,7 +39,7 @@ function d1Shim(db) {
   };
 }
 
-function setup(userId, { frozen = false, identityUnreachable = false } = {}) {
+function setup(userId, { frozen = false, identityUnreachable = false, scopes = ['read', 'write'] } = {}) {
   const db = new DatabaseSync(':memory:');
   for (const file of readdirSync('migrations').sort()) db.exec(readFileSync('migrations/' + file, 'utf8'));
   db.prepare("INSERT INTO users (id, handle, name, bio, verified, created_at, updated_at) VALUES (?, 'ingo', 'Ingo', 'Runs the place', 1, 0, 0)").run(userId);
@@ -66,7 +66,7 @@ function setup(userId, { frozen = false, identityUnreachable = false } = {}) {
     if (String(url).endsWith('/api/internal/agent-token')) {
       const token = JSON.parse(init.body).token;
       if (!String(token).startsWith('good-')) return new Response(JSON.stringify({ error: 'unknown_token' }), { status: 404 });
-      return new Response(JSON.stringify({ tokenId: 'tok1', tokenName: 'test', userId, email: `${userId}@x.test`, name: 'Ingo' }), { status: 200 });
+      return new Response(JSON.stringify({ tokenId: 'tok1', tokenName: 'test', userId, email: `${userId}@x.test`, name: 'Ingo', scopes }), { status: 200 });
     }
     return new Response(JSON.stringify({ frozen }), { status: 200 });
   };
@@ -199,6 +199,17 @@ test('create_post validates BEFORE fees: empty or overlong text is a free reject
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM mcp_call').get().n, 0);
   const res2 = await handleMcp(post(rpc(2, 'tools/call', { name: 'create_post', arguments: { body: 'x'.repeat(281) } }), { ...auth, 'idempotency-key': 'test-key-0002' }), env);
   assert.match((await res2.json()).result.content[0].text, /limited to 280/);
+  assert.equal(charges.length, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM posts').get().n, 1); // only the seeded p1
+  restore();
+});
+
+test('a read-only token cannot see or call create_post; nothing is charged', async () => {
+  const { db, env, charges, restore } = setup('u1', { scopes: ['read'] });
+  const list = await handleMcp(post(rpc(1, 'tools/list'), auth), env);
+  assert.deepEqual((await list.json()).result.tools.map(t => t.name), ['get_profile', 'list_posts']);
+  const res = await handleMcp(post(rpc(2, 'tools/call', { name: 'create_post', arguments: { body: 'Sneaky' } }), { ...auth, ...key }), env);
+  assert.equal((await res.json()).error.code, -32602);
   assert.equal(charges.length, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM posts').get().n, 1); // only the seeded p1
   restore();
