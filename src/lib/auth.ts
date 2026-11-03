@@ -188,8 +188,8 @@ async function upsertUser(env: Env, user: IdentityUser, now: number): Promise<{ 
   const existing = await env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(user.sub).first();
   const name = (user.name || user.given_name || user.email?.split('@')[0] || 'Valued Customer').slice(0, 50);
   if (existing) {
-    await env.DB.prepare('UPDATE users SET email = ?, identity_picture = ?, updated_at = ? WHERE id = ?')
-      .bind(user.email || null, user.picture || null, now, user.sub).run();
+    await env.DB.prepare('UPDATE users SET email = ?, name = ?, identity_picture = ?, updated_at = ? WHERE id = ?')
+      .bind(user.email || null, name, user.picture || null, now, user.sub).run();
     return { created: false };
   }
   const base = baseHandle(user);
