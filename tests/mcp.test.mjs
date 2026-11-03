@@ -188,16 +188,18 @@ test('create_post publishes a text post, charges only the $1 request fee, and re
   restore();
 });
 
-test('create_post rejects empty and overlong text after the request fee only', async () => {
+test('create_post validates BEFORE fees: empty or overlong text is a free rejection, nothing journaled', async () => {
   const { db, env, charges, restore } = setup('u1');
   const res = await handleMcp(post(rpc(1, 'tools/call', { name: 'create_post', arguments: { body: '  ' } }), { ...auth, ...key }), env);
   const body = await res.json();
   assert.equal(body.result.isError, true);
   assert.match(body.result.content[0].text, /Write something first/);
-  assert.equal(charges.length, 1);
-  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM posts').get().n, 1); // only the seeded p1
+  assert.match(body.result.content[0].text, /No fees charged/);
+  assert.equal(charges.length, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM mcp_call').get().n, 0);
   const res2 = await handleMcp(post(rpc(2, 'tools/call', { name: 'create_post', arguments: { body: 'x'.repeat(281) } }), { ...auth, 'idempotency-key': 'test-key-0002' }), env);
   assert.match((await res2.json()).result.content[0].text, /limited to 280/);
-  assert.equal(charges.length, 2);
+  assert.equal(charges.length, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM posts').get().n, 1); // only the seeded p1
   restore();
 });

@@ -20,6 +20,7 @@
 import type { Env } from '../env';
 import { centralStatus, FROZEN_TEXT, STATUS_UNKNOWN_TEXT, IDENTITY_ORIGIN } from './identity.ts';
 import { charge, money } from './banking.ts';
+import { createPost, MAX_TEXT } from './posts.ts';
 
 // Ingo's ruling in the dev Slack thread (2026-11-03): "fee for everything", then "$1" per MCP
 // request. One clearly-marked constant so a pricing change is a one-line PR.
@@ -31,25 +32,9 @@ const SUPPORTED_VERSIONS = new Set(['2025-06-18', '2025-03-26']);
 
 type Json = Record<string, unknown>;
 
-// Caller-fixable input problems: returned as isError tool results, never charged beyond the
-// request fee, and distinct from unknown-outcome failures.
+// Caller-fixable input problems: rejected BEFORE any fee moves (see preflightToolCall), never
+// charged, and distinct from unknown-outcome failures.
 class ToolInputError extends Error {}
-
-// Text-post limits and tag/mention extraction, mirroring src/lib/posts.ts. posts.ts itself is not
-// imported here: it uses extensionless relative imports only the worker bundler resolves, and the
-// MCP tests run the real code under node. The SQL below mirrors createPost's text-post path.
-const MAX_TEXT = 280;
-const extractTags = (text: string): string[] =>
-  [...new Set([...text.matchAll(/(?:^|[^\w&])#(\w{1,50})/gu)].map(m => m[1].toLowerCase()))].slice(0, 20);
-const extractMentions = (text: string): string[] =>
-  [...new Set([...text.matchAll(/(?:^|[^\w])@(\w{3,20})/gu)].map(m => m[1].toLowerCase()))].slice(0, 20);
-const newPostId = (now: number): string => {
-  const alphabet = '0123456789abcdefghijklmnopqrstuvwxyz';
-  const bytes = crypto.getRandomValues(new Uint8Array(7));
-  let rand = '';
-  for (const b of bytes) rand += alphabet[b % 36];
-  return now.toString(36).padStart(9, '0') + rand;
-};
 const json = (data: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json', ...headers } });
 const rpcResult = (id: unknown, result: unknown) => ({ jsonrpc: '2.0', id, result });
@@ -147,32 +132,13 @@ function initializeResult() {
 async function runSocialTool(env: Env, user: AgentIdentity['user'], name: string, args: Json): Promise<{ text: string; data: Json }> {
   if (name === 'create_post') {
     const body = typeof args.body === 'string' ? args.body.trim() : '';
-    if (!body) throw new ToolInputError('Write something first.');
-    if ([...body].length > MAX_TEXT) throw new ToolInputError(`Posts are limited to ${MAX_TEXT} characters.`);
-    const visibility = ['public', 'followers', 'friends'].includes(args.visibility as string) ? args.visibility as string : 'public';
-    const local = await env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(user.id).first<{ id: string }>();
-    if (!local) return { text: 'No Social profile for this account yet. Open social.southbag.cc once, then post.', data: { notFound: true } };
-    // Mirrors createPost's text-post path: the post row, hashtags, the author's post counter and
-    // mention notifications, in one batch.
-    const now = Date.now();
-    const id = newPostId(now);
-    const statements = [
-      env.DB.prepare("INSERT INTO posts (id, author_id, kind, title, body, reply_to_id, root_id, repost_of_id, group_id, wall_user_id, visibility, created_at) VALUES (?, ?, 'text', NULL, ?, NULL, NULL, NULL, NULL, NULL, ?, ?)")
-        .bind(id, user.id, body, visibility, now),
-      ...extractTags(body).map(tag => env.DB.prepare('INSERT OR IGNORE INTO post_tags (tag, post_id, created_at) VALUES (?, ?, ?)').bind(tag, id, now)),
-      env.DB.prepare('UPDATE users SET post_count = post_count + 1 WHERE id = ?').bind(user.id),
-    ];
-    const mentions = extractMentions(body);
-    if (mentions.length) {
-      const { results } = await env.DB.prepare(`SELECT id FROM users WHERE handle IN (${mentions.map(() => '?').join(',')})`).bind(...mentions).all<{ id: string }>();
-      for (const m of results) {
-        if (m.id === user.id) continue;
-        statements.push(env.DB.prepare('INSERT INTO notifications (id, user_id, actor_id, type, post_id, group_id, body, link, created_at) VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, ?)')
-          .bind(newPostId(now), m.id, user.id, 'mention', id, now));
-      }
-    }
-    await env.DB.batch(statements);
-    return { text: 'Posted.', data: { post: { id, visibility, url: `/post/${id}` } } };
+    const visibility = ['public', 'followers', 'friends'].includes(args.visibility as string) ? args.visibility as 'public' | 'followers' | 'friends' : 'public';
+    const local = (await env.DB.prepare('SELECT id, handle, name, email, avatar_media_id, identity_picture, verified FROM users WHERE id = ?')
+      .bind(user.id).first<{ id: string; handle: string; name: string; email: string | null; avatar_media_id: string | null; identity_picture: string | null; verified: number }>())!;
+    // The same createPost the web and app APIs use: every validation, counter, tag, mention and
+    // notification invariant lives in one place (src/lib/posts.ts).
+    const postId = await createPost(env, local, { kind: 'text', body, visibility });
+    return { text: 'Posted.', data: { post: { id: postId, visibility, url: `/post/${postId}` } } };
   }
   if (name === 'get_profile') {
     const row = await env.DB.prepare(
@@ -197,6 +163,20 @@ async function runSocialTool(env: Env, user: AgentIdentity['user'], name: string
   return { text: posts.length ? `${posts.length} post${posts.length === 1 ? '' : 's'}.` : 'No posts. The feed starves.', data: { posts } };
 }
 
+// Validation BEFORE fees: everything checkable without side effects (argument shape, post limits,
+// profile existence) runs here, before the journal claim and before any fee moves. A malformed
+// call or a missing profile is a free rejection - the request fee only ever pays for an action
+// actually attempted.
+async function preflightSocialTool(env: Env, user: AgentIdentity['user'], name: string, args: Json): Promise<void> {
+  if (name === 'create_post') {
+    const body = typeof args.body === 'string' ? args.body.trim() : '';
+    if (!body) throw new ToolInputError('Write something first.');
+    if ([...body].length > MAX_TEXT) throw new ToolInputError(`Posts are limited to ${MAX_TEXT} characters.`);
+    const local = await env.DB.prepare('SELECT 1 AS ok FROM users WHERE id = ?').bind(user.id).first();
+    if (!local) throw new ToolInputError('No Social profile for this account yet. Open social.southbag.cc once, then post.');
+  }
+}
+
 // A 'pending' journal row means a previous call with this key did not finish cleanly. It is NEVER
 // re-run and never reclaimed: without a fencing mechanism shared by the fee executor and the
 // action executor, no local observation proves the original call cannot still commit. The row
@@ -214,6 +194,7 @@ async function handleToolsCall(request: Request, env: Env, message: { id: unknow
   const auth = await resolveAgent(env, request.headers.get('authorization')?.match(/^Bearer (.+)$/i)?.[1] || '');
   if ('status' in auth) return json(rpcError(message.id, -32001, auth.text), auth.status);
   const name = typeof message.params?.name === 'string' ? message.params.name : '';
+  const args = (message.params?.arguments ?? {}) as Json;
   if (!toolList().some(tool => tool.name === name))
     return json(rpcError(message.id, -32602, `Unknown tool '${name}'. tools/list is free and quotes every fee.`));
   const key = request.headers.get('idempotency-key')?.trim() || '';
@@ -228,6 +209,14 @@ async function handleToolsCall(request: Request, env: Env, message: { id: unknow
     if (stored.structuredContent?.receipt) stored.structuredContent.receipt.duplicate = true;
     return json(rpcResult(message.id, stored));
   };
+
+  try {
+    await preflightSocialTool(env, auth.user, name, args);
+  } catch (error) {
+    if (error instanceof ToolInputError)
+      return json(rpcResult(message.id, { content: [{ type: 'text', text: `${error.message} No fees charged.` }], isError: true, structuredContent: { rejected: 'invalid_input' } }));
+    throw error;
+  }
 
   const existing = await db.prepare('SELECT tool, args_hash, status, response FROM mcp_call WHERE idempotency_key = ?').bind(rowKey).first<{ tool: string; args_hash: string; status: string; response: string | null }>();
   if (existing) {
@@ -266,7 +255,7 @@ async function handleToolsCall(request: Request, env: Env, message: { id: unknow
 
   let result: Json;
   try {
-    const { text, data } = await runSocialTool(env, auth.user, name, (message.params?.arguments ?? {}) as Json);
+    const { text, data } = await runSocialTool(env, auth.user, name, args);
     result = {
       content: [{ type: 'text', text }],
       isError: false,
