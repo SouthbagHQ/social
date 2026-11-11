@@ -41,6 +41,8 @@ route('/watch/:id', () => import('./views/watch.js'));
 route('/shorts', () => import('./views/shorts.js'));
 route('/shorts/:id', () => import('./views/shorts.js'));
 route('/photos', () => import('./views/photos.js'));
+route('/albums', () => import('./views/albums.js'));
+route('/albums/:id', () => import('./views/album.js'));
 route('/upload', () => import('./views/upload.js'));
 // Stories & groups (Instagram / Facebook)
 route('/stories/:handle', () => import('./views/stories.js'));
@@ -87,6 +89,7 @@ const sections = [
   { href: '/', label: 'Feed' },
   { href: '/explore', label: 'Explore' },
   { href: '/photos', label: 'Photos' },
+  { href: '/albums', label: 'Albums', auth: true },
   { href: '/videos', label: 'Videos' },
   { href: '/shorts', label: 'Shorts' },
   { href: '/groups', label: 'Groups' },

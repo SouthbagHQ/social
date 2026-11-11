@@ -8,6 +8,11 @@ export interface Env {
   /** Push notifications (lib/push.ts). Secrets; push is off without them. */
   VAPID_PUBLIC_KEY?: string;
   VAPID_PRIVATE_KEY?: string;
+  /** Shared albums (lib/drive.ts). The WebDAV credentials of the Southbag Drive account that
+   *  holds album media. Secrets; albums answer 503 without them. DRIVE_ORIGIN is a var. */
+  DRIVE_ORIGIN?: string;
+  DRIVE_WEBDAV_USER?: string;
+  DRIVE_WEBDAV_TOKEN?: string;
   [binding: string]: unknown;
 }
 
