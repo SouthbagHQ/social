@@ -261,3 +261,14 @@ test('audio: playlists keep their order and are private when asked', async () =>
   await cannotDelete(alice, `audio/playlists/${pl.id}`);
   assert.equal((await alice.get(`audio/playlists/${pl.id}`)).status, 200);
 });
+
+test('audio: flac files can be published and served', async () => {
+  const band = await show(alice, { kind: 'artist', title: 'Lossless Hours' });
+  const file = await upload(alice, { type: 'audio/flac', size: 4000, duration: 90 });
+  const res = await alice.post('audio/tracks', { show_id: band.id, title: 'Master', media_id: file.id, post_to_feed: false });
+  assert.equal(res.status, 201, res.text);
+  assert.equal(res.body.track.content_type, 'audio/flac');
+  const served = await fetch(`${BASE}${res.body.track.audio_url}`);
+  assert.equal(served.status, 200);
+  assert.equal(served.headers.get('content-type'), 'audio/flac');
+});
