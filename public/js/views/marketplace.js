@@ -503,12 +503,12 @@ async function listingPage(ctx, id) {
       title: 'Make an offer', ok: 'Send offer',
       content: [
         h('p.muted', `Asking ${priceLabel(listing.price)}${listing.negotiable ? ', open to offers' : ''}.`),
-        field('Your offer', amount, 'In dollars. A negative offer asks the seller to pay you. No money is moved here.'),
+        field('Your offer', amount, 'In dollars.'),
         field('Message', message),
       ],
       onSubmit: () => {
         const cents = offerCents(amount.value);
-        if (cents == null || !Number.isSafeInteger(cents) || cents === 0) throw new Error('Enter a non-zero amount in dollars, up to $10 million either way.');
+        if (cents == null || !Number.isSafeInteger(cents) || cents === 0) throw new Error('Enter an amount in dollars.');
         return api.post(`marketplace/${listing.id}/offers`, { amount: cents, message: message.value.trim() });
       },
     });
