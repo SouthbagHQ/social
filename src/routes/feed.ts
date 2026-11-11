@@ -1,6 +1,7 @@
 // Feeds (Twitter / Facebook core). Mounted at /api/feed.
 //
-//   GET /api/feed?tab=following|foryou&cursor&limit -> { items: PostJson[], next, tab, fallback? }
+//   GET /api/feed?tab=following|foryou&cursor&limit -> { items: PostJson[], next, tab, fallback?, ads }
+//       ads: paid sponsored placements (Southbag Ads, src/lib/ads.ts) for the signed-in viewer,
 //       following: top-level posts (and reposts) by people the viewer follows, the viewer's own posts,
 //                  posts on the viewer's wall and posts in groups the viewer belongs to. Newest first,
 //                  keyset paging by id. If the viewer follows nobody, the for-you feed is returned
@@ -14,6 +15,7 @@
 import { Hono } from 'hono';
 import type { AppEnv, Ctx, SessionUser } from '../env';
 import { cursor, limit, requireUser } from '../lib/http';
+import { serveAds, type AdJson } from '../lib/ads';
 import { hydrate, visibleTo, type PostRow } from '../lib/posts';
 
 const feed = new Hono<AppEnv>();
@@ -131,14 +133,18 @@ feed.get('/', async c => {
   const size = limit(c);
   const after = cursor(c);
   const tab = c.req.query('tab') === 'foryou' || !user ? 'foryou' : 'following';
+  let out: { items: unknown[]; next: string | null; tab: string; fallback?: boolean; ads?: AdJson[] };
   if (tab === 'following' && user) {
     const follows = await c.env.DB.prepare('SELECT 1 FROM follows WHERE follower_id = ? LIMIT 1').bind(user.id).first();
-    if (!follows) return c.json({ ...(await forYou(c, size, after)), tab: 'foryou', fallback: true });
     // An offset cursor means the previous page was a fallback; keep paging that feed.
-    if (after && /^\d+$/.test(after)) return c.json({ ...(await forYou(c, size, after)), tab: 'foryou', fallback: true });
-    return c.json({ ...(await following(c, user, size, after)), tab: 'following' });
+    if (!follows || (after && /^\d+$/.test(after))) out = { ...(await forYou(c, size, after)), tab: 'foryou', fallback: true };
+    else out = { ...(await following(c, user, size, after)), tab: 'following' };
+  } else {
+    out = { ...(await forYou(c, size, after)), tab: 'foryou' };
   }
-  return c.json({ ...(await forYou(c, size, after)), tab: 'foryou' });
+  // Paid placements for signed-in viewers; serving them is the impression (and charges it).
+  if (user) out.ads = await serveAds(c, user, 2);
+  return c.json(out);
 });
 
 feed.get('/bookmarks', async c => {
