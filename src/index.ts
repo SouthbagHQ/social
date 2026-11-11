@@ -36,6 +36,7 @@ import dating from './routes/dating';
 import albums, { serveAlbumMedia } from './routes/albums';
 import payments from './routes/payments';
 import push from './routes/push';
+import ads from './routes/ads';
 
 const app = new Hono<AppEnv>();
 
@@ -127,6 +128,7 @@ app.route('/api/dating', dating);
 app.route('/api/payments', payments);
 app.route('/api/albums', albums);
 app.route('/api/push', push);
+app.route('/api/ads', ads);
 // Nothing can be deleted. The routers keep their DELETEs for undoing things (unlike, unfollow,
 // leave…); anything else that tries to delete lands here.
 app.delete('/api/*', () => fail(403, NO_DELETING));

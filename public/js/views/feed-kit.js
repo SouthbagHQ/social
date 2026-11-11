@@ -48,8 +48,9 @@ export function sponsoredCard() {
 /**
  * Wraps an infiniteList render function so a sponsored card follows every `every`th item.
  * Returns a DocumentFragment when an ad is due (infiniteList appends whatever node it gets).
+ * `nextAd` may return a paid placement (components/ad.js); the house card fills empty slots.
  */
-export function withSponsored(render, every = 8) {
+export function withSponsored(render, every = 8, nextAd = null) {
   let n = 0;
   return item => {
     const node = render(item);
@@ -57,7 +58,7 @@ export function withSponsored(render, every = 8) {
     n++;
     if (n % every !== 0) return node;
     const frag = document.createDocumentFragment();
-    frag.append(node, sponsoredCard());
+    frag.append(node, nextAd?.() || sponsoredCard());
     return frag;
   };
 }

@@ -6,6 +6,7 @@ import { api } from '../api.js';
 import { h, mount } from '../dom.js';
 import { empty, infiniteList, tabs } from '../ui.js';
 import { composerCard } from '../components/composer.js';
+import { paidAdCard } from '../components/ad.js';
 import { postCard } from '../components/post.js';
 import { storiesBar } from '../components/stories-bar.js';
 import { childController, pref, withSponsored } from './feed-kit.js';
@@ -34,10 +35,13 @@ export default async function home(ctx) {
     controller = childController(ctx.signal);
     const signal = controller.signal;
     mount(notice);
+    // Paid placements (Southbag Ads) served with each page; house ads fill the remaining slots.
+    const paid = [];
     list = infiniteList({
       signal,
-      load: cursor => api.get('feed', { tab, cursor }, { signal }),
-      render: withSponsored(post => postCard(post)),
+      load: cursor => api.get('feed', { tab, cursor }, { signal })
+        .then(data => { paid.push(...(data.ads || [])); return data; }),
+      render: withSponsored(post => postCard(post), 8, () => paidAdCard(paid.shift())),
       onPage: (items, data) => {
         if (data.fallback && !notice.firstChild) {
           mount(notice, h('div.notice.feed-notice',

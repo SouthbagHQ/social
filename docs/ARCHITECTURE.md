@@ -107,8 +107,8 @@ signed in without Identity. Mutating API calls need `origin: http://localhost:87
 Migration numbers are reserved per feature so parallel work never collides:
 `0003_polls_pins.sql`, `0004_communities.sql`, `0005_events.sql`, `0006_audio.sql`,
 `0007_servers.sql`, `0008_careers.sql`, `0009_notification_links.sql`, `0010_marketplace.sql`,
-`0011_boards.sql`, `0012_streaks.sql`, `0013_wiki.sql`, `0014_dating.sql`, `0019_push.sql`, `0021_albums.sql`. Never
-edit an applied migration; add a new one.
+`0011_boards.sql`, `0012_streaks.sql`, `0013_wiki.sql`, `0014_dating.sql`, `0019_push.sql`,
+`0021_albums.sql`, `0022_ads.sql`. Never edit an applied migration; add a new one.
 
 ## Analytics
 

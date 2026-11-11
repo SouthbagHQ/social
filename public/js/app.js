@@ -77,6 +77,7 @@ route('/dating', () => import('./views/dating.js'));
 // Messages and payments
 route('/messages', () => import('./views/messages.js'));
 route('/payments', () => import('./views/payments.js'));
+route('/ads', () => import('./views/ads.js'));
 route('/messages/:id', () => import('./views/messages.js'));
 // Legal
 route('/terms', () => import('./views/terms.js'));
@@ -104,6 +105,7 @@ const sections = [
   { href: '/dating', label: 'Dating', auth: true },
   { href: '/messages', label: 'Messages', badge: 'messages', auth: true },
   { href: '/payments', label: 'Payments', auth: true },
+  { href: '/ads', label: 'Ads', auth: true },
   { href: '/notifications', label: 'Notifications', badge: 'notifications', auth: true },
   { href: '/friends', label: 'Friends', badge: 'friend_requests', auth: true },
   { href: '/bookmarks', label: 'Bookmarks', auth: true },
