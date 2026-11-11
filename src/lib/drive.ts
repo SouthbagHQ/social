@@ -1,55 +1,103 @@
-// Southbag Drive™ client. Shared albums keep their photos and videos in Drive instead of
-// Social's own database: Social's Worker talks to Drive's existing WebDAV endpoint
-// (/webdav/, Basic auth) as the albums service account, whose long-lived access token is
-// stored as the DRIVE_WEBDAV_USER / DRIVE_WEBDAV_TOKEN secrets. Drive has no folders, so
-// every album file is one flat name: social-album-<mediaId>.<ext>.
+// Southbag Drive™ client, acting as the signed-in user. Shared albums keep their photos and
+// videos in the uploader's OWN Drive (Ingo: "it should use the users tokens"): Social holds
+// each user's Identity tokens (lib/auth.ts) and calls Drive's API with them. Uploads land in
+// the uploader's account; Social then opens a public share link per file, and members are
+// served the bytes through that link - the share token never reaches the client, so album
+// membership stays the access check.
 //
-// Without the secrets the albums API answers 503 and nothing here runs.
+// Identity tokens are bearer credentials: they are never logged and never leave the server.
 
 import type { Env } from '../env';
 
-export interface DriveConfig {
-  origin: string;
-  authorization: string;
+export interface DriveUpload {
+  id: string;
+  name: string;
+  size: number;
 }
 
-export function driveConfig(env: Env): DriveConfig | null {
-  const user = env.DRIVE_WEBDAV_USER as string | undefined;
-  const token = env.DRIVE_WEBDAV_TOKEN as string | undefined;
-  if (!user || !token) return null;
-  const origin = ((env.DRIVE_ORIGIN as string | undefined) || 'https://drive.southbag.cc').replace(/\/+$/, '');
-  return { origin, authorization: 'Basic ' + btoa(`${user}:${token}`) };
-}
+const driveOrigin = (env: Env): string =>
+  ((env.DRIVE_ORIGIN as string | undefined) || 'https://drive.southbag.cc').replace(/\/+$/, '');
 
-const davUrl = (config: DriveConfig, name: string): string =>
-  `${config.origin}/webdav/${encodeURIComponent(name)}`;
-
-/** Streams a file into the Drive account. 201 = stored, 204 = replaced, 413 = the floppies are full. */
-export function drivePut(
-  config: DriveConfig,
+/** Streams a file into the user's own Drive. Non-OK responses come back to the caller, which
+ *  maps 401 to "sign in again" and 413 to "your Drive is full". */
+export async function driveUpload(
+  env: Env,
+  accessToken: string,
   name: string,
   contentType: string,
   body: ReadableStream | null,
   size: number,
-): Promise<Response> {
-  return fetch(davUrl(config, name), {
+): Promise<{ response: Response; file?: DriveUpload }> {
+  const response = await fetch(`${driveOrigin(env)}/api/upload`, {
     method: 'PUT',
     headers: {
-      authorization: config.authorization,
+      authorization: `Bearer ${accessToken}`,
       'content-type': contentType,
       'content-length': String(size),
+      'x-sb-filename': encodeURIComponent(name),
+      'x-sb-content-type': contentType,
     },
     body,
     // Node's fetch wants this hint for streaming bodies; Workers ignores it.
     ...({ duplex: 'half' } as object),
   });
+  if (!response.ok) return { response };
+  const file = await response.json<DriveUpload>().catch(() => null);
+  if (!file?.id) return { response: new Response('bad upload response', { status: 502 }) };
+  return { response, file };
 }
 
-/** Reads a file back out of the Drive account, honouring a Range request. */
-export function driveGet(config: DriveConfig, name: string, range: string | null): Promise<Response> {
-  const headers: Record<string, string> = { authorization: config.authorization };
-  if (range) headers.range = range;
-  return fetch(davUrl(config, name), { headers });
+/** Opens a public share link for a file the user owns; returns the unguessable token. */
+export async function driveShare(env: Env, accessToken: string, fileId: string): Promise<string | null> {
+  const response = await fetch(`${driveOrigin(env)}/api/files/${encodeURIComponent(fileId)}`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ share: true }),
+  });
+  const data = await response.json<{ token?: string }>().catch(() => ({} as { token?: string }));
+  return response.ok && data.token ? data.token : null;
+}
+
+export interface SharedFile {
+  status: number;
+  contentType: string;
+  contentLength: number;
+  total: number;
+  start: number;
+  body: ArrayBuffer;
+}
+
+/** Fetches a shared file through its public link - the link itself is the capability, no
+ *  token needed. The share endpoint always sends the whole file, so a Range request is
+ *  sliced out of the buffered body here. */
+export async function driveFetchShared(env: Env, shareToken: string, range: string | null): Promise<SharedFile | null> {
+  const upstream = await fetch(`${driveOrigin(env)}/share/${encodeURIComponent(shareToken)}/download`);
+  if (upstream.status === 404) return null;
+  if (!upstream.ok) throw new Error(`drive share fetch failed: ${upstream.status}`);
+  const bytes = await upstream.arrayBuffer();
+  const total = bytes.byteLength;
+  const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
+
+  const match = range?.match(/^bytes=(\d*)-(\d*)$/);
+  if (!match || (match[1] === '' && match[2] === '')) {
+    return { status: 200, contentType, contentLength: total, total, start: 0, body: bytes };
+  }
+  let start: number;
+  let end: number;
+  if (match[1] === '') {
+    start = Math.max(0, total - parseInt(match[2], 10)); // suffix range: the last N bytes
+    end = total - 1;
+  } else {
+    start = parseInt(match[1], 10);
+    end = match[2] === '' ? total - 1 : Math.min(parseInt(match[2], 10), total - 1);
+  }
+  if (total === 0 || start > end || start >= total) {
+    return { status: 416, contentType, contentLength: 0, total, start: 0, body: new ArrayBuffer(0) };
+  }
+  return { status: 206, contentType, contentLength: end - start + 1, total, start, body: bytes.slice(start, end + 1) };
 }
 
 /** The file extension Drive sees for a content type we accept. */

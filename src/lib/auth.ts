@@ -15,6 +15,11 @@ const oauth = {
   userinfo: issuer + '/api/auth/oauth2/userinfo',
 };
 
+// offline_access gets us a refresh token, which is how shared albums keep writing to the
+// signed-in user's own Southbag Drive after the hour-long access token expires. If the stored
+// client predates the wider scope, getClient re-registers and upgrades the row.
+const SCOPES = 'openid profile email offline_access';
+
 export const sessionCookie = 'southbag_social_session';
 const stateCookie = 'southbag_social_oauth_state';
 const sessionDays = 30;
@@ -46,11 +51,14 @@ function redirect(url: string, ...cookies: string[]): Response {
 export const safeReturnTo = (value: unknown): string | null =>
   typeof value === 'string' && /^\/(?![/\\])/.test(value) ? value : null;
 
-async function getClient(env: Env, origin: string) {
-  const existing = await env.DB.prepare('SELECT * FROM oauth_clients WHERE origin = ?').bind(origin)
-    .first<{ client_id: string; client_secret: string; redirect_uri: string }>();
-  if (existing) return existing;
+interface OAuthClient {
+  client_id: string;
+  client_secret: string;
+  redirect_uri: string;
+  scope: string;
+}
 
+async function registerClient(env: Env, origin: string): Promise<void> {
   const redirectUri = origin + '/auth/callback';
   const response = await fetch(oauth.register, {
     method: 'POST',
@@ -63,7 +71,7 @@ async function getClient(env: Env, origin: string) {
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],
       token_endpoint_auth_method: 'none',
-      scope: 'openid profile email',
+      scope: SCOPES,
     }),
   });
   const registered = await response.json<{ client_id?: string; client_secret?: string; error?: string; error_description?: string }>()
@@ -71,11 +79,21 @@ async function getClient(env: Env, origin: string) {
   if (!response.ok || !registered.client_id)
     throw new Error(registered.error_description || registered.error || 'Southbag Identity would not register us as a client.');
 
-  await env.DB.prepare(`INSERT OR IGNORE INTO oauth_clients (origin, client_id, client_secret, redirect_uri, created_at)
-    VALUES (?, ?, ?, ?, ?)`)
-    .bind(origin, registered.client_id, registered.client_secret || '', redirectUri, Date.now()).run();
+  // Replaces any older row (pre-offline_access clients are re-registered, since Identity only
+  // grants scopes the client registered for).
+  await env.DB.prepare(`INSERT INTO oauth_clients (origin, client_id, client_secret, redirect_uri, scope, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT (origin) DO UPDATE SET client_id = excluded.client_id, client_secret = excluded.client_secret,
+      redirect_uri = excluded.redirect_uri, scope = excluded.scope`)
+    .bind(origin, registered.client_id, registered.client_secret || '', redirectUri, SCOPES, Date.now()).run();
+}
+
+async function getClient(env: Env, origin: string): Promise<OAuthClient> {
+  const existing = await env.DB.prepare('SELECT * FROM oauth_clients WHERE origin = ?').bind(origin)
+    .first<OAuthClient>();
+  if (!existing || existing.scope !== SCOPES) await registerClient(env, origin);
   return (await env.DB.prepare('SELECT * FROM oauth_clients WHERE origin = ?').bind(origin)
-    .first<{ client_id: string; client_secret: string; redirect_uri: string }>())!;
+    .first<OAuthClient>())!;
 }
 
 export async function login(request: Request, env: Env, returnTo: string | null): Promise<Response> {
@@ -95,7 +113,7 @@ export async function login(request: Request, env: Env, returnTo: string | null)
     response_type: 'code',
     client_id: client.client_id,
     redirect_uri: client.redirect_uri,
-    scope: 'openid profile email',
+    scope: SCOPES,
     state,
     nonce,
     code_challenge: await sha256(verifier),
@@ -143,11 +161,12 @@ export async function callback(request: Request, env: Env, ctx: Waiter | null = 
       code_verifier: pending.verifier,
     }),
   });
-  const tokens = await tokenResponse.json<{ access_token?: string }>().catch(() => ({} as { access_token?: string }));
+  const tokens = await tokenResponse.json<{ access_token?: string; refresh_token?: string; expires_in?: number }>().catch(() => ({} as { access_token?: string }));
   if (!tokenResponse.ok || !tokens.access_token) return failed(url.origin, 'token_exchange');
 
   const profile = await fetchIdentityUser(tokens.access_token);
   if (!profile) return failed(url.origin, 'userinfo');
+  await storeIdentityTokens(env, profile.sub, tokens);
 
   const now = Date.now();
   const { created } = await upsertUser(env, profile, now);
@@ -168,6 +187,56 @@ export async function logout(request: Request, env: Env, ctx: Waiter | null = nu
   const ended = token ? await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ? RETURNING user_id').bind(await sha256(token)).first<{ user_id: string }>() : null;
   tracker(request, env, ctx, ended ? { id: ended.user_id } : null).capture('social_logout', { had_session: Boolean(ended) });
   return redirect(new URL(request.url).origin + '/?signed_out=1', cookie(sessionCookie, '', 0));
+}
+
+interface IdentityTokens {
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+}
+
+/** Remembers a user's Identity tokens so Social can act as them on the other Southbag
+ *  services (shared albums write to the user's own Drive). Never logged, never served. */
+async function storeIdentityTokens(env: Env, userId: string, tokens: IdentityTokens): Promise<void> {
+  if (!tokens.access_token) return;
+  const now = Date.now();
+  const expiresAt = now + (tokens.expires_in ?? 3600) * 1000;
+  await env.DB.prepare(`INSERT INTO identity_tokens (user_id, access_token, refresh_token, expires_at, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT (user_id) DO UPDATE SET access_token = excluded.access_token, expires_at = excluded.expires_at,
+      refresh_token = COALESCE(excluded.refresh_token, identity_tokens.refresh_token), updated_at = excluded.updated_at`)
+    .bind(userId, tokens.access_token, tokens.refresh_token ?? null, expiresAt, now).run();
+}
+
+/** A live Identity access token for the user, refreshing the stored one when it has expired.
+ *  Null when they have no usable token (signed in before token storage, or refresh failed) -
+ *  the caller asks them to sign in again. */
+export async function driveAccessToken(env: Env, origin: string, userId: string): Promise<string | null> {
+  const row = await env.DB.prepare('SELECT * FROM identity_tokens WHERE user_id = ?').bind(userId)
+    .first<{ access_token: string; refresh_token: string | null; expires_at: number }>();
+  if (!row) return null;
+  if (row.expires_at > Date.now() + 30000) return row.access_token;
+  if (!row.refresh_token) return null;
+  const client = await getClient(env, origin);
+  const headers: Record<string, string> = { 'content-type': 'application/x-www-form-urlencoded', origin: issuer };
+  if (client.client_secret) headers.authorization = 'Basic ' + btoa(client.client_id + ':' + client.client_secret);
+  const response = await fetch(oauth.token, {
+    method: 'POST',
+    headers,
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: row.refresh_token,
+      client_id: client.client_id,
+    }),
+  });
+  const tokens = await response.json<IdentityTokens & { error?: string }>().catch(() => ({} as IdentityTokens));
+  if (!response.ok || !tokens.access_token) {
+    // The refresh token is dead (revoked, expired, replaced); keeping it helps no one.
+    await env.DB.prepare('DELETE FROM identity_tokens WHERE user_id = ?').bind(userId).run();
+    return null;
+  }
+  await storeIdentityTokens(env, userId, tokens);
+  return tokens.access_token;
 }
 
 async function fetchIdentityUser(accessToken: string): Promise<IdentityUser | null> {
@@ -239,6 +308,8 @@ export async function session(request: Request, env: Env, ctx: Waiter | null = n
   const profile = await fetchIdentityUser(bearer);
   if (!profile) return null;
   const now = Date.now();
+  // A native client's bearer token is an Identity access token: keep it for Drive calls too.
+  await storeIdentityTokens(env, profile.sub, { access_token: bearer });
   const { created } = await upsertUser(env, profile, now);
   if (created) tracker(request, env, ctx, { id: profile.sub }).capture('social_account_created', { via: 'mobile' });
   await env.DB.prepare('INSERT OR REPLACE INTO sessions (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)')

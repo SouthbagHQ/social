@@ -1,7 +1,8 @@
 // Shared albums, powered by Southbag Drive. Anyone can make an album and invite people by
-// handle; members see the album and add their own photos and videos. The bytes live in
-// Southbag Drive (src/lib/drive.ts), not in Social's database: uploads stream straight to
-// Drive's WebDAV endpoint and /media/album/:id serves them back out of it, members only.
+// handle; members see the album and add their own photos and videos. The bytes live in the
+// UPLOADER'S OWN Southbag Drive (src/lib/drive.ts), uploaded with their own Identity token,
+// not in Social's database: /media/album/:id serves them back through Drive's share links,
+// members only.
 //
 //   POST   /api/albums             { title } -> { album }
 //   GET    /api/albums             ?cursor -> { items: AlbumJson[], next }
@@ -29,7 +30,8 @@ import { allowedTypes, limits } from '../lib/media';
 import { notifyStatement } from '../lib/notify';
 import { track, type Waiter } from '../lib/palantir';
 import { userByHandle, userCard, userCardColumns, type UserRow } from '../lib/users';
-import { driveConfig, driveExtension, driveGet, drivePut, type DriveConfig } from '../lib/drive';
+import { driveExtension, driveFetchShared, driveShare, driveUpload } from '../lib/drive';
+import { driveAccessToken } from '../lib/auth';
 
 const albums = new Hono<AppEnv>();
 
@@ -49,6 +51,8 @@ interface AlbumMediaRow {
   uploader_id: string;
   kind: 'image' | 'video';
   drive_name: string;
+  drive_file_id: string | null;
+  share_token: string | null;
   content_type: string;
   size: number;
   created_at: number;
@@ -112,10 +116,13 @@ function validTitle(value: unknown): string {
   return title;
 }
 
-const requireDrive = (c: Ctx): DriveConfig => {
-  const config = driveConfig(c.env);
-  if (!config) fail(503, 'Albums are not available.');
-  return config;
+// Media uploads need the uploader's own Identity token, so Social can put the file in the
+// uploader's own Drive. Null means they signed in before token storage (or their refresh
+// token died) and must sign in again.
+const uploaderToken = async (c: Ctx, userId: string): Promise<string> => {
+  const token = await driveAccessToken(c.env, new URL(c.req.url).origin, userId);
+  if (!token) fail(401, 'Sign in again to add photos and videos.');
+  return token;
 };
 
 // Create and list
@@ -241,7 +248,6 @@ albums.put('/:id/media', async c => {
   const user = requireUser(c);
   const { album, role } = await load(c);
   requireMember(album, role);
-  const config = requireDrive(c);
 
   // Same discipline as Drive's own upload route: an absent Content-Length can't be metered,
   // and Number(null) is 0, which would sail past the guards.
@@ -258,17 +264,25 @@ albums.put('/:id/media', async c => {
   const now = Date.now();
   const id = newId(now);
   const driveName = `social-album-${id}${driveExtension(contentType)}`;
-  const stored = await drivePut(config, driveName, contentType, c.req.raw.body, size);
-  if (stored.status === 413) fail(413, 'Album storage is full.');
-  if (!stored.ok) {
-    console.error('drive put failed', stored.status, await stored.text().catch(() => ''));
+
+  // The file lands in the uploader's OWN Drive, uploaded with their own Identity token, then
+  // shared so the other album members can see it through Social.
+  const accessToken = await uploaderToken(c, user.id);
+  const { response: stored, file } = await driveUpload(c.env, accessToken, driveName, contentType, c.req.raw.body, size);
+  if (stored.status === 401) fail(401, 'Sign in again to add photos and videos.');
+  if (stored.status === 413) fail(413, 'Your Southbag Drive is full.');
+  if (!stored.ok || !file) {
+    console.error('drive upload failed', stored.status, await stored.text().catch(() => ''));
     fail(502, 'Southbag Drive could not store that. Try again.');
   }
+  const shareToken = await driveShare(c.env, accessToken, file.id);
+  if (!shareToken) fail(502, 'Southbag Drive could not share that. Try again.');
 
   await c.env.DB.batch([
-    c.env.DB.prepare(`INSERT INTO album_media (id, album_id, uploader_id, kind, drive_name, content_type, size, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-      .bind(id, album.id, user.id, kind, driveName, contentType, size, now),
+    c.env.DB.prepare(`INSERT INTO album_media
+        (id, album_id, uploader_id, kind, drive_name, drive_file_id, share_token, content_type, size, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(id, album.id, user.id, kind, driveName, file.id, shareToken, contentType, size, now),
     c.env.DB.prepare('UPDATE albums SET media_count = media_count + 1 WHERE id = ?').bind(album.id),
   ]);
   track(c, 'social_album_media_added', { album_id: album.id, media_id: id, kind, size });
@@ -281,9 +295,9 @@ albums.put('/:id/media', async c => {
 export default albums;
 
 // Serving, at /media/album/:id. Album photos and videos are private to the album, so unlike
-// /media/:id this checks the session, the freeze and membership before streaming the bytes
-// out of Drive. Range headers pass straight through, so video seeking works the same as
-// anywhere else on Social.
+// /media/:id this checks the session, the freeze and membership before fetching the bytes
+// out of the uploader's Drive through the share link Social created at upload time. The
+// share endpoint sends whole files, so ranges are sliced here; videos can still seek.
 export async function serveAlbumMedia(
   request: Request,
   env: Env,
@@ -302,24 +316,26 @@ export async function serveAlbumMedia(
     .bind(media.album_id, user.id).first();
   if (!member) return new Response('Not found', { status: 404 });
 
-  const config = driveConfig(env);
-  if (!config) return new Response('Albums are not available.', { status: 503 });
-  const upstream = await driveGet(config, media.drive_name, request.headers.get('range'));
-  if (upstream.status === 404) return new Response('Not found', { status: 404 });
-  if (!upstream.ok && upstream.status !== 206) {
-    console.error('drive get failed', upstream.status, await upstream.text().catch(() => ''));
+  if (!media.share_token) return new Response('Not found', { status: 404 });
+  let fetched;
+  try {
+    fetched = await driveFetchShared(env, media.share_token, request.headers.get('range'));
+  } catch {
     return new Response('Southbag Drive is unavailable. Try again shortly.', { status: 502 });
   }
+  if (!fetched) return new Response('Not found', { status: 404 });
 
   const headers = new Headers({
     'content-type': media.content_type,
+    'content-length': String(fetched.contentLength),
     'accept-ranges': 'bytes',
     'cache-control': 'private, no-store',
     'x-content-type-options': 'nosniff',
   });
-  for (const name of ['content-length', 'content-range', 'etag', 'last-modified']) {
-    const value = upstream.headers.get(name);
-    if (value) headers.set(name, value);
+  if (fetched.status === 206) {
+    headers.set('content-range', `bytes ${fetched.start}-${fetched.start + fetched.contentLength - 1}/${fetched.total}`);
+  } else if (fetched.status === 416) {
+    headers.set('content-range', `bytes */${fetched.total}`);
   }
-  return new Response(request.method === 'HEAD' ? null : upstream.body, { status: upstream.status, headers });
+  return new Response(request.method === 'HEAD' ? null : fetched.body, { status: fetched.status, headers });
 }

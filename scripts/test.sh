@@ -9,10 +9,10 @@ bash scripts/seed-local.sh > /dev/null
 # A throwaway VAPID key pair turns push notifications on (tests/push.test.mjs).
 node scripts/mock-identity.mjs > "$PERSIST_TO/identity.log" 2>&1 &
 MOCK=$!
-# A fake Southbag Drive WebDAV endpoint backs the shared-albums tests (tests/albums.test.mjs).
+# A fake Southbag Drive user-token API backs the shared-albums tests (tests/albums.test.mjs).
 node scripts/mock-drive.mjs > "$PERSIST_TO/drive.log" 2>&1 &
 MOCKDRIVE=$!
-setsid npx wrangler dev --var BANKING_DEV:1 --var IDENTITY_ORIGIN:http://localhost:8798 --var IDENTITY_INTERNAL_SECRET:test-secret --var DRIVE_ORIGIN:http://localhost:8797 --var DRIVE_WEBDAV_USER:albums@southbag.cc --var DRIVE_WEBDAV_TOKEN:test-drive-token $(node scripts/vapid-keys.mjs --vars) --port "$PORT" --inspector-port "$((PORT + 1000))" --persist-to "$PERSIST_TO" > "$PERSIST_TO/dev.log" 2>&1 &
+setsid npx wrangler dev --var BANKING_DEV:1 --var IDENTITY_ORIGIN:http://localhost:8798 --var IDENTITY_INTERNAL_SECRET:test-secret --var DRIVE_ORIGIN:http://localhost:8797 $(node scripts/vapid-keys.mjs --vars) --port "$PORT" --inspector-port "$((PORT + 1000))" --persist-to "$PERSIST_TO" > "$PERSIST_TO/dev.log" 2>&1 &
 DEV=$!
 trap 'kill -- -$DEV $MOCK $MOCKDRIVE 2>/dev/null; [ -n "${KEEP:-}" ] || rm -rf "$PERSIST_TO"' EXIT
 for _ in $(seq 1 60); do curl -sf "http://localhost:$PORT/api/me" | grep -q authenticated && break; sleep 1; done
