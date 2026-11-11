@@ -8,8 +8,23 @@
 //   GET    /api/messages/:id/poll?after=<id>  { items, read, title, streak } - new messages since `after`
 //   POST   /api/messages/:id                  { body?, media_id?, post_id? } -> { message, reply?, streak? }
 //   POST   /api/messages/:id/read             marks the conversation read for the viewer
-//   PATCH  /api/messages/:id                  { title } (group chats)
-//   DELETE /api/messages/:id/members/me       leave a group chat
+//   PATCH  /api/messages/:id                  { title } (group chats; owners and admins only)
+//   DELETE /api/messages/:id/members/me       leave a group chat (an owner leaving passes
+//                                             ownership to the longest-serving admin, else member)
+//
+// Group chats (ad hoc multi-person chats, NOT the public/private "groups" feature):
+//   POST   /api/messages/:id/members          { handles[] } any member adds people -> { conversation }
+//   DELETE /api/messages/:id/members/:userId  owner/admin removes a member (admins can't remove admins)
+//   PATCH  /api/messages/:id/members/:userId  owner: { role: 'admin' | 'member' } -> { conversation }
+//   GET    /api/messages/:id/invites          owner/admin: active invite links -> { items }
+//   POST   /api/messages/:id/invites          owner/admin: create an invite link -> { invite }
+//   DELETE /api/messages/:id/invites/:code    owner/admin: revoke a link
+//   POST   /api/messages/join/:code           join a group chat through an invite link
+//   POST   /api/messages/:id/pins             owner/admin: { message_id } pin (max 3) -> { pinned }
+//   DELETE /api/messages/:id/pins/:messageId  owner/admin: unpin -> { pinned }
+//
+// Members carry a role (owner | admin | member); the creator is the owner. Message bodies can
+// @mention other members, which stores message_mentions rows and notifies each mentioned member.
 //
 // Unread = conversations where `conversations.last_message_at > conversation_members.last_read_at`
 // (see routes/me.ts), so every write below keeps those two columns right.
@@ -28,7 +43,8 @@ import type { AppEnv, Ctx, Env, SessionUser } from '../env';
 import { body, cursor, fail, limit, placeholders, requireUser, str } from '../lib/http';
 import { newId, sha256 } from '../lib/ids';
 import { mediaJson, ownedReadyMedia, type MediaJson, type MediaRow } from '../lib/media';
-import { hydrate, loadVisiblePost, visibleTo, type PostJson, type PostRow } from '../lib/posts';
+import { notifyStatement } from '../lib/notify';
+import { extractMentions, hydrate, loadVisiblePost, visibleTo, type PostJson, type PostRow } from '../lib/posts';
 import { userCard, userCardColumns, userCards, type UserCard, type UserRow } from '../lib/users';
 import {
   conversationStreak, streakResult, streakSelect, streakState, streakUpsert, sydneyDay, trackStreak,
@@ -39,7 +55,22 @@ const messages = new Hono<AppEnv>();
 
 export const MAX_MESSAGE = 2000;
 export const MAX_MEMBERS = 20; // people in a group chat, including its creator
+export const MAX_PINS = 3; // pinned messages per group chat
+const MAX_MENTIONS = 10; // @handles notified per message
 const MAX_TITLE = 60;
+
+type MemberRole = 'owner' | 'admin' | 'member';
+const canAdmin = (role: string | null | undefined) => role === 'owner' || role === 'admin';
+
+/** Unguessable invite-link code (no time prefix, unlike a message id). */
+const inviteCode = () =>
+  [...crypto.getRandomValues(new Uint8Array(10))].map(b => '0123456789abcdefghijklmnopqrstuvwxyz'[b % 36]).join('');
+
+/** One-line excerpt of a message body for notifications. */
+const note = (text: string, max = 80) => {
+  const chars = [...text.replace(/\s+/g, ' ').trim()];
+  return chars.length > max ? chars.slice(0, max - 1).join('') + '...' : chars.join('');
+};
 const SUPPORT_TITLE = 'Southbag Support';
 
 interface ConversationRow {
@@ -75,6 +106,8 @@ export interface MessageJson {
   /** A post was shared but the viewer can't see it (deleted, private, or its author blocked them). */
   post_unavailable: boolean;
   payment: MessagePaymentJson | null;
+  /** Group chats: members @mentioned in the body (they were notified). */
+  mentions: UserCard[];
   created_at: number;
 }
 
@@ -114,24 +147,24 @@ function supportReply(message: string, first: boolean): string {
 
 // -- Helpers --------------------------------------------------------------
 
-/** Loads the conversation if the viewer is a member (plus their last_read_at), otherwise 404s. */
-async function memberOf(env: Env, viewerId: string, id: string): Promise<ConversationRow & { last_read_at: number }> {
-  const row = await env.DB.prepare(`SELECT c.*, cm.last_read_at FROM conversations c
+/** Loads the conversation if the viewer is a member (plus their last_read_at and role), otherwise 404s. */
+async function memberOf(env: Env, viewerId: string, id: string): Promise<ConversationRow & { last_read_at: number; role: MemberRole }> {
+  const row = await env.DB.prepare(`SELECT c.*, cm.last_read_at, cm.role FROM conversations c
       JOIN conversation_members cm ON cm.conversation_id = c.id AND cm.user_id = ? WHERE c.id = ?`)
-    .bind(viewerId, id).first<ConversationRow & { last_read_at: number }>();
+    .bind(viewerId, id).first<ConversationRow & { last_read_at: number; role: MemberRole }>();
   if (!row) fail(404, 'Conversation not found.');
   return row;
 }
 
-/** Other members (cards) and everyone's last_read_at, for one conversation. */
+/** Other members (cards) and everyone's last_read_at and role, for one conversation. */
 async function membersOf(env: Env, id: string) {
-  const { results } = await env.DB.prepare(`SELECT cm.last_read_at, ${u('u')} FROM conversation_members cm
+  const { results } = await env.DB.prepare(`SELECT cm.last_read_at, cm.role, ${u('u')} FROM conversation_members cm
       JOIN users u ON u.id = cm.user_id WHERE cm.conversation_id = ? ORDER BY cm.joined_at`)
-    .bind(id).all<UserRow & { last_read_at: number }>();
+    .bind(id).all<UserRow & { last_read_at: number; role: MemberRole }>();
   return results;
 }
 
-function conversationJson(conv: ConversationRow, viewerId: string, members: (UserRow & { last_read_at: number })[], streak: StreakRow | null = null) {
+function conversationJson(conv: ConversationRow, viewerId: string, members: (UserRow & { last_read_at: number; role: MemberRole })[], streak: StreakRow | null = null) {
   const others = members.filter(m => m.id !== viewerId);
   const me = members.find(m => m.id === viewerId);
   return {
@@ -141,6 +174,10 @@ function conversationJson(conv: ConversationRow, viewerId: string, members: (Use
     is_support: isSupport(conv.id),
     members: others.map(userCard),
     member_count: members.length,
+    /** Every member's role (owner | admin | member), keyed by user id. */
+    roles: Object.fromEntries(members.map(m => [m.id, m.role])),
+    /** The viewer's own role in a group chat; null in one-to-one conversations. */
+    viewer_role: conv.is_group ? me?.role ?? 'member' : null,
     created_by: conv.created_by,
     created_at: conv.created_at,
     last_message_at: conv.last_message_at,
@@ -168,8 +205,10 @@ async function hydrateMessages(env: Env, viewer: SessionUser, rows: MessageRow[]
   const mediaIds = [...new Set(rows.map(m => m.media_id).filter((x): x is string => Boolean(x)))];
   const postIds = [...new Set(rows.map(m => m.post_id).filter((x): x is string => Boolean(x)))];
   const paymentIds = [...new Set(rows.map(m => m.payment_id).filter((x): x is string => Boolean(x)))];
-  const [users, mediaRes, posts, paymentRes] = await Promise.all([
+  const [users, mentionRes, mediaRes, posts, paymentRes] = await Promise.all([
     userCards(env, rows.map(m => m.sender_id || '')),
+    env.DB.prepare(`SELECT mm.message_id, ${u('mu')} FROM message_mentions mm JOIN users mu ON mu.id = mm.user_id
+        WHERE mm.message_id IN (${placeholders(rows.length)})`).bind(...rows.map(m => m.id)).all<UserRow & { message_id: string }>(),
     mediaIds.length
       ? env.DB.prepare(`SELECT * FROM media WHERE status = 'ready' AND id IN (${placeholders(mediaIds.length)})`).bind(...mediaIds).all<MediaRow>()
       : Promise.resolve({ results: [] as MediaRow[] }),
@@ -188,6 +227,11 @@ async function hydrateMessages(env: Env, viewer: SessionUser, rows: MessageRow[]
   ]);
   const media = new Map(mediaRes.results.map(m => [m.id, mediaJson(m)]));
   const payments = new Map(paymentRes.results.map(p => [p.id, p]));
+  const mentions = new Map<string, UserCard[]>();
+  for (const row of mentionRes.results) {
+    if (!mentions.has(row.message_id)) mentions.set(row.message_id, []);
+    mentions.get(row.message_id)!.push(userCard(row));
+  }
   return rows.map(m => {
     const post = m.post_id ? posts.get(m.post_id) ?? null : null;
     return {
@@ -198,6 +242,7 @@ async function hydrateMessages(env: Env, viewer: SessionUser, rows: MessageRow[]
       post,
       post_unavailable: Boolean(m.post_id && !post),
       payment: m.payment_id ? payments.get(m.payment_id) ?? null : null,
+      mentions: mentions.get(m.id) ?? [],
       created_at: m.created_at,
     };
   });
@@ -215,6 +260,13 @@ interface SendInput { body?: unknown; media_id?: unknown; post_id?: unknown }
 /** Whether a send request carries anything at all. */
 const hasContent = (input: SendInput) =>
   Boolean((typeof input.body === 'string' && input.body.trim()) || input.media_id || input.post_id);
+
+/** The pinned messages of a conversation, newest pin first, hydrated for the viewer. */
+async function loadPins(env: Env, viewer: SessionUser, conversationId: string): Promise<MessageJson[]> {
+  const { results } = await env.DB.prepare(`SELECT m.* FROM message_pins p JOIN messages m ON m.id = p.message_id
+      WHERE p.conversation_id = ? ORDER BY p.pinned_at DESC`).bind(conversationId).all<MessageRow>();
+  return hydrateMessages(env, viewer, results);
+}
 
 /**
  * Validates and stores one message from `user` in `conv` (membership already checked), keeping
@@ -263,12 +315,34 @@ async function send(c: Ctx, user: SessionUser, conv: ConversationRow, input: Sen
     otherId = other?.user_id ?? null;
   }
 
+  // Group chats: @mentions of other members are stored, and each mentioned member is notified.
+  let mentioned: UserRow[] = [];
+  if (conv.is_group && !support && text) {
+    const handles = extractMentions(text).slice(0, MAX_MENTIONS);
+    if (handles.length) {
+      const { results } = await env.DB.prepare(`SELECT ${userCardColumns} FROM users u
+          JOIN conversation_members cm ON cm.user_id = u.id AND cm.conversation_id = ?
+          WHERE lower(u.handle) IN (${placeholders(handles.length)}) AND u.id != ?`)
+        .bind(conv.id, ...handles, user.id).all<UserRow>();
+      mentioned = results;
+    }
+  }
+
   const now = Date.now();
   const id = newId(now);
   const statements: D1PreparedStatement[] = [
     env.DB.prepare('INSERT INTO messages (id, conversation_id, sender_id, body, media_id, post_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .bind(id, conv.id, user.id, text, media?.id ?? null, post?.id ?? null, now),
   ];
+  for (const m of mentioned) {
+    statements.push(env.DB.prepare('INSERT OR IGNORE INTO message_mentions (message_id, user_id) VALUES (?, ?)').bind(id, m.id));
+    const s = notifyStatement(env, {
+      userId: m.id, actorId: user.id, type: 'mention',
+      body: `${user.name} mentioned you in ${conv.title ? `"${conv.title}"` : 'a group chat'}: ${note(text)}`,
+      link: `/messages/${conv.id}`,
+    });
+    if (s) statements.push(s);
+  }
   let reply: MessageJson | null = null;
   let readAt = now;
   if (support) {
@@ -280,7 +354,7 @@ async function send(c: Ctx, user: SessionUser, conv: ConversationRow, input: Sen
     const replyId = newId(at);
     statements.push(env.DB.prepare('INSERT INTO messages (id, conversation_id, sender_id, body, created_at) VALUES (?, ?, NULL, ?, ?)')
       .bind(replyId, conv.id, replyText, at));
-    reply = { id: replyId, sender: null, body: replyText, media: null, post: null, post_unavailable: false, payment: null, created_at: at };
+    reply = { id: replyId, sender: null, body: replyText, media: null, post: null, post_unavailable: false, payment: null, mentions: [], created_at: at };
     readAt = at;
   }
   statements.push(
@@ -309,6 +383,7 @@ async function send(c: Ctx, user: SessionUser, conv: ConversationRow, input: Sen
       post: post ? (await hydrate(env, user, [post]))[0] : null,
       post_unavailable: false,
       payment: null,
+      mentions: mentioned.map(userCard),
       created_at: now,
     },
     reply,
@@ -476,8 +551,8 @@ messages.post('/', async c => {
     const statements: D1PreparedStatement[] = [
       c.env.DB.prepare('INSERT INTO conversations (id, title, is_group, created_by, last_message_at, created_at) VALUES (?, ?, ?, ?, ?, ?)')
         .bind(conv.id, conv.title, conv.is_group, user.id, now, now),
-      c.env.DB.prepare('INSERT INTO conversation_members (conversation_id, user_id, last_read_at, joined_at) VALUES (?, ?, ?, ?)')
-        .bind(conv.id, user.id, now, now),
+      c.env.DB.prepare(`INSERT INTO conversation_members (conversation_id, user_id, last_read_at, joined_at, role) VALUES (?, ?, ?, ?, ?)`)
+        .bind(conv.id, user.id, now, now, isGroup ? 'owner' : 'member'),
       ...others.map(o => c.env.DB.prepare('INSERT INTO conversation_members (conversation_id, user_id, last_read_at, joined_at) VALUES (?, ?, ?, ?)')
         .bind(conv!.id, o.id, othersReadAt, now)),
     ];
@@ -523,11 +598,15 @@ messages.get('/:id', async c => {
     isSupport(id) ? null : conversationStreak(c.env, user.id, id).first<StreakRow>(),
   ]);
   const rows = page.results.slice(0, size).reverse();
-  const items = await hydrateMessages(c.env, user, rows);
+  const [items, pinned] = await Promise.all([
+    hydrateMessages(c.env, user, rows),
+    conv.is_group ? loadPins(c.env, user, id) : Promise.resolve([] as MessageJson[]),
+  ]);
   return c.json({
     conversation: { ...conversationJson(conv, user.id, members, streak), last_read_at: conv.last_read_at },
     items,
     next: page.results.length > size ? rows[0].id : null,
+    pinned,
   });
 });
 
@@ -577,6 +656,7 @@ messages.patch('/:id', async c => {
   const user = requireUser(c);
   const conv = await memberOf(c.env, user.id, c.req.param('id'));
   if (!conv.is_group) fail(422, 'Only group chats can be renamed.');
+  if (!canAdmin(conv.role)) fail(403, 'Only owners and admins can rename this chat.');
   const input = await body(c);
   const title = str(input.title, MAX_TITLE) || null;
   const now = Date.now();
@@ -596,12 +676,260 @@ messages.delete('/:id/members/me', async c => {
   if (isSupport(conv.id)) fail(422, 'Southbag Support cannot be left.');
   if (!conv.is_group) fail(422, 'One-to-one conversations cannot be left.');
   const now = Date.now();
-  await c.env.DB.batch([
+  let note = `${user.name} left the chat.`;
+  const statements: D1PreparedStatement[] = [
     c.env.DB.prepare('DELETE FROM conversation_members WHERE conversation_id = ? AND user_id = ?').bind(conv.id, user.id),
-    systemMessage(c.env, conv.id, `${user.name} left the chat.`, now),
+  ];
+  // An owner leaving hands ownership to the longest-serving admin, else the longest-serving member.
+  if (conv.role === 'owner') {
+    const next = await c.env.DB.prepare(`SELECT cm.user_id, u.name FROM conversation_members cm JOIN users u ON u.id = cm.user_id
+        WHERE cm.conversation_id = ? AND cm.user_id != ?
+        ORDER BY CASE cm.role WHEN 'admin' THEN 0 ELSE 1 END, cm.joined_at LIMIT 1`)
+      .bind(conv.id, user.id).first<{ user_id: string; name: string }>();
+    if (next) {
+      statements.push(c.env.DB.prepare(`UPDATE conversation_members SET role = 'owner' WHERE conversation_id = ? AND user_id = ?`).bind(conv.id, next.user_id));
+      note = `${user.name} left the chat. ${next.name} is now the owner.`;
+    }
+  }
+  statements.push(
+    systemMessage(c.env, conv.id, note, now),
+    bumpConversation(c.env, conv.id, now),
+  );
+  await c.env.DB.batch(statements);
+  return c.json({ ok: true });
+});
+
+// -- Group chats: members, roles, invite links and pins ---------------------
+
+/** Handles from a request body: deduped, lowercase, without the leading @. */
+function handleList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? [...new Set(value.filter((h): h is string => typeof h === 'string')
+        .map(h => h.trim().replace(/^@/, '').toLowerCase()).filter(Boolean))]
+    : [];
+}
+
+/** Resolves handles to accounts, 404ing on the first unknown one. */
+async function resolveHandles(env: Env, handles: string[]): Promise<UserRow[]> {
+  if (!handles.length) return [];
+  const { results: found } = await env.DB.prepare(`SELECT ${userCardColumns} FROM users WHERE handle IN (${placeholders(handles.length)})`)
+    .bind(...handles).all<UserRow>();
+  const missing = handles.find(h => !found.some(f => f.handle.toLowerCase() === h));
+  if (missing) fail(404, `No account called @${missing}.`);
+  return found;
+}
+
+/** Blocks in either direction between `userId` and any of `otherIds`. */
+async function blocksBetween(env: Env, userId: string, otherIds: string[]) {
+  if (!otherIds.length) return [];
+  const inOthers = placeholders(otherIds.length);
+  const { results } = await env.DB.prepare(`SELECT blocker_id, blocked_id FROM blocks
+      WHERE (blocker_id IN (${inOthers}) AND blocked_id = ?) OR (blocker_id = ? AND blocked_id IN (${inOthers}))`)
+    .bind(...otherIds, userId, userId, ...otherIds).all<{ blocker_id: string; blocked_id: string }>();
+  return results;
+}
+
+messages.post('/:id/members', async c => {
+  const user = requireUser(c);
+  const conv = await memberOf(c.env, user.id, c.req.param('id'));
+  if (!conv.is_group) fail(422, 'People can only be added to group chats.');
+  const handles = handleList((await body(c)).handles);
+  if (!handles.length) fail(422, 'Choose at least one person.');
+
+  const found = await resolveHandles(c.env, handles);
+  const ids = found.map(f => f.id);
+  const { results: existing } = await c.env.DB.prepare(`SELECT user_id FROM conversation_members
+      WHERE conversation_id = ? AND user_id IN (${placeholders(ids.length)})`).bind(conv.id, ...ids).all<{ user_id: string }>();
+  const inChat = new Set(existing.map(e => e.user_id));
+  const fresh = found.filter(f => f.id !== user.id && !inChat.has(f.id));
+  if (!fresh.length) fail(422, 'Everyone named is already in this chat.');
+
+  const count = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM conversation_members WHERE conversation_id = ?')
+    .bind(conv.id).first<{ n: number }>();
+  if ((count?.n ?? 0) + fresh.length > MAX_MEMBERS)
+    fail(422, `Group chats are limited to ${MAX_MEMBERS} people, including you.`);
+
+  const blocks = await blocksBetween(c.env, user.id, fresh.map(f => f.id));
+  const blockedBy = blocks.find(b => b.blocked_id === user.id);
+  if (blockedBy) fail(403, `@${fresh.find(o => o.id === blockedBy.blocker_id)!.handle} is not accepting messages from you.`);
+  const iBlocked = blocks.find(b => b.blocker_id === user.id);
+  if (iBlocked) fail(403, `You blocked @${fresh.find(o => o.id === iBlocked.blocked_id)!.handle}. Unblock them first.`);
+
+  const now = Date.now();
+  const names = fresh.map(f => f.name).join(', ');
+  const statements: D1PreparedStatement[] = [
+    ...fresh.map(f => c.env.DB.prepare('INSERT INTO conversation_members (conversation_id, user_id, last_read_at, joined_at) VALUES (?, ?, 0, ?)')
+      .bind(conv.id, f.id, now)),
+    systemMessage(c.env, conv.id, `${user.name} added ${names}.`, now),
+    bumpConversation(c.env, conv.id, now),
+    c.env.DB.prepare('UPDATE conversation_members SET last_read_at = MAX(last_read_at, ?) WHERE conversation_id = ? AND user_id = ?').bind(now, conv.id, user.id),
+  ];
+  for (const f of fresh) {
+    const s = notifyStatement(c.env, {
+      userId: f.id, actorId: user.id, type: 'system',
+      body: `${user.name} added you to ${conv.title ? `the group chat "${conv.title}"` : 'a group chat'}.`,
+      link: `/messages/${conv.id}`,
+    });
+    if (s) statements.push(s);
+  }
+  await c.env.DB.batch(statements);
+  return c.json({ conversation: await loadConversationJson(c.env, user.id, conv.id) }, 201);
+});
+
+messages.delete('/:id/members/:userId', async c => {
+  const user = requireUser(c);
+  const conv = await memberOf(c.env, user.id, c.req.param('id'));
+  if (!conv.is_group) fail(422, 'Only group chats have removable members.');
+  const targetId = c.req.param('userId');
+  if (targetId === user.id) fail(422, 'Use Leave to remove yourself.');
+  if (!canAdmin(conv.role)) fail(403, 'Only owners and admins can remove people.');
+  const target = await c.env.DB.prepare(`SELECT cm.role, ${u('u')} FROM conversation_members cm
+      JOIN users u ON u.id = cm.user_id WHERE cm.conversation_id = ? AND cm.user_id = ?`)
+    .bind(conv.id, targetId).first<(UserRow & { role: MemberRole })>();
+  if (!target) fail(404, 'That person is not in this chat.');
+  if (target.role === 'owner') fail(403, 'The owner cannot be removed.');
+  if (target.role === 'admin' && conv.role !== 'owner') fail(403, 'Only the owner can remove an admin.');
+  const now = Date.now();
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM conversation_members WHERE conversation_id = ? AND user_id = ?').bind(conv.id, targetId),
+    systemMessage(c.env, conv.id, `${user.name} removed ${target.name}.`, now),
     bumpConversation(c.env, conv.id, now),
   ]);
   return c.json({ ok: true });
+});
+
+messages.patch('/:id/members/:userId', async c => {
+  const user = requireUser(c);
+  const conv = await memberOf(c.env, user.id, c.req.param('id'));
+  if (!conv.is_group) fail(422, 'Only group chats have member roles.');
+  if (conv.role !== 'owner') fail(403, 'Only the owner can manage admins.');
+  const targetId = c.req.param('userId');
+  if (targetId === user.id) fail(422, 'You own this chat already.');
+  const input = await body(c);
+  const role = input.role === 'admin' ? 'admin' : input.role === 'member' ? 'member' : null;
+  if (!role) fail(422, 'Role must be "admin" or "member".');
+  const target = await c.env.DB.prepare(`SELECT cm.role, ${u('u')} FROM conversation_members cm
+      JOIN users u ON u.id = cm.user_id WHERE cm.conversation_id = ? AND cm.user_id = ?`)
+    .bind(conv.id, targetId).first<(UserRow & { role: MemberRole })>();
+  if (!target) fail(404, 'That person is not in this chat.');
+  if (target.role === role) return c.json({ conversation: await loadConversationJson(c.env, user.id, conv.id) });
+  const now = Date.now();
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE conversation_members SET role = ? WHERE conversation_id = ? AND user_id = ?').bind(role, conv.id, targetId),
+    systemMessage(c.env, conv.id, role === 'admin' ? `${user.name} made ${target.name} an admin.` : `${user.name} dismissed ${target.name} as an admin.`, now),
+    bumpConversation(c.env, conv.id, now),
+  ]);
+  return c.json({ conversation: await loadConversationJson(c.env, user.id, conv.id) });
+});
+
+// Invite links. The `url` is a frontend path; the API join is POST /api/messages/join/:code.
+const inviteJson = (row: { code: string; created_by: string | null; created_at: number }) => ({
+  code: row.code,
+  url: `/messages/join/${row.code}`,
+  created_by: row.created_by,
+  created_at: row.created_at,
+});
+
+messages.get('/:id/invites', async c => {
+  const user = requireUser(c);
+  const conv = await memberOf(c.env, user.id, c.req.param('id'));
+  if (!conv.is_group) fail(422, 'Only group chats have invite links.');
+  if (!canAdmin(conv.role)) fail(403, 'Only owners and admins can see invite links.');
+  const { results } = await c.env.DB.prepare('SELECT * FROM conversation_invites WHERE conversation_id = ? AND revoked_at IS NULL ORDER BY created_at DESC')
+    .bind(conv.id).all<{ code: string; created_by: string | null; created_at: number }>();
+  return c.json({ items: results.map(inviteJson) });
+});
+
+messages.post('/:id/invites', async c => {
+  const user = requireUser(c);
+  const conv = await memberOf(c.env, user.id, c.req.param('id'));
+  if (!conv.is_group) fail(422, 'Only group chats have invite links.');
+  if (!canAdmin(conv.role)) fail(403, 'Only owners and admins can create invite links.');
+  const row = { code: inviteCode(), created_by: user.id, created_at: Date.now() };
+  await c.env.DB.prepare('INSERT INTO conversation_invites (code, conversation_id, created_by, created_at) VALUES (?, ?, ?, ?)')
+    .bind(row.code, conv.id, user.id, row.created_at).run();
+  return c.json({ invite: inviteJson(row) }, 201);
+});
+
+messages.delete('/:id/invites/:code', async c => {
+  const user = requireUser(c);
+  const conv = await memberOf(c.env, user.id, c.req.param('id'));
+  if (!conv.is_group) fail(422, 'Only group chats have invite links.');
+  if (!canAdmin(conv.role)) fail(403, 'Only owners and admins can revoke invite links.');
+  const { meta } = await c.env.DB.prepare('UPDATE conversation_invites SET revoked_at = ? WHERE code = ? AND conversation_id = ? AND revoked_at IS NULL')
+    .bind(Date.now(), c.req.param('code'), conv.id).run();
+  if (!meta.changes) fail(404, 'Invite link not found.');
+  return c.json({ ok: true });
+});
+
+messages.post('/join/:code', async c => {
+  const user = requireUser(c);
+  const invite = await c.env.DB.prepare(`SELECT i.code, i.created_by AS invited_by, c.* FROM conversation_invites i
+      JOIN conversations c ON c.id = i.conversation_id
+      WHERE i.code = ? AND i.revoked_at IS NULL AND c.is_group = 1`)
+    .bind(c.req.param('code')).first<ConversationRow & { code: string; invited_by: string | null }>();
+  if (!invite) fail(404, 'This invite link is invalid or has been revoked.');
+  const existing = await c.env.DB.prepare('SELECT 1 FROM conversation_members WHERE conversation_id = ? AND user_id = ?')
+    .bind(invite.id, user.id).first();
+  if (existing) return c.json({ conversation: await loadConversationJson(c.env, user.id, invite.id), joined: false });
+
+  const count = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM conversation_members WHERE conversation_id = ?')
+    .bind(invite.id).first<{ n: number }>();
+  if ((count?.n ?? 0) >= MAX_MEMBERS) fail(422, `Group chats are limited to ${MAX_MEMBERS} people.`);
+  // A block in either direction with the person who created the link closes it to the joiner.
+  if (invite.invited_by && (await blocksBetween(c.env, user.id, [invite.invited_by])).length)
+    fail(403, 'You cannot join this chat.');
+
+  const now = Date.now();
+  await c.env.DB.batch([
+    c.env.DB.prepare('INSERT INTO conversation_members (conversation_id, user_id, last_read_at, joined_at) VALUES (?, ?, 0, ?)')
+      .bind(invite.id, user.id, now),
+    systemMessage(c.env, invite.id, `${user.name} joined via an invite link.`, now),
+    bumpConversation(c.env, invite.id, now),
+  ]);
+  return c.json({ conversation: await loadConversationJson(c.env, user.id, invite.id), joined: true }, 201);
+});
+
+messages.post('/:id/pins', async c => {
+  const user = requireUser(c);
+  const conv = await memberOf(c.env, user.id, c.req.param('id'));
+  if (!conv.is_group) fail(422, 'Only group chats have pinned messages.');
+  if (!canAdmin(conv.role)) fail(403, 'Only owners and admins can pin messages.');
+  const input = await body(c);
+  const messageId = typeof input.message_id === 'string' ? input.message_id : '';
+  const msg = await c.env.DB.prepare('SELECT id FROM messages WHERE id = ? AND conversation_id = ?').bind(messageId, conv.id).first();
+  if (!msg) fail(404, 'Message not found.');
+  const existing = await c.env.DB.prepare('SELECT 1 FROM message_pins WHERE conversation_id = ? AND message_id = ?')
+    .bind(conv.id, messageId).first();
+  if (existing) return c.json({ pinned: await loadPins(c.env, user, conv.id) });
+  const count = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM message_pins WHERE conversation_id = ?')
+    .bind(conv.id).first<{ n: number }>();
+  if ((count?.n ?? 0) >= MAX_PINS) fail(422, `Only ${MAX_PINS} messages can be pinned. Unpin one first.`);
+  const now = Date.now();
+  await c.env.DB.batch([
+    c.env.DB.prepare('INSERT INTO message_pins (conversation_id, message_id, pinned_by, pinned_at) VALUES (?, ?, ?, ?)')
+      .bind(conv.id, messageId, user.id, now),
+    systemMessage(c.env, conv.id, `${user.name} pinned a message.`, now),
+    bumpConversation(c.env, conv.id, now),
+    c.env.DB.prepare('UPDATE conversation_members SET last_read_at = MAX(last_read_at, ?) WHERE conversation_id = ? AND user_id = ?').bind(now, conv.id, user.id),
+  ]);
+  return c.json({ pinned: await loadPins(c.env, user, conv.id) }, 201);
+});
+
+messages.delete('/:id/pins/:messageId', async c => {
+  const user = requireUser(c);
+  const conv = await memberOf(c.env, user.id, c.req.param('id'));
+  if (!conv.is_group) fail(422, 'Only group chats have pinned messages.');
+  if (!canAdmin(conv.role)) fail(403, 'Only owners and admins can unpin messages.');
+  const { meta } = await c.env.DB.prepare('DELETE FROM message_pins WHERE conversation_id = ? AND message_id = ?')
+    .bind(conv.id, c.req.param('messageId')).run();
+  if (!meta.changes) fail(404, 'That message is not pinned.');
+  const now = Date.now();
+  await c.env.DB.batch([
+    systemMessage(c.env, conv.id, `${user.name} unpinned a message.`, now),
+    bumpConversation(c.env, conv.id, now),
+  ]);
+  return c.json({ pinned: await loadPins(c.env, user, conv.id) });
 });
 
 export default messages;

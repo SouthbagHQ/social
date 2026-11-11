@@ -190,3 +190,17 @@ a.dm-post:hover { font-weight: inherit; background: var(--sb-paper); }
   .dm-composer { padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); }
   html.dm-lock, html.dm-lock body { overflow: hidden; }
 }
+
+/* Group chats: pinned bar, mention highlight, chat info dialog. */
+.dm-pins { display: block; width: calc(100% - 16px); margin: 4px 8px 0; padding: 4px 10px; border: 2px ridge #ccc;
+  background: #eee; box-shadow: 3px 3px 8px rgba(0, 0, 0, .4); cursor: pointer; font-size: 13px; text-align: left; }
+.dm-pins.hidden { display: none; }
+.dm-pins-label { color: var(--sb-blue); font-weight: bold; margin-right: 6px; }
+.dm-bubble.mentioned { outline: 2px solid var(--sb-blue); }
+.dm-pin-btn { margin-left: 6px; }
+.dm-info h3 { margin: 12px 0 4px; }
+.dm-info-member, .dm-invite-row { display: flex; align-items: center; gap: 6px; padding: 4px 0; }
+.dm-info-member .grow, .dm-invite-row .grow { flex: 1; min-width: 0; }
+.dm-info-role { font-size: 11px; color: var(--sb-blue); text-transform: uppercase; }
+.dm-invite-code { overflow: hidden; text-overflow: ellipsis; }
+.dm-pin-row { padding: 6px 0; border-bottom: 1px dashed #000; }
