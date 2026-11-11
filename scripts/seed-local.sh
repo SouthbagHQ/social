@@ -15,5 +15,10 @@ for who in alice bob carol kevin erin frank; do
   sql+="INSERT OR IGNORE INTO users (id, handle, name, bio, verified, created_at, updated_at) VALUES ('dev-$who', '$who', '$name Southbag', 'Test account.', $verified, $now, $now);"
   sql+="INSERT OR REPLACE INTO sessions (token_hash, user_id, expires_at, created_at) VALUES ('$hash', 'dev-$who', 9999999999999, $now);"
 done
+# Identity tokens for shared albums (media is uploaded to each user's OWN Drive). Carol
+# deliberately gets none, so the tests can watch the "sign in again" path.
+for who in alice bob kevin; do
+  sql+="INSERT OR REPLACE INTO identity_tokens (user_id, access_token, refresh_token, expires_at, updated_at) VALUES ('dev-$who', 'dev-drive-$who', NULL, 9999999999999, $now);"
+done
 npx wrangler d1 execute DB --local ${PERSIST_TO:+--persist-to "$PERSIST_TO"} --command "$sql" > /dev/null
 echo "Seeded. Cookies: southbag_social_session=dev-alice | dev-bob | dev-carol | dev-kevin"

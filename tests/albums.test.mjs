@@ -1,5 +1,7 @@
-// Shared albums, powered by Southbag Drive. scripts/test.sh runs a mock Drive WebDAV server on
-// :8797, so uploads really leave the Worker and come back through /media/album/:id.
+// Shared albums, powered by Southbag Drive. scripts/test.sh runs a mock Drive user-token API on
+// :8797, so uploads really leave the Worker into the uploader's own Drive and come back through
+// /media/album/:id via Drive share links. Seed data gives alice, bob and kevin Identity tokens;
+// carol has none, so her uploads are asked to sign in again.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BASE, as, anon } from './helpers.mjs';
@@ -114,7 +116,7 @@ test('albums: media goes to Drive and comes back for members only', async () => 
   assert.equal(after.body.album.media_count, 1);
   assert.equal(after.body.album.cover_url, media.url);
 
-  // Serving: members only, exact bytes, ranges pass through to Drive.
+  // Serving: members only, exact bytes, ranges are sliced out of the Drive share download.
   const anonRes = await fetch(`${BASE}${media.url}`);
   assert.equal(anonRes.status, 401);
   const carolRes = await fetch(`${BASE}${media.url}`, { headers: { cookie: 'southbag_social_session=dev-carol' } });
@@ -131,6 +133,16 @@ test('albums: media goes to Drive and comes back for members only', async () => 
   assert.equal(ranged.status, 206);
   assert.equal(ranged.headers.get('content-range'), `bytes 0-9/${PNG.length}`);
   assert.deepEqual(Buffer.from(await ranged.arrayBuffer()), PNG.subarray(0, 10));
+});
+
+test('albums: media goes to the UPLOADER’S own Drive, and a member without an Identity token is asked to sign in again', async () => {
+  const album = await makeAlbum('alice', 'Bring your own Drive');
+  await as('alice').post(`albums/${album.id}/members`, { handle: 'carol' });
+
+  // Carol is a member but has no stored Identity token, so she cannot put files in her Drive.
+  const noToken = await putMedia('carol', album.id);
+  assert.equal(noToken.status, 401);
+  assert.match(await noToken.text(), /Sign in again/);
 });
 
 test('albums: nothing can be deleted', async () => {

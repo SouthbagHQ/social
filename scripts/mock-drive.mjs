@@ -1,80 +1,86 @@
-// Test double for Southbag Drive's WebDAV endpoint (scripts/test.sh starts it for albums tests).
-// Flat in-memory file store behind Basic auth, matching the real thing's contract:
-//   PUT    /webdav/<name>  content-length required -> 201 created / 204 replaced / 401
-//   GET    /webdav/<name>  Range honoured          -> 200 / 206 / 404 / 416
-//   HEAD   /webdav/<name>  headers only
+// Test double for Southbag Drive's user-token API (scripts/test.sh starts it for albums tests).
+// Matches the real thing's contract:
+//   PUT  /api/upload               Bearer <user token>, content-length required
+//                                  -> 201 { id, name, size } / 401 / 411
+//   POST /api/files/<id>           Bearer, { share: true } -> 200 { token, url } / 401 / 404
+//   GET  /share/<token>/download   PUBLIC, always the whole file (no Range) -> 200 / 404
+// Tokens are the ones scripts/seed-local.sh plants in identity_tokens: dev-drive-<who>.
 import { createServer } from 'node:http';
+import { randomUUID } from 'node:crypto';
 
-const AUTH = 'Basic ' + Buffer.from('albums@southbag.cc:test-drive-token').toString('base64');
-const files = new Map();
+const files = new Map(); // id -> { data, type, name, owner, shareToken }
+const shares = new Map(); // token -> id
+
+const bearerUser = req => {
+  const token = req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+  const match = token?.match(/^dev-drive-(\w+)$/);
+  return match ? `dev-${match[1]}` : null;
+};
 
 const server = createServer((req, res) => {
-  if (req.headers.authorization !== AUTH) {
-    res.writeHead(401).end('unauthorized');
-    return;
-  }
-  const name = decodeURIComponent(new URL(req.url, 'http://x').pathname.replace(/^\/webdav\//, ''));
-  if (!name) {
-    res.writeHead(404).end('not found');
-    return;
+  const url = new URL(req.url, 'http://x');
+  const json = (status, value) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(value));
+
+  // Public share download: the link itself is the capability, and there is no Range support.
+  const shareMatch = url.pathname.match(/^\/share\/(\w+)\/download$/);
+  if (shareMatch && req.method === 'GET') {
+    const file = files.get(shares.get(shareMatch[1]));
+    if (!file) return res.writeHead(404).end('not found');
+    res.writeHead(200, {
+      'content-type': file.type,
+      'content-length': String(file.data.length),
+      'x-content-type-options': 'nosniff',
+    });
+    return res.end(file.data);
   }
 
-  if (req.method === 'PUT') {
-    const declared = Number(req.headers['content-length']);
-    if (!Number.isInteger(declared)) {
-      res.writeHead(411).end('length required');
-      return;
-    }
+  // Everything below needs a user token.
+  const user = bearerUser(req);
+  if (!user) return json(401, { error: 'unauthorized' });
+
+  if (req.method === 'PUT' && url.pathname === '/api/upload') {
+    const declared = Number(req.headers['content-length'] ?? NaN);
+    if (!Number.isInteger(declared) || declared < 1) return json(411, { error: 'length_required' });
     const chunks = [];
     req.on('data', chunk => chunks.push(chunk));
     req.on('end', () => {
       const data = Buffer.concat(chunks);
-      if (data.length !== declared) {
-        res.writeHead(400).end('size mismatch');
-        return;
-      }
-      const replaced = files.has(name);
-      files.set(name, { data, type: (req.headers['content-type'] || 'application/octet-stream').split(';')[0] });
-      res.writeHead(replaced ? 204 : 201, { location: `/webdav/${encodeURIComponent(name)}` }).end();
+      if (data.length !== declared) return json(400, { error: 'size_mismatch' });
+      const id = randomUUID();
+      const name = decodeURIComponent(req.headers['x-sb-filename'] || 'unnamed.file');
+      files.set(id, {
+        data,
+        name,
+        type: req.headers['x-sb-content-type'] || 'application/octet-stream',
+        owner: user,
+        shareToken: null,
+      });
+      json(201, { id, name, size: data.length });
     });
     return;
   }
 
-  if (req.method === 'GET' || req.method === 'HEAD') {
-    const file = files.get(name);
-    if (!file) {
-      res.writeHead(404).end('not found');
-      return;
-    }
-    const headers = {
-      'content-type': file.type,
-      'accept-ranges': 'bytes',
-      etag: `"${name}-${file.data.length}"`,
-      'last-modified': new Date().toUTCString(),
-    };
-    const match = req.headers.range?.match(/^bytes=(\d+)-(\d*)$/);
-    if (match) {
-      const start = Number(match[1]);
-      const end = match[2] ? Math.min(Number(match[2]), file.data.length - 1) : file.data.length - 1;
-      if (start >= file.data.length || start > end) {
-        res.writeHead(416, { ...headers, 'content-range': `bytes */${file.data.length}` }).end();
-        return;
+  const fileMatch = url.pathname.match(/^\/api\/files\/([\w-]+)$/);
+  if (req.method === 'POST' && fileMatch) {
+    const file = files.get(fileMatch[1]);
+    if (!file || file.owner !== user) return json(404, { error: 'not_found' });
+    const chunks = [];
+    req.on('data', chunk => chunks.push(chunk));
+    req.on('end', () => {
+      const body = JSON.parse(Buffer.concat(chunks).toString() || '{}');
+      if (body.share) {
+        file.shareToken ||= randomUUID().replaceAll('-', '');
+        shares.set(file.shareToken, fileMatch[1]);
+        return json(200, { token: file.shareToken, url: `http://localhost:8797/share/${file.shareToken}` });
       }
-      headers['content-range'] = `bytes ${start}-${end}/${file.data.length}`;
-      headers['content-length'] = String(end - start + 1);
-      res.writeHead(206, headers);
-      if (req.method !== 'HEAD') res.end(file.data.subarray(start, end + 1));
-      else res.end();
-      return;
-    }
-    headers['content-length'] = String(file.data.length);
-    res.writeHead(200, headers);
-    if (req.method !== 'HEAD') res.end(file.data);
-    else res.end();
+      if (file.shareToken) shares.delete(file.shareToken);
+      file.shareToken = null;
+      return json(200, { ok: true });
+    });
     return;
   }
 
-  res.writeHead(405).end('method not allowed');
+  json(404, { error: 'not_found' });
 });
 
 server.listen(8797, () => console.log('mock drive on :8797'));
