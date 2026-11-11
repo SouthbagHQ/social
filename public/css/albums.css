@@ -1,0 +1,99 @@
+/* Shared albums. Buttons stay the standard grey (see southbag.css); only layout lives here. */
+
+.albums-page .page-head,
+.album-page .page-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.albums-page .spacer,
+.album-page .spacer {
+  flex: 1;
+}
+
+.albums-note {
+  color: var(--sb-muted);
+  margin: 4px 0 12px;
+}
+
+.album-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.album-tile {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}
+
+.album-cover {
+  height: 140px;
+  background: var(--sb-inset, #e4e4e4);
+  border: 2px inset #c8c8c8;
+  overflow: hidden;
+}
+
+.album-cover img {
+  width: 100%;
+  height: 100%;
+}
+
+.album-tile-body {
+  padding: 6px 2px 0;
+}
+
+.album-tile-meta {
+  font-size: 0.85em;
+  color: var(--sb-muted);
+}
+
+.album-members h2 {
+  margin-top: 0;
+  font-size: 1em;
+}
+
+.album-member-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.album-member {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+  color: inherit;
+}
+
+.album-member-name {
+  font-size: 0.9em;
+}
+
+.album-media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.album-cell {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 2px inset #c8c8c8;
+  background: var(--sb-inset, #e4e4e4);
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.album-cell img,
+.album-cell video {
+  width: 100%;
+  height: 100%;
+}

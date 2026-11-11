@@ -2,6 +2,12 @@
 
 Posts, photos, videos, shorts, stories, groups and messages for Southbag accounts.
 
+Shared albums are powered by [Southbag Drive](https://github.com/SouthbagHQ/drive): anyone can
+create an album and invite people, and every photo and video is stored in and served from Drive
+through its WebDAV API, under a service account whose credentials Social holds as secrets
+(`DRIVE_WEBDAV_USER` / `DRIVE_WEBDAV_TOKEN`; see `src/lib/drive.ts`). Album media is private to
+the album's members.
+
 It signs in with **Southbag Identity™** and follows the look of the other Southbag products
 ([Identity](https://github.com/SouthbagHQ/identity), [Office](https://github.com/SouthbagHQ/office),
 [Branch Locator](https://github.com/SouthbagHQ/branch-locator)).
