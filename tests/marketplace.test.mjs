@@ -308,3 +308,28 @@ test('marketplace: your listings by status', async () => {
   assert.ok(!(await bob.get('marketplace/mine')).body.items.some(x => x.id === mine.id));
   assert.equal((await anon.get('marketplace/mine')).status, 401);
 });
+
+test('marketplace: signed offers stay proposals and keep normal permissions', async () => {
+  const l = await listing(alice, { title: 'Negative offer qualification' });
+  for (const amount of [-1000000001, 1000000001, -1.5, 0, null, '', 'wat']) {
+    assert.equal((await bob.post(`marketplace/${l.id}/offers`, { amount })).status, 422, String(amount));
+  }
+  const a = await bob.post(`marketplace/${l.id}/offers`, { amount: -1250, message: 'Pay me to take it.' });
+  assert.equal(a.status, 201, a.text);
+  assert.equal(a.body.offer.amount, -1250);
+  assert.equal((await bob.get(`marketplace/${l.id}`)).body.listing.viewer.offer.amount, -1250);
+  assert.ok((await notifications(alice)).some(n => n.link === `/marketplace/${l.id}` && /-12\.50/.test(n.body)));
+  assert.equal((await carol.post(`marketplace/${l.id}/offers/${a.body.offer.id}/accept`)).status, 403);
+  const accepted = await alice.post(`marketplace/${l.id}/offers/${a.body.offer.id}/accept`);
+  assert.equal(accepted.status, 200, accepted.text);
+  assert.equal(accepted.body.offer.amount, -1250);
+  assert.equal(accepted.body.offer.status, 'accepted');
+  assert.equal(accepted.body.listing.status, 'pending');
+  const b = await carol.post(`marketplace/${l.id}/offers`, { amount: -1 });
+  assert.equal(b.status, 201, b.text);
+  assert.equal((await alice.post(`marketplace/${l.id}/offers/${b.body.offer.id}/decline`)).body.offer.status, 'declined');
+  const c = await kevin.post(`marketplace/${l.id}/offers`, { amount: -1000000000 });
+  assert.equal(c.status, 201, c.text);
+  assert.equal((await kevin.del(`marketplace/${l.id}/offers/${c.body.offer.id}`)).body.offer.status, 'withdrawn');
+  assert.equal((await alice.patch(`marketplace/${l.id}`, { price: -1 })).status, 422, 'listing prices remain nonnegative');
+});
