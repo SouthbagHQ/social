@@ -74,6 +74,7 @@ route('/wiki/:space/:page/:action', () => import('./views/wiki.js'));
 route('/dating', () => import('./views/dating.js'));
 // Messages and payments
 route('/messages', () => import('./views/messages.js'));
+route('/messages/join/:code', () => import('./views/messages.js'));
 route('/payments', () => import('./views/payments.js'));
 route('/messages/:id', () => import('./views/messages.js'));
 // Legal
