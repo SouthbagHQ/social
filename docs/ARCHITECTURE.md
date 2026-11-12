@@ -8,7 +8,11 @@ Read this before adding a feature. See also `docs/STYLE.md` (interface and copy)
   `/media/*` run the Worker; everything else is a static file, and unknown paths fall back to
   `public/index.html` (the SPA).
 - **One D1 database.** `DB` holds everything, file bytes included (`migrations/`; chunks are in
-  the `chunks` table). No R2, no KV, no Durable Objects.
+  the `chunks` table). No R2, no KV, no Durable Objects. The exception is shared albums: their
+  photos and videos live in each uploader's own Southbag Drive, written through Drive's API with
+  that user's Identity tokens (`src/lib/auth.ts`, `src/lib/drive.ts`); Social's database only
+  keeps the album, member and media metadata plus the Drive share token, and
+  `/media/album/:id` serves members the bytes out of Drive through that share link.
 - Free plan limits that shape the code: 10 ms CPU per request, 50 D1 queries per request,
   100k D1 row writes per day, 2 MB per D1 row, 500 MB per database. So: batch writes with
   `env.DB.batch`, keep list pages ≤ 50 items, use keyset pagination, avoid N+1 queries
@@ -104,8 +108,8 @@ signed in without Identity. Mutating API calls need `origin: http://localhost:87
 Migration numbers are reserved per feature so parallel work never collides:
 `0003_polls_pins.sql`, `0004_communities.sql`, `0005_events.sql`, `0006_audio.sql`,
 `0007_servers.sql`, `0008_careers.sql`, `0009_notification_links.sql`, `0010_marketplace.sql`,
-`0011_boards.sql`, `0012_streaks.sql`, `0013_wiki.sql`, `0014_dating.sql`, `0019_push.sql`. Never
-edit an applied migration; add a new one.
+`0011_boards.sql`, `0012_streaks.sql`, `0013_wiki.sql`, `0014_dating.sql`, `0019_push.sql`,
+`0021_albums.sql`, `0022_ads.sql`. Never edit an applied migration; add a new one.
 
 ## Analytics
 

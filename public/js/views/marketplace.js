@@ -8,6 +8,7 @@
 // API: /api/marketplace (see src/routes/marketplace.ts for the shapes). Prices are cents.
 
 import { api } from '../api.js';
+import { offerCents } from '../marketplace-offer.js';
 import { track } from '../analytics.js';
 import { h, mount } from '../dom.js';
 import { fullDate, money, plural, timeAgo } from '../format.js';
@@ -506,8 +507,8 @@ async function listingPage(ctx, id) {
         field('Message', message),
       ],
       onSubmit: () => {
-        const cents = toCents(amount.value);
-        if (!cents) throw new Error('Enter an amount in dollars.');
+        const cents = offerCents(amount.value);
+        if (cents == null || !Number.isSafeInteger(cents) || cents === 0) throw new Error('Enter an amount in dollars.');
         return api.post(`marketplace/${listing.id}/offers`, { amount: cents, message: message.value.trim() });
       },
     });

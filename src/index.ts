@@ -34,8 +34,10 @@ import boards from './routes/boards';
 import streaks, { streaksCron } from './routes/streaks';
 import wiki from './routes/wiki';
 import dating from './routes/dating';
+import albums, { serveAlbumMedia } from './routes/albums';
 import payments from './routes/payments';
 import push from './routes/push';
+import ads from './routes/ads';
 
 const app = new Hono<AppEnv>();
 
@@ -60,6 +62,8 @@ app.all('/mcp', c => handleMcp(c.req.raw, c.env));
 
 // ── Files (public, immutable) ──
 app.on(['GET', 'HEAD'], '/media/:id', c => serveMedia(c.req.raw, c.env, c.executionCtx, c.req.param('id')));
+// Album photos and videos: private to album members, served out of Southbag Drive.
+app.on(['GET', 'HEAD'], '/media/album/:id', c => serveAlbumMedia(c.req.raw, c.env, c.executionCtx, c.req.param('id')));
 
 // ── API ──
 app.use('/api/*', async (c, next) => {
@@ -126,7 +130,9 @@ app.route('/api/streaks', streaks);
 app.route('/api/wiki', wiki);
 app.route('/api/dating', dating);
 app.route('/api/payments', payments);
+app.route('/api/albums', albums);
 app.route('/api/push', push);
+app.route('/api/ads', ads);
 // Nothing can be deleted. The routers keep their DELETEs for undoing things (unlike, unfollow,
 // leave…); anything else that tries to delete lands here.
 app.delete('/api/*', () => fail(403, NO_DELETING));

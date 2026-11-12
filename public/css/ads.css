@@ -1,0 +1,19 @@
+/* Southbag Ads: campaign management and paid sponsored cards. */
+
+.ads-page .ads-rates li { margin: 2px 0; }
+.ads-form .field { display: block; margin: 8px 0; }
+.ads-form .field span { display: block; font-size: 0.8rem; transform: rotate(-0.4deg); }
+.ads-form .input { width: 100%; max-width: 26rem; }
+
+.ad-campaign { transform: rotate(-0.2deg); }
+.ad-campaign-head { display: flex; align-items: flex-start; gap: 8px; }
+.ad-campaign-head .grow { flex: 1; }
+.ad-campaign-head p { margin: 2px 0 0; }
+.ad-stats { display: flex; gap: 14px; flex-wrap: wrap; margin: 8px 0 4px; }
+.ad-progress { height: 6px; border: 1px solid #999; background: #fff; margin: 4px 0 8px; }
+.ad-progress span { display: block; height: 100%; background: var(--sb-muted); }
+
+.paid-ad .post-context { margin-bottom: 4px; }
+.ad-listing-photo { display: block; width: 8rem; height: 6rem; border: 1px solid #999; overflow: hidden; margin-bottom: 6px; }
+.ad-listing-photo img { width: 100%; height: 100%; object-fit: fill; }
+.ad-page-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }

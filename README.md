@@ -2,6 +2,12 @@
 
 Posts, photos, videos, shorts, stories, groups and messages for Southbag accounts.
 
+Shared albums are powered by [Southbag Drive](https://github.com/SouthbagHQ/drive): anyone can
+create an album and invite people, and every photo and video is stored in the uploader's OWN
+Drive, uploaded with that user's own Southbag Identity tokens (see `src/lib/auth.ts` and
+`src/lib/drive.ts`). Social opens a Drive share link per file and serves the bytes to the
+album's members through `/media/album/:id`; album media stays private to the album's members.
+
 It signs in with **Southbag Identity™** and follows the look of the other Southbag products
 ([Identity](https://github.com/SouthbagHQ/identity), [Office](https://github.com/SouthbagHQ/office),
 [Branch Locator](https://github.com/SouthbagHQ/branch-locator)).

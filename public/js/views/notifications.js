@@ -42,6 +42,7 @@ function describe(n, actors) {
     case 'group_join': return `${a} joined ${group}.`;
     case 'group_post': return `${a} posted in ${group}.`;
     case 'story_view': return `${a} viewed your story.`;
+    case 'album_invite': return `${a} added you to the album "${n.body}".`;
     case 'system': return n.body || 'Southbag Social';
     default: return n.body || `${a} interacted with you.`;
   }

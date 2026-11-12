@@ -4,7 +4,8 @@ import { newId } from './ids.ts';
 export type NotificationType =
   | 'follow' | 'friend_request' | 'friend_accept' | 'reaction' | 'reply' | 'repost' | 'quote'
   | 'mention' | 'wall_post' | 'group_join' | 'group_post' | 'story_view' | 'system'
-  | 'event_invite' | 'event_host' | 'event_cancelled' | 'event_comment' | 'event_reminder';
+  | 'event_invite' | 'event_host' | 'event_cancelled' | 'event_comment' | 'event_reminder'
+  | 'album_invite';
 
 export interface NotifyInput {
   userId: string;

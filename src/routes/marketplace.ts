@@ -141,10 +141,10 @@ const cardJson = (r: CardRow) => ({
 export type ListingCard = ReturnType<typeof cardJson>;
 
 /** Integer cents within range, or undefined if missing. Throws on anything else. */
-function cents(value: unknown, label: string): number | undefined {
+function cents(value: unknown, label: string, signed = false): number | undefined {
   if (value === undefined || value === null || value === '') return undefined;
   const n = typeof value === 'string' ? Number(value) : value;
-  if (typeof n !== 'number' || !Number.isInteger(n) || n < 0 || n > MAX_PRICE) fail(422, `${label} must be a whole number of cents.`);
+  if (typeof n !== 'number' || !Number.isInteger(n) || n < (signed ? -MAX_PRICE : 0) || n > MAX_PRICE) fail(422, `${label} must be a whole number of cents.`);
   return n;
 }
 
@@ -750,8 +750,8 @@ marketplace.post('/:id/offers', async c => {
   if (row.status === 'sold') fail(409, 'This item has been sold.');
   if (await isBlocked(c.env, user.id, row.seller_id)) fail(404, 'Listing not found.');
   const input = await body(c);
-  const amount = cents(input.amount, 'Offer');
-  if (amount === undefined || amount < 1) fail(422, 'Enter an amount.');
+  const amount = cents(input.amount, 'Offer', true);
+  if (amount === undefined || amount === 0) fail(422, 'Enter an amount.');
   const message = text(input.message, MAX_MESSAGE, `Messages are limited to ${MAX_MESSAGE} characters.`);
   const now = Date.now();
   const recent = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM marketplace_offers WHERE listing_id = ? AND buyer_id = ? AND created_at > ?')

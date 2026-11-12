@@ -113,6 +113,7 @@ function postMenu(anchor, post, { onEdited }) {
       ? { label: 'Save to board', onClick: () => import('./board-picker.js').then(m => m.saveToBoard({ post })) } : null,
     canPin(post) ? { label: isPinned(post) ? 'Unpin from profile' : 'Pin to profile', onClick: () => togglePin(post) } : null,
     mine && post.poll && !post.poll.closed ? { label: 'End poll', onClick: () => endPoll(post) } : null,
+    mine ? { label: 'Boost', href: `/ads?kind=post&target=${post.id}` } : null,
     mine ? { label: 'Edit', onClick: () => amend(post, onEdited) } : null,
     mine || post.viewer?.can_delete ? { label: 'Delete', onClick: refuseDelete } : null,
     !mine ? { label: 'Report', onClick: () => toast('Reported.') } : null,

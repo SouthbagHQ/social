@@ -8,6 +8,9 @@ export interface Env {
   /** Push notifications (lib/push.ts). Secrets; push is off without them. */
   VAPID_PUBLIC_KEY?: string;
   VAPID_PRIVATE_KEY?: string;
+  /** Shared albums (lib/drive.ts). Media lives in each uploader's own Southbag Drive,
+   *  reached with that user's Identity tokens (lib/auth.ts). DRIVE_ORIGIN is a var. */
+  DRIVE_ORIGIN?: string;
   [binding: string]: unknown;
 }
 

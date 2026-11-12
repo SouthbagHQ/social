@@ -41,6 +41,8 @@ route('/watch/:id', () => import('./views/watch.js'));
 route('/shorts', () => import('./views/shorts.js'));
 route('/shorts/:id', () => import('./views/shorts.js'));
 route('/photos', () => import('./views/photos.js'));
+route('/albums', () => import('./views/albums.js'));
+route('/albums/:id', () => import('./views/album.js'));
 route('/upload', () => import('./views/upload.js'));
 // Stories & groups (Instagram / Facebook)
 route('/stories/:handle', () => import('./views/stories.js'));
@@ -74,7 +76,9 @@ route('/wiki/:space/:page/:action', () => import('./views/wiki.js'));
 route('/dating', () => import('./views/dating.js'));
 // Messages and payments
 route('/messages', () => import('./views/messages.js'));
+route('/messages/join/:code', () => import('./views/messages.js'));
 route('/payments', () => import('./views/payments.js'));
+route('/ads', () => import('./views/ads.js'));
 route('/messages/:id', () => import('./views/messages.js'));
 // Legal
 route('/terms', () => import('./views/terms.js'));
@@ -87,6 +91,7 @@ const sections = [
   { href: '/', label: 'Feed' },
   { href: '/explore', label: 'Explore' },
   { href: '/photos', label: 'Photos' },
+  { href: '/albums', label: 'Albums', auth: true },
   { href: '/videos', label: 'Videos' },
   { href: '/shorts', label: 'Shorts' },
   { href: '/groups', label: 'Groups' },
@@ -101,6 +106,7 @@ const sections = [
   { href: '/dating', label: 'Dating', auth: true },
   { href: '/messages', label: 'Messages', badge: 'messages', auth: true },
   { href: '/payments', label: 'Payments', auth: true },
+  { href: '/ads', label: 'Ads', auth: true },
   { href: '/notifications', label: 'Notifications', badge: 'notifications', auth: true },
   { href: '/friends', label: 'Friends', badge: 'friend_requests', auth: true },
   { href: '/bookmarks', label: 'Bookmarks', auth: true },

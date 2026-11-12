@@ -160,6 +160,20 @@ export default async function view(ctx) {
       history.replaceState({}, '', '/messages');
     }
   }
+  // /messages/join/:code: join a group chat through an invite link.
+  if (ctx.params.code) {
+    try {
+      const { conversation } = await api.post(`messages/join/${ctx.params.code}`);
+      if (ctx.signal.aborted) return null;
+      upsertItem(itemFromConversation(conversation), { keepExisting: true });
+      history.replaceState({}, '', `/messages/${conversation.id}`);
+      openId = conversation.id;
+    } catch (err) {
+      toastError(err);
+      history.replaceState({}, '', '/messages');
+      openId = null;
+    }
+  }
   // /messages/support: the viewer's Southbag Support conversation.
   if (openId === 'support') {
     try {
@@ -568,6 +582,7 @@ export default async function view(ctx) {
 function conversationPane(id, { onBack, onMessage, onRead, onConversation, onStreak, onLeft }) {
   const controller = new AbortController();
   let conv = null;
+  let pinned = []; // pinned messages, newest pin first
   let server = []; // confirmed messages, oldest -> newest
   let pending = []; // optimistic sends not yet confirmed
   let next = null; // cursor for older messages
@@ -579,6 +594,7 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onStr
   const streakNotes = []; // [{ afterId, text }]: "Streak extended to 13 days." after the message that did it
 
   const head = h('header.dm-head');
+  const pinsBar = h('button.dm-pins.hidden', { type: 'button', onclick: () => pinsDialog() });
   const olderStatus = h('div.dm-older');
   const list = h('div.dm-msgs');
   const typing = h('div.dm-row.theirs.first.last.dm-typing.hidden', { 'aria-live': 'polite' },
@@ -588,11 +604,22 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onStr
   const scroller = h('div.dm-scroll', { role: 'log', 'aria-label': 'Messages', tabIndex: 0 }, topSentinel, olderStatus, list, typing);
   const jump = h('button.dm-jump.hidden', { type: 'button', onclick: () => { scrollToBottom(true); jump.classList.add('hidden'); } }, 'New messages');
   const composer = buildComposer();
-  const el = h('div.dm-conv', head, h('div.dm-scroll-wrap', scroller, jump), composer.el);
+  const el = h('div.dm-conv', head, pinsBar, h('div.dm-scroll-wrap', scroller, jump), composer.el);
 
   const backBtn = () => h('button.dm-back', { type: 'button', 'aria-label': 'Back to conversations', onclick: onBack }, 'Back');
   mount(head, backBtn(), h('span.dm-head-loading', 'Loading'));
   mount(list, loading());
+
+  const canAdmin = () => conv?.is_group && (conv.viewer_role === 'owner' || conv.viewer_role === 'admin');
+  const roleLabel = role => role === 'owner' ? 'Owner' : role === 'admin' ? 'Admin' : null;
+
+  function renderPins() {
+    if (!pinned.length) { pinsBar.classList.add('hidden'); return; }
+    pinsBar.classList.remove('hidden');
+    const first = pinned[0];
+    const excerpt = first.body ? [...first.body].slice(0, 60).join('') : first.media ? 'Attachment' : first.post ? 'Shared post' : 'Message';
+    mount(pinsBar, h('span.dm-pins-label', `Pinned (${pinned.length})`), h('span', excerpt));
+  }
 
   // -- Rendering --
 
@@ -620,7 +647,8 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onStr
     if (!conv.is_support) {
       const more = h('button.dm-more', { type: 'button', 'aria-label': 'Conversation options' }, 'More');
       more.addEventListener('click', () => menu(more, conv.is_group ? [
-        { label: 'Rename chat', onClick: rename },
+        { label: 'Chat info', onClick: info },
+        canAdmin() ? { label: 'Rename chat', onClick: rename } : null,
         ...conv.members.map(p => ({ label: `${p.name} (@${p.handle})`, href: `/@${p.handle}` })),
         'divider',
         { label: 'Leave chat', onClick: leave },
@@ -686,7 +714,7 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onStr
       if (m.post || m.post_unavailable) parts.push(sharedPost(m));
       else if (m.pending && m.payload?.post_id) parts.push(h('div.dm-post.unavailable', 'Sharing a post'));
       if (m.body) parts.push(h('div.dm-text', richText(m.body)));
-      const bubble = h('div.dm-bubble', { class: { 'media-only': Boolean(m.media && !m.body && !m.post && !m.post_unavailable) } },
+      const bubble = h('div.dm-bubble', { class: { 'media-only': Boolean(m.media && !m.body && !m.post && !m.post_unavailable), mentioned: Boolean(m.mentions?.some(p => p.id === me()?.id)) } },
         h('span.sr-only', own ? 'You: ' : `${m.sender ? m.sender.name : 'Southbag Support'}: `), parts);
       const time = h('time.dm-time', { datetime: new Date(m.created_at).toISOString(), title: fullDate(m.created_at) }, clock(m.created_at));
       let status = null;
@@ -695,11 +723,14 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onStr
           h('button.btn-small', { type: 'button', onclick: () => retry(m) }, 'Retry'), ' ',
           h('button.btn-small', { type: 'button', onclick: () => discard(m) }, 'Discard'));
       } else if (m.pending) status = h('div.dm-status', 'Sending');
+      const pinBtn = conv.is_group && canAdmin() && !m.pending && !m.failed
+        ? h('button.btn-tiny.dm-pin-btn', { type: 'button', onclick: () => pin(m) }, pinned.some(p => p.id === m.id) ? 'Unpin' : 'Pin')
+        : null;
       row = h('div.dm-row', { class: { mine: own, theirs: !own, pending: m.pending, failed: m.failed } },
         own ? null : h('div.dm-av', m.sender ? avatar(m.sender, { size: 'sm' }) : supportAvatar()),
         h('div.dm-col',
           !own && conv.is_group ? h('div.dm-name', m.sender?.name || 'Southbag') : null,
-          h('div.dm-line', bubble, time),
+          h('div.dm-line', bubble, time, pinBtn),
           status));
     }
     rows.set(key, row);
@@ -776,8 +807,10 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onStr
       if (destroyed) return;
       conv = data.conversation;
       next = data.next;
+      pinned = data.pinned || [];
       addServer(data.items);
       renderHead();
+      renderPins();
       render();
       onConversation(conv);
       scrollToBottom();
@@ -884,7 +917,9 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onStr
       const data = await api.get(`messages/${id}`, { limit: 1 }, { signal: controller.signal });
       if (destroyed) return;
       conv = { ...conv, ...data.conversation };
+      pinned = data.pinned ?? pinned;
       renderHead();
+      renderPins();
       onConversation(conv);
     } catch { /* not important */ }
   }
@@ -1127,6 +1162,155 @@ function conversationPane(id, { onBack, onMessage, onRead, onConversation, onStr
       toast('Left the chat.');
       onLeft();
     } catch (err) { toastError(err); }
+  }
+
+  // -- Group chats: chat info (members, roles, invite links) and pinned messages --
+
+  async function pin(m) {
+    try {
+      const isPinned = pinned.some(p => p.id === m.id);
+      const data = isPinned
+        ? await api.del(`messages/${id}/pins/${m.id}`)
+        : await api.post(`messages/${id}/pins`, { message_id: m.id });
+      pinned = data.pinned;
+      renderPins();
+      rows.delete(m.id); // rebuild the row so its Pin/Unpin label is right
+      render();
+    } catch (err) { toastError(err); }
+  }
+
+  function applyConversation(next) {
+    conv = { ...conv, ...next };
+    renderHead();
+    onConversation(conv);
+  }
+
+  async function addPeople(refresh) {
+    const raw = await promptDialog('Handles, separated by commas', { title: 'Add people', placeholder: '@handle, @handle', ok: 'Add' });
+    if (raw === null) return;
+    const handles = raw.split(/[\s,]+/).filter(Boolean);
+    if (!handles.length) return;
+    try {
+      const data = await api.post(`messages/${id}/members`, { handles });
+      applyConversation(data.conversation);
+      refresh?.();
+      toast('Added.');
+      poll();
+    } catch (err) { toastError(err); }
+  }
+
+  async function removeMember(p, refresh) {
+    if (!(await confirm(`${p.name} (@${p.handle}) will be removed from this chat.`, { title: 'Remove member?', ok: 'Remove' }))) return;
+    try {
+      await api.del(`messages/${id}/members/${p.id}`);
+      toast('Removed.');
+      refreshMeta().then(() => refresh?.());
+    } catch (err) { toastError(err); }
+  }
+
+  async function setRole(p, role, refresh) {
+    try {
+      const data = await api.patch(`messages/${id}/members/${p.id}`, { role });
+      applyConversation(data.conversation);
+      refresh?.();
+      poll();
+    } catch (err) { toastError(err); }
+  }
+
+  function memberRow(p, refresh) {
+    const role = conv.roles?.[p.id] || 'member';
+    const actions = [];
+    if (conv.viewer_role === 'owner' && role === 'member')
+      actions.push(h('button.btn-tiny', { type: 'button', onclick: () => setRole(p, 'admin', refresh) }, 'Make admin'));
+    if (conv.viewer_role === 'owner' && role === 'admin')
+      actions.push(h('button.btn-tiny', { type: 'button', onclick: () => setRole(p, 'member', refresh) }, 'Dismiss as admin'));
+    if (canAdmin() && role !== 'owner' && !(role === 'admin' && conv.viewer_role !== 'owner'))
+      actions.push(h('button.btn-tiny', { type: 'button', onclick: () => removeMember(p, refresh) }, 'Remove'));
+    return h('div.dm-info-member',
+      avatar(p, { size: 'sm' }),
+      h('div.grow', h('a', { href: `/@${p.handle}` }, p.name), h('div.fine', `@${p.handle}`)),
+      roleLabel(role) ? h('span.dm-info-role', roleLabel(role)) : null,
+      actions);
+  }
+
+  function info() {
+    const container = h('div.dm-info');
+    let invites = null; // null = not loaded yet
+
+    async function copyInvite(invite) {
+      const url = `${location.origin}${invite.url}`;
+      try { await navigator.clipboard.writeText(url); toast('Copied.'); }
+      catch { await dialog({ title: 'Invite link', body: h('p', url) }); }
+    }
+
+    async function revokeInvite(invite, refresh) {
+      try {
+        await api.del(`messages/${id}/invites/${invite.code}`);
+        invites = invites.filter(i => i.code !== invite.code);
+        refresh();
+      } catch (err) { toastError(err); }
+    }
+
+    async function newInvite(refresh) {
+      try {
+        const data = await api.post(`messages/${id}/invites`);
+        invites = [data.invite, ...(invites || [])];
+        refresh();
+      } catch (err) { toastError(err); }
+    }
+
+    function inviteSection(refresh) {
+      if (!canAdmin()) return null;
+      if (invites === null) {
+        api.get(`messages/${id}/invites`).then(data => { invites = data.items; refresh(); }).catch(() => { invites = []; refresh(); });
+        return h('p.fine', 'Loading invite links');
+      }
+      return h('div',
+        invites.length ? invites.map(inv => h('div.dm-invite-row',
+          h('code.grow.dm-invite-code', inv.code),
+          h('button.btn-tiny', { type: 'button', onclick: () => copyInvite(inv) }, 'Copy'),
+          h('button.btn-tiny', { type: 'button', onclick: () => revokeInvite(inv, refresh) }, 'Revoke'))) : h('p.fine', 'No active invite links.'),
+        h('button.btn-small', { type: 'button', onclick: () => newInvite(refresh) }, 'New link'));
+    }
+
+    function renderInfo() {
+      const everyone = [
+        { ...me(), id: me()?.id },
+        ...conv.members,
+      ].filter(Boolean);
+      mount(container,
+        h('h3', `Members (${conv.member_count})`),
+        everyone.map(p => h('div.dm-info-me-wrap', p.id === me()?.id
+          ? h('div.dm-info-member', avatar(p, { size: 'sm' }), h('div.grow', h('span', `${p.name} (you)`), h('div.fine', `@${p.handle}`)), roleLabel(conv.viewer_role) ? h('span.dm-info-role', roleLabel(conv.viewer_role)) : null)
+          : memberRow(p, renderInfo))),
+        h('button.btn-small', { type: 'button', onclick: () => addPeople(renderInfo) }, 'Add people'),
+        canAdmin() ? h('h3', 'Invite links') : null,
+        inviteSection(renderInfo));
+    }
+
+    renderInfo();
+    dialog({ title: convTitle(conv), body: container, wide: true });
+  }
+
+  function pinsDialog() {
+    const container = h('div.dm-info');
+    async function unpin(m, refresh) {
+      try {
+        const data = await api.del(`messages/${id}/pins/${m.id}`);
+        pinned = data.pinned;
+        renderPins();
+        refresh();
+      } catch (err) { toastError(err); }
+    }
+    function renderPinList() {
+      if (!pinned.length) { mount(container, h('p', 'No pinned messages.')); return; }
+      mount(container, pinned.map(m => h('div.dm-pin-row',
+        h('div.fine', `${m.sender ? m.sender.name : 'System'}, ${timeAgo(m.created_at)}`),
+        h('div', m.body ? richText(m.body) : m.media ? 'Attachment' : 'Shared post'),
+        canAdmin() ? h('button.btn-tiny', { type: 'button', onclick: () => unpin(m, renderPinList) }, 'Unpin') : null)));
+    }
+    renderPinList();
+    dialog({ title: 'Pinned messages', body: container, wide: true });
   }
 
   load();
