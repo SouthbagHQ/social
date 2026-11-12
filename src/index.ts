@@ -7,6 +7,7 @@ import { HTTPException } from 'hono/http-exception';
 import type { AppEnv, Env } from './env';
 import { callback, login, logout, safeReturnTo, session } from './lib/auth';
 import { centralStatus, FROZEN_TEXT, STATUS_UNKNOWN_TEXT } from './lib/identity';
+import { handleMcp } from './lib/mcp';
 import { deleteMedia, serveMedia } from './lib/media';
 import { NO_DELETING, fail } from './lib/http';
 import { pushPending } from './lib/push';
@@ -55,6 +56,9 @@ app.get('/auth/login', c => login(c.req.raw, c.env, safeReturnTo(c.req.query('ne
 app.get('/auth/callback', c => callback(c.req.raw, c.env, c.executionCtx));
 app.get('/auth/logout', c => logout(c.req.raw, c.env, c.executionCtx));
 app.post('/auth/logout', c => logout(c.req.raw, c.env, c.executionCtx));
+
+// ── Agent access (MCP): bearer agent token, $1 request fee per tools/call, discovery free ──
+app.all('/mcp', c => handleMcp(c.req.raw, c.env));
 
 // ── Files (public, immutable) ──
 app.on(['GET', 'HEAD'], '/media/:id', c => serveMedia(c.req.raw, c.env, c.executionCtx, c.req.param('id')));

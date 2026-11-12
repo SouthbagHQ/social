@@ -16,7 +16,7 @@ export interface BankAccount {
 }
 
 export interface BankingBilling {
-  charge(input: Customer & { amount: number; product: string; description: string }): Promise<{ balance: number; opened: boolean }>;
+  charge(input: Customer & { amount: number; product: string; description: string; idempotencyKey?: string }): Promise<{ balance: number; opened: boolean; duplicate?: boolean }>;
   transfer(input: { from: Customer; to: Customer; amount: number }): Promise<TransferResult>;
   account(input: { userId: string }): Promise<BankAccount | null>;
 }
@@ -31,11 +31,15 @@ const bank = (env: Env) => {
 const customer = (user: { id: string; email: string | null; name: string }): Customer =>
   ({ userId: user.id, email: user.email, name: user.name });
 
-/** Takes `amount` cents from the user's Southbag Online Banking account. Throws if the bank can't be reached. */
-export async function charge(env: Env, user: { id: string; email: string | null; name: string }, amount: number, description: string) {
-  if (dev(env)) return { balance: null, opened: false };
-  const result = await bank(env).charge({ ...customer(user), amount, product: 'Southbag Social', description });
-  return { balance: result.balance as number | null, opened: result.opened };
+/**
+ * Takes `amount` cents from the user's Southbag Online Banking account. Throws if the bank can't
+ * be reached. An idempotencyKey makes a retried charge a no-op (duplicate: true) instead of a
+ * second debit - Banking dedupes on it.
+ */
+export async function charge(env: Env, user: { id: string; email: string | null; name: string }, amount: number, description: string, idempotencyKey?: string) {
+  if (dev(env)) return { balance: null, opened: false, duplicate: false };
+  const result = await bank(env).charge({ ...customer(user), amount, product: 'Southbag Social', description, ...(idempotencyKey ? { idempotencyKey } : {}) });
+  return { balance: result.balance as number | null, opened: result.opened, duplicate: result.duplicate ?? false };
 }
 
 /**
