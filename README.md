@@ -77,8 +77,8 @@ Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) before adding a feature, and
 
 Social reports to Palantir, the PostHog instance every Southbag app uses (`palantir.southbag.cc`).
 
-- **Browser.** `public/palantir.js` is the shared Southbag client script, identical in every app
-  (don't edit it here). It records pageviews, including client-side navigation, plus clicks,
+- **Browser.** [southbag.js](https://github.com/southbag-agent/southbag.js) is the shared Southbag
+  client script, loaded from the CDN in `index.html`. It records pageviews, including client-side navigation, plus clicks,
   page leaves, errors, web vitals and session replays. It identifies the signed-in user by their
   Identity id from `/api/me`. `public/js/store.js` re-identifies or resets when someone signs in or
   out mid-visit. Views can send custom events with `track()` from `public/js/analytics.js`.

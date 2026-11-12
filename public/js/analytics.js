@@ -1,4 +1,4 @@
-// Palantir (PostHog) in the browser. /palantir.js — the shared Southbag client script, loaded in
+// Palantir (PostHog) in the browser. southbag.js — the shared Southbag client script, loaded in
 // index.html — sets up `window.palantir`, identifies the signed-in user from /api/me and records
 // pageviews (including client-side navigation) by itself. Views only call `track()` for custom
 // events: `track('social_<noun>_<past-tense verb>', { ids, kinds, counts, flags })`. Never pass
@@ -19,8 +19,8 @@ export function identify(user) {
 export function reset() {
   try {
     window.palantir?.reset();
-    // posthog.reset() also drops the `southbag_app` super property palantir.js registered on load.
-    const app = document.querySelector('script[src="/palantir.js"]')?.dataset.app;
+    // posthog.reset() also drops the `southbag_app` super property southbag.js registered on load.
+    const app = document.querySelector('script[data-app]')?.dataset.app;
     if (app) window.posthog?.register({ southbag_app: app });
   } catch {}
 }

@@ -64,7 +64,7 @@ never like a gag (no "Do not press" buttons, no joke answers).
 - No jokes about fees, surveillance, retention or consent. Kevin is rare and never explained: the
   sidebar ("Kevin is watching"), the deletion refusal, and a `kevin_session` cookie in the cookie
   preferences. He is always spelt "Kevin": any capitalisation typed into any text field becomes
-  "Kevin" as it is typed (`capitaliseKevin()` in `gags.js`). Add more only with a good reason. No The Pile, Floor 3, 2019 or Canberra.
+  "Kevin" as it is typed (southbag.js, loaded in `index.html`). Add more only with a good reason. No The Pile, Floor 3, 2019 or Canberra.
 - Nothing about banking: no branches, balances, loans or "Online Banking" promotions. (The splash
   screen borrows Banking's promotional slides; that is the one exception.)
 - Australian spelling. Sentence case.

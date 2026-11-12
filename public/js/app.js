@@ -7,7 +7,7 @@
 import { api } from './api.js';
 import { h, mount } from './dom.js';
 import { money } from './format.js';
-import { applyTheme, capitaliseKevin, promoStrip } from './gags.js';
+import { applyTheme, promoStrip } from './gags.js';
 import { cookieBanner, helpStrip, jank, notificationNags, splash, ticker } from './chaos.js';
 import { navigate, route, startRouter } from './router.js';
 import { login, store } from './store.js';
@@ -255,7 +255,6 @@ async function render(ctx, matched, controller, scroll) {
 // ── Boot ────────────────────────────────────────────────────────────────
 async function boot() {
   applyTheme();
-  capitaliseKevin();
   const splashed = splash();
   mount(app, loading());
   await store.refresh();
