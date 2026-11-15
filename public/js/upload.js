@@ -120,7 +120,9 @@ export async function uploadFile(file, { onProgress, signal, maxEdge, alt } = {}
       posterId = poster.id;
     }
   }
-  const contentType = file.type === 'video/x-m4v' ? 'video/mp4' : file.type;
+  const contentType = file.type === 'video/x-m4v' ? 'video/mp4'
+    : file.type === 'audio/x-flac' ? 'audio/flac'
+    : file.type;
   return uploadBlob(file, { kind, contentType, width: meta.width, height: meta.height, duration: meta.duration, posterId, alt, onProgress, signal });
 }
 
