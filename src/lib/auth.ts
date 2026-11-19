@@ -166,10 +166,12 @@ export async function callback(request: Request, env: Env, ctx: Waiter | null = 
 
   const profile = await fetchIdentityUser(tokens.access_token);
   if (!profile) return failed(url.origin, 'userinfo');
-  await storeIdentityTokens(env, profile.sub, tokens);
 
   const now = Date.now();
+  // The user row must exist first: identity_tokens.user_id references users(id), so storing
+  // tokens before the upsert breaks every first login with a foreign-key error.
   const { created } = await upsertUser(env, profile, now);
+  await storeIdentityTokens(env, profile.sub, tokens);
   const destination = created ? '/welcome' : safeReturnTo(pending.return_to) || '/';
   track.identify(profile.sub, { email: profile.email || null, name: profile.name || null });
   const signedIn = tracker(request, env, ctx, { id: profile.sub });
@@ -309,8 +311,9 @@ export async function session(request: Request, env: Env, ctx: Waiter | null = n
   if (!profile) return null;
   const now = Date.now();
   // A native client's bearer token is an Identity access token: keep it for Drive calls too.
-  await storeIdentityTokens(env, profile.sub, { access_token: bearer });
+  // Same ordering as the web callback: upsert the user row before the token insert (FK).
   const { created } = await upsertUser(env, profile, now);
+  await storeIdentityTokens(env, profile.sub, { access_token: bearer });
   if (created) tracker(request, env, ctx, { id: profile.sub }).capture('social_account_created', { via: 'mobile' });
   await env.DB.prepare('INSERT OR REPLACE INTO sessions (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)')
     .bind(tokenHash, profile.sub, now + bearerSessionMs, now).run();
