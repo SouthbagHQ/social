@@ -21,7 +21,7 @@ export const limits = {
 export const allowedTypes: Record<keyof typeof limits, RegExp> = {
   image: /^image\/(jpeg|png|gif|webp|avif)$/,
   video: /^video\/(mp4|webm|quicktime)$/,
-  audio: /^audio\/(mpeg|mp4|ogg|webm|wav|aac)$/,
+  audio: /^audio\/(mpeg|mp4|ogg|webm|wav|aac|flac)$/,
 };
 
 export interface MediaRow {
